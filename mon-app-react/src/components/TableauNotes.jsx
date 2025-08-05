@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import './TableauNotes.css'
 import ColorPickerModal from './ColorPickerModal'
+import PositionnementModal from './PositionnementModal'
 import NotePastille from './NotePastille'
 import { competencesN1N2 } from '../data/competences'
 
@@ -12,11 +13,17 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
     const [eleveActuel, setEleveActuel] = useState(null)
     const [noteDetail, setNoteDetail] = useState(null)
 
+    // États pour la modal de positionnement enseignant
+    const [modalPositionnementOuvert, setModalPositionnementOuvert] = useState(false)
+    const [elevePositionnement, setElevePositionnement] = useState(null)
+    const [competencePositionnement, setCompetencePositionnement] = useState(null)
+
     const codeCompetence = competenceChoisie
         ? competenceChoisie.niveau3 || competenceChoisie.niveau2 || competenceChoisie.niveau1
         : null
 
     const [competencesN3, setCompetencesN3] = useState([])
+    const [positionnementsEnseignant, setPositionnementsEnseignant] = useState([])
 
     useEffect(() => {
         const idClasse = classeChoisie
@@ -32,6 +39,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
             .then(setEleves)
         fetch('http://localhost:3001/notes').then(res => res.json()).then(setNotes)
         fetch('http://localhost:3001/competences-n3').then(res => res.json()).then(setCompetencesN3)
+        fetch('http://localhost:3001/positionnements').then(res => res.json()).then(setPositionnementsEnseignant)
     }, [classeChoisie])
 
     const getCouleur = (eleveId) => {
@@ -103,6 +111,58 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
             console.error('Erreur:', error)
             alert('Erreur lors de la suppression de la note')
         }
+    }
+
+    // Fonctions pour le positionnement enseignant
+    const handleClickPositionnement = (eleve, competenceCode) => {
+        setElevePositionnement(eleve)
+        setCompetencePositionnement(competenceCode)
+        setModalPositionnementOuvert(true)
+    }
+
+    const handleSavePositionnement = async (couleur) => {
+        if (!elevePositionnement || !competencePositionnement) return
+
+        try {
+            const response = await fetch('http://localhost:3001/positionnements', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    eleve_id: elevePositionnement.id,
+                    competence_code: competencePositionnement,
+                    couleur: couleur,
+                    prof_id: 1 // À adapter selon l'utilisateur connecté
+                })
+            })
+
+            if (response.ok) {
+                // Recharger les positionnements enseignant
+                const positionnementsResponse = await fetch('http://localhost:3001/positionnements')
+                if (positionnementsResponse.ok) {
+                    const nouveauxPositionnements = await positionnementsResponse.json()
+                    setPositionnementsEnseignant(nouveauxPositionnements)
+                }
+                
+                // Fermer la modal
+                setModalPositionnementOuvert(false)
+                setElevePositionnement(null)
+                setCompetencePositionnement(null)
+            } else {
+                alert('Erreur lors de la sauvegarde du positionnement')
+            }
+        } catch (error) {
+            console.error('Erreur:', error)
+            alert('Erreur lors de la sauvegarde du positionnement')
+        }
+    }
+
+    const getPositionnementEnseignant = (eleveId, competenceCode) => {
+        const positionnement = positionnementsEnseignant.find(p => 
+            p.eleve_id === eleveId && p.competence_code === competenceCode
+        )
+        return positionnement ? positionnement.couleur : null
     }
 
     function getNomCompetence(code) {
@@ -605,8 +665,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         else return 'rouge'
     }
 
-    // Fonction pour calculer le positionnement avec système de points
-    const calculerPositionnement = (codeCompetence, eleveid) => {
+    // Fonction pour calculer le positionnement automatique (basé sur les notes)
+    const calculerPositionnementAuto = (codeCompetence, eleveid) => {
         // Si c'est une compétence de niveau 1, calculer avec répartition sur les N2
         const competenceN1 = competencesN1N2.find(comp => comp.code === codeCompetence)
         
@@ -711,6 +771,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
             console.log(`Couleur positionnement:`, couleurPositionnement)
             return couleurPositionnement
         }
+    }
+
+    // Fonction principale pour calculer le positionnement (priorise le positionnement enseignant)
+    const calculerPositionnement = (codeCompetence, eleveid) => {
+        // D'abord, vérifier s'il y a un positionnement enseignant manuel
+        const positionnementManuel = getPositionnementEnseignant(eleveid, codeCompetence)
+        if (positionnementManuel) {
+            return positionnementManuel
+        }
+        
+        // Sinon, utiliser le calcul automatique
+        return calculerPositionnementAuto(codeCompetence, eleveid)
     }
 
     // Fonction pour convertir nos noms de couleurs en couleurs CSS
@@ -1068,10 +1140,28 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                         cursor: 'pointer'
                                                                     }}
                                                                     title={`Positionnement: ${ligne.positionnement}`}
-                                                                    onClick={() => console.log('Pastille positionnement:', ligne.positionnement)}
+                                                                    onClick={() => {
+                                                                        // Le positionnement enseignant n'est disponible que pour les compétences N2
+                                                                        const codeCompetence = ligne.niveau2?.code
+                                                                        if (codeCompetence) {
+                                                                            handleClickPositionnement(eleve, codeCompetence)
+                                                                        }
+                                                                    }}
                                                                 ></div>
                                                             ) : (
-                                                                <span style={{fontSize: '0.8em', color: '#999'}}>-</span>
+                                                                <span 
+                                                                    style={{fontSize: '0.8em', color: '#999', cursor: 'pointer'}}
+                                                                    title="Cliquer pour définir un positionnement"
+                                                                    onClick={() => {
+                                                                        // Le positionnement enseignant n'est disponible que pour les compétences N2
+                                                                        const codeCompetence = ligne.niveau2?.code
+                                                                        if (codeCompetence) {
+                                                                            handleClickPositionnement(eleve, codeCompetence)
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    + Positionner
+                                                                </span>
                                                             )}
                                                         </td>
                                                     </tr>
@@ -1329,10 +1419,28 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                         cursor: 'pointer'
                                                     }}
                                                     title={`Positionnement: ${ligne.positionnement}`}
-                                                    onClick={() => console.log('Pastille positionnement:', ligne.positionnement)}
+                                                    onClick={() => {
+                                                        // Le positionnement enseignant n'est disponible que pour les compétences N2
+                                                        const codeCompetence = ligne.niveau2?.code
+                                                        if (codeCompetence) {
+                                                            handleClickPositionnement(eleve, codeCompetence)
+                                                        }
+                                                    }}
                                                 ></div>
                                             ) : (
-                                                <span style={{fontSize: '0.8em', color: '#999'}}>-</span>
+                                                <span 
+                                                    style={{fontSize: '0.8em', color: '#999', cursor: 'pointer'}}
+                                                    title="Cliquer pour définir un positionnement"
+                                                    onClick={() => {
+                                                        // Le positionnement enseignant n'est disponible que pour les compétences N2
+                                                        const codeCompetence = ligne.niveau2?.code
+                                                        if (codeCompetence) {
+                                                            handleClickPositionnement(eleve, codeCompetence)
+                                                        }
+                                                    }}
+                                                >
+                                                    + Positionner
+                                                </span>
                                             )}
                                         </td>
                                     </tr>
@@ -1351,6 +1459,21 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                     onClose={() => setModalOuvert(false)}
                     onSave={handleSaveNote}
                     ajouterNote={(note) => setNotes(prev => [...prev, note])}
+                />
+            )}
+
+            {modalPositionnementOuvert && elevePositionnement && competencePositionnement && (
+                <PositionnementModal
+                    eleve={elevePositionnement}
+                    competenceCode={competencePositionnement}
+                    competenceNom={getNomCompetence(competencePositionnement)}
+                    positionnementActuel={getPositionnementEnseignant(elevePositionnement.id, competencePositionnement)}
+                    onClose={() => {
+                        setModalPositionnementOuvert(false)
+                        setElevePositionnement(null)
+                        setCompetencePositionnement(null)
+                    }}
+                    onSave={handleSavePositionnement}
                 />
             )}
 
