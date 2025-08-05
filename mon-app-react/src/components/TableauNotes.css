@@ -63,6 +63,25 @@
   cursor: not-allowed;
 }
 
+.btn-positionner {
+  padding: 3px 8px;
+  background: #6cb4ee;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.75em;
+}
+
+.btn-positionner:hover:not(:disabled) {
+  background: #5a9fd8;
+}
+
+.btn-positionner:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
 .tableau-hierarchique {
   width: 100%;
   border-collapse: collapse;
@@ -116,6 +135,11 @@
     vertical-align: middle;
     padding: 8px;
     min-width: 80px;
+}
+
+.cell-positionnement > div {
+    justify-content: center;
+    align-items: center;
 }
 
 .cell-positionnement:hover {

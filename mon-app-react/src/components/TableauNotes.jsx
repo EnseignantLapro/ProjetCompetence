@@ -433,11 +433,16 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         const lignesAvecBilan = []
         
         // Enrichir les lignes de base avec le positionnement
-        const lignesEnrichies = lignesBase.map(ligne => ({
-            ...ligne,
-            positionnement: ligne.niveau1 ? calculerPositionnement(ligne.niveau1.code, eleveId) :
-                           ligne.niveau2 ? calculerPositionnement(ligne.niveau2.code, eleveId) : null
-        }))
+        const lignesEnrichies = lignesBase.map(ligne => {
+            const codeCompetence = ligne.niveau1?.code || ligne.niveau2?.code
+            return {
+                ...ligne,
+                positionnementAuto: codeCompetence ? calculerPositionnementAuto(codeCompetence, eleveId) : null,
+                positionnementEnseignant: ligne.niveau2?.code ? getPositionnementEnseignant(eleveId, ligne.niveau2.code) : null,
+                positionnement: ligne.niveau1 ? calculerPositionnement(ligne.niveau1.code, eleveId) :
+                               ligne.niveau2 ? calculerPositionnement(ligne.niveau2.code, eleveId) : null
+            }
+        })
         
         // Grouper les lignes par compétence de niveau 1
         const groupesNiveau1 = {}
@@ -578,59 +583,56 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
             let pointsN2 = 0
             let contributionsN2 = 0
             
-            // Contribution des notes N1 réparties sur ce N2
-            if (notesN1.length > 0) {
-                notesN1.forEach(noteN1 => {
-                    let pointsNote = 0
-                    switch(noteN1.couleur.toLowerCase()) {
-                        case 'rouge': pointsNote = 5; break
-                        case 'jaune': pointsNote = 10; break
-                        case 'bleu': pointsNote = 15; break
-                        case 'vert': pointsNote = 20; break
-                        default: pointsNote = 0
-                    }
-                    
-                    if (pointsNote > 0) {
-                        // Répartition équitable entre tous les N2
-                        pointsN2 += pointsNote / enfantsN2.length
-                        contributionsN2 += 1 / enfantsN2.length
-                    }
-                })
-            }
+            // D'abord vérifier s'il y a un positionnement enseignant pour ce N2
+            const positionnementEnseignant = getPositionnementEnseignant(eleveid, enfantN2.code)
             
-            // Contribution des notes N2 directes
-            const notesN2 = notes.filter(note => 
-                note.eleve_id === eleveid && 
-                note.competence_code === enfantN2.code
-            )
-            
-            notesN2.forEach(noteN2 => {
-                let pointsNote = 0
-                switch(noteN2.couleur.toLowerCase()) {
-                    case 'rouge': pointsNote = 5; break
-                    case 'jaune': pointsNote = 10; break
-                    case 'bleu': pointsNote = 15; break
-                    case 'vert': pointsNote = 20; break
-                    default: pointsNote = 0
+            if (positionnementEnseignant) {
+                // Utiliser le positionnement enseignant manuel
+                let pointsPositionnement = 0
+                switch(positionnementEnseignant.toLowerCase()) {
+                    case 'rouge': pointsPositionnement = 5; break
+                    case 'jaune': pointsPositionnement = 10; break
+                    case 'bleu': pointsPositionnement = 15; break
+                    case 'vert': pointsPositionnement = 20; break
+                    default: pointsPositionnement = 0
                 }
                 
-                if (pointsNote > 0) {
-                    pointsN2 += pointsNote
-                    contributionsN2 += 1
+                if (pointsPositionnement > 0) {
+                    pointsN2 = pointsPositionnement
+                    contributionsN2 = 1
                 }
-            })
-            
-            // Contribution des notes N3 rattachées à ce N2
-            const competencesN3Enfant = competencesN3.filter(c3 => c3.parent_code === enfantN2.code)
-            competencesN3Enfant.forEach(compN3 => {
-                const notesN3 = notes.filter(note => 
+            } else {
+                // Pas de positionnement enseignant, utiliser les notes comme avant
+                
+                // Contribution des notes N1 réparties sur ce N2
+                if (notesN1.length > 0) {
+                    notesN1.forEach(noteN1 => {
+                        let pointsNote = 0
+                        switch(noteN1.couleur.toLowerCase()) {
+                            case 'rouge': pointsNote = 5; break
+                            case 'jaune': pointsNote = 10; break
+                            case 'bleu': pointsNote = 15; break
+                            case 'vert': pointsNote = 20; break
+                            default: pointsNote = 0
+                        }
+                        
+                        if (pointsNote > 0) {
+                            // Répartition équitable entre tous les N2
+                            pointsN2 += pointsNote / enfantsN2.length
+                            contributionsN2 += 1 / enfantsN2.length
+                        }
+                    })
+                }
+                
+                // Contribution des notes N2 directes
+                const notesN2 = notes.filter(note => 
                     note.eleve_id === eleveid && 
-                    note.competence_code === compN3.code
+                    note.competence_code === enfantN2.code
                 )
                 
-                notesN3.forEach(noteN3 => {
+                notesN2.forEach(noteN2 => {
                     let pointsNote = 0
-                    switch(noteN3.couleur.toLowerCase()) {
+                    switch(noteN2.couleur.toLowerCase()) {
                         case 'rouge': pointsNote = 5; break
                         case 'jaune': pointsNote = 10; break
                         case 'bleu': pointsNote = 15; break
@@ -643,9 +645,34 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                         contributionsN2 += 1
                     }
                 })
-            })
+                
+                // Contribution des notes N3 rattachées à ce N2
+                const competencesN3Enfant = competencesN3.filter(c3 => c3.parent_code === enfantN2.code)
+                competencesN3Enfant.forEach(compN3 => {
+                    const notesN3 = notes.filter(note => 
+                        note.eleve_id === eleveid && 
+                        note.competence_code === compN3.code
+                    )
+                    
+                    notesN3.forEach(noteN3 => {
+                        let pointsNote = 0
+                        switch(noteN3.couleur.toLowerCase()) {
+                            case 'rouge': pointsNote = 5; break
+                            case 'jaune': pointsNote = 10; break
+                            case 'bleu': pointsNote = 15; break
+                            case 'vert': pointsNote = 20; break
+                            default: pointsNote = 0
+                        }
+                        
+                        if (pointsNote > 0) {
+                            pointsN2 += pointsNote
+                            contributionsN2 += 1
+                        }
+                    })
+                })
+            }
             
-            // Si ce N2 a des contributions, l'ajouter au total pondéré
+            // Ajouter au total pondéré si il y a des contributions (notes ou positionnement enseignant)
             if (contributionsN2 > 0) {
                 const moyenneN2 = pointsN2 / contributionsN2
                 totalPoints += moyenneN2 * enfantN2.poid
@@ -736,40 +763,105 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
             else if (moyennePoints >= 7.5) return 'jaune'
             else return 'rouge'
         } else {
-            // C'est une compétence N2 ou N3, logique normale
-            const notesCompetence = notes.filter(note => 
+            // C'est une compétence N2 ou N3, logique modifiée pour prendre en compte la distillation
+            
+            // D'abord chercher les notes directes sur cette compétence
+            const notesDirectes = notes.filter(note => 
                 note.eleve_id === eleveid && 
                 note.competence_code && 
                 note.competence_code.startsWith(codeCompetence)
             )
             
-            console.log(`Calcul positionnement pour ${codeCompetence}, élève ${eleveid}:`, notesCompetence)
+            let totalPoints = 0
+            let totalContributions = 0
             
-            if (notesCompetence.length === 0) return null
-            
-            // Conversion des couleurs en points (5, 10, 15, 20)
-            const points = notesCompetence.map(note => {
+            // Ajouter les notes directes
+            notesDirectes.forEach(note => {
+                let pointsNote = 0
                 switch(note.couleur.toLowerCase()) {
-                    case 'rouge': return 5
-                    case 'jaune': return 10
-                    case 'bleu': return 15
-                    case 'vert': return 20
-                    default: return 0
+                    case 'rouge': pointsNote = 5; break
+                    case 'jaune': pointsNote = 10; break
+                    case 'bleu': pointsNote = 15; break
+                    case 'vert': pointsNote = 20; break
+                    default: pointsNote = 0
+                }
+                
+                if (pointsNote > 0) {
+                    totalPoints += pointsNote
+                    totalContributions += 1
                 }
             })
             
-            const moyennePoints = points.reduce((sum, val) => sum + val, 0) / points.length
-            console.log(`Points:`, points, `Moyenne:`, moyennePoints)
+            // Si c'est une compétence N2, ajouter aussi les notes N3 enfants
+            const parts = codeCompetence.split('.')
+            if (parts.length === 2) { // C'est une N2 (ex: C01.1)
+                // Chercher les notes N3 rattachées à cette N2
+                const competencesN3Enfant = competencesN3.filter(c3 => c3.parent_code === codeCompetence)
+                competencesN3Enfant.forEach(compN3 => {
+                    const notesN3 = notes.filter(note => 
+                        note.eleve_id === eleveid && 
+                        note.competence_code === compN3.code
+                    )
+                    
+                    notesN3.forEach(noteN3 => {
+                        let pointsNote = 0
+                        switch(noteN3.couleur.toLowerCase()) {
+                            case 'rouge': pointsNote = 5; break
+                            case 'jaune': pointsNote = 10; break
+                            case 'bleu': pointsNote = 15; break
+                            case 'vert': pointsNote = 20; break
+                            default: pointsNote = 0
+                        }
+                        
+                        if (pointsNote > 0) {
+                            totalPoints += pointsNote
+                            totalContributions += 1
+                        }
+                    })
+                })
+                
+                // Chercher les notes N1 du parent à distiller
+                const codeParentN1 = parts[0] // ex: C01
+                const competenceParentN1 = competencesN1N2.find(comp => comp.code === codeParentN1)
+                
+                if (competenceParentN1) {
+                    // Chercher les notes N1 du parent
+                    const notesN1Parent = notes.filter(note => 
+                        note.eleve_id === eleveid && 
+                        note.competence_code === codeParentN1
+                    )
+                    
+                    // Distiller les notes N1 sur cette N2 (répartition équitable)
+                    const nombreEnfantsN2 = competenceParentN1.enfants.length
+                    
+                    notesN1Parent.forEach(noteN1 => {
+                        let pointsNote = 0
+                        switch(noteN1.couleur.toLowerCase()) {
+                            case 'rouge': pointsNote = 5; break
+                            case 'jaune': pointsNote = 10; break
+                            case 'bleu': pointsNote = 15; break
+                            case 'vert': pointsNote = 20; break
+                            default: pointsNote = 0
+                        }
+                        
+                        if (pointsNote > 0) {
+                            // Chaque note N1 est répartie équitablement sur tous les enfants N2
+                            totalPoints += pointsNote / nombreEnfantsN2
+                            totalContributions += 1 / nombreEnfantsN2
+                        }
+                    })
+                }
+            }
+            
+            if (totalContributions === 0) return null
+            
+            const moyennePoints = totalPoints / totalContributions
             
             // Conversion de la moyenne de points en couleur de positionnement
-            let couleurPositionnement
-            if (moyennePoints >= 17.5) couleurPositionnement = 'vert'     // 17.5-20 : vert
-            else if (moyennePoints >= 12.5) couleurPositionnement = 'bleu'     // 12.5-17.4 : bleu
-            else if (moyennePoints >= 7.5) couleurPositionnement = 'jaune'     // 7.5-12.4 : jaune
-            else couleurPositionnement = 'rouge'                               // 5-7.4 : rouge
-            
-            console.log(`Couleur positionnement:`, couleurPositionnement)
-            return couleurPositionnement
+            if (moyennePoints >= 17.5) return 'vert'
+            else if (moyennePoints >= 12.5) return 'bleu'
+            else if (moyennePoints >= 7.5) return 'jaune'
+            else return 'rouge'
         }
     }
 
@@ -834,10 +926,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         
         if (competencesBloc.length === 0) return null
         
-        let totalPoints = 0
-        let totalPoids = 0
-        let nombreNotes = 0
-        
         // Grouper les compétences N2 par leur parent N1
         const competencesParParent = {}
         competencesBloc.forEach(competence => {
@@ -851,94 +939,39 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
             competencesParParent[parentCode].enfants.push(competence)
         })
         
-        // Pour chaque groupe de compétences N1
+        let totalPoints = 0
+        let totalPoids = 0
+        let nombreCompetences = 0
+        
+        // Pour chaque compétence N1 du bloc, utiliser le calcul pondéré
         Object.values(competencesParParent).forEach(groupe => {
             const parentCode = groupe.parent.code
-            const enfantsN2 = groupe.enfants
+            const positionnementPondere = calculerPositionnementPondere(parentCode, eleveId)
             
-            // Chercher les notes directes sur le niveau N1
-            const notesN1 = notes.filter(note => 
-                note.eleve_id === eleveId && 
-                note.competence_code === parentCode
-            )
-            
-            // Si il y a des notes N1, les répartir équitablement sur chaque N2
-            if (notesN1.length > 0) {
-                const contributionN1ParN2 = notesN1.length / enfantsN2.length
+            if (positionnementPondere) {
+                // Convertir la couleur en points
+                let pointsCompetence = 0
+                switch(positionnementPondere.toLowerCase()) {
+                    case 'rouge': pointsCompetence = 5; break
+                    case 'jaune': pointsCompetence = 10; break
+                    case 'bleu': pointsCompetence = 15; break
+                    case 'vert': pointsCompetence = 20; break
+                    default: pointsCompetence = 0
+                }
                 
-                enfantsN2.forEach(competenceN2 => {
-                    // Traiter les notes N1 réparties sur ce N2
-                    notesN1.forEach(noteN1 => {
-                        let pointsNote = 0
-                        switch(noteN1.couleur.toLowerCase()) {
-                            case 'rouge': pointsNote = 5; break
-                            case 'jaune': pointsNote = 10; break
-                            case 'bleu': pointsNote = 15; break
-                            case 'vert': pointsNote = 20; break
-                            default: pointsNote = 0
-                        }
-                        
-                        if (pointsNote > 0) {
-                            // Contribution pondérée répartie équitablement
-                            const contributionPonderee = (pointsNote * competenceN2.poid) / enfantsN2.length
-                            totalPoints += contributionPonderee
-                            totalPoids += competenceN2.poid / enfantsN2.length
-                            nombreNotes += contributionN1ParN2
-                        }
-                    })
+                if (pointsCompetence > 0) {
+                    // Pour le bilan de bloc, on peut donner un poids égal à chaque compétence N1
+                    // ou utiliser la somme des poids de ses enfants N2
+                    const poidsCompetence = groupe.enfants.reduce((sum, enfant) => sum + enfant.poid, 0)
                     
-                    // Traiter aussi les notes directes sur le N2
-                    const notesN2 = notes.filter(note => 
-                        note.eleve_id === eleveId && 
-                        note.competence_code === competenceN2.code
-                    )
-                    
-                    notesN2.forEach(note => {
-                        let pointsNote = 0
-                        switch(note.couleur.toLowerCase()) {
-                            case 'rouge': pointsNote = 5; break
-                            case 'jaune': pointsNote = 10; break
-                            case 'bleu': pointsNote = 15; break
-                            case 'vert': pointsNote = 20; break
-                            default: pointsNote = 0
-                        }
-                        
-                        if (pointsNote > 0) {
-                            totalPoints += pointsNote * competenceN2.poid
-                            totalPoids += competenceN2.poid
-                            nombreNotes++
-                        }
-                    })
-                })
-            } else {
-                // Pas de notes N1, traiter seulement les notes N2 normalement
-                enfantsN2.forEach(competenceN2 => {
-                    const notesN2 = notes.filter(note => 
-                        note.eleve_id === eleveId && 
-                        note.competence_code === competenceN2.code
-                    )
-                    
-                    notesN2.forEach(note => {
-                        let pointsNote = 0
-                        switch(note.couleur.toLowerCase()) {
-                            case 'rouge': pointsNote = 5; break
-                            case 'jaune': pointsNote = 10; break
-                            case 'bleu': pointsNote = 15; break
-                            case 'vert': pointsNote = 20; break
-                            default: pointsNote = 0
-                        }
-                        
-                        if (pointsNote > 0) {
-                            totalPoints += pointsNote * competenceN2.poid
-                            totalPoids += competenceN2.poid
-                            nombreNotes++
-                        }
-                    })
-                })
+                    totalPoints += pointsCompetence * poidsCompetence
+                    totalPoids += poidsCompetence
+                    nombreCompetences++
+                }
             }
         })
         
-        if (nombreNotes === 0 || totalPoids === 0) return null
+        if (nombreCompetences === 0 || totalPoids === 0) return null
         
         const moyennePonderee = totalPoints / totalPoids
         
@@ -1128,41 +1161,77 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                             )}
                                                         </td>
                                                         <td className="cell-positionnement">
-                                                            {ligne.positionnement ? (
-                                                                <div 
-                                                                    style={{
-                                                                        display: 'inline-block',
-                                                                        width: '20px',
-                                                                        height: '20px',
-                                                                        borderRadius: '50%',
-                                                                        backgroundColor: getCouleurCss(ligne.positionnement),
-                                                                        border: '2px solid #333',
-                                                                        cursor: 'pointer'
-                                                                    }}
-                                                                    title={`Positionnement: ${ligne.positionnement}`}
-                                                                    onClick={() => {
-                                                                        // Le positionnement enseignant n'est disponible que pour les compétences N2
-                                                                        const codeCompetence = ligne.niveau2?.code
-                                                                        if (codeCompetence) {
-                                                                            handleClickPositionnement(eleve, codeCompetence)
-                                                                        }
-                                                                    }}
-                                                                ></div>
-                                                            ) : (
-                                                                <span 
-                                                                    style={{fontSize: '0.8em', color: '#999', cursor: 'pointer'}}
-                                                                    title="Cliquer pour définir un positionnement"
-                                                                    onClick={() => {
-                                                                        // Le positionnement enseignant n'est disponible que pour les compétences N2
-                                                                        const codeCompetence = ligne.niveau2?.code
-                                                                        if (codeCompetence) {
-                                                                            handleClickPositionnement(eleve, codeCompetence)
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    + Positionner
-                                                                </span>
-                                                            )}
+                                                            <div style={{ display: 'flex', gap: '5px', alignItems: 'center', justifyContent: 'center' }}>
+                                                                {/* Pastille automatique seulement pour les compétences N2 */}
+                                                                {ligne.niveau2?.code && (
+                                                                    <div 
+                                                                        style={{
+                                                                            display: 'inline-block',
+                                                                            width: '20px',
+                                                                            height: '20px',
+                                                                            borderRadius: '50%',
+                                                                            backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris'),
+                                                                            border: '2px solid #333',
+                                                                            cursor: 'pointer',
+                                                                            position: 'relative',
+                                                                            fontSize: '10px',
+                                                                            color: 'white',
+                                                                            fontWeight: 'bold',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center'
+                                                                        }}
+                                                                        title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
+                                                                    >
+                                                                        A
+                                                                    </div>
+                                                                )}
+                                                                
+                                                                {/* Pastille enseignant si elle existe ET si c'est une compétence N2 */}
+                                                                {ligne.positionnementEnseignant && ligne.niveau2?.code ? (
+                                                                    <div 
+                                                                        style={{
+                                                                            display: 'inline-block',
+                                                                            width: '20px',
+                                                                            height: '20px',
+                                                                            borderRadius: '50%',
+                                                                            backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
+                                                                            border: '2px solid #333',
+                                                                            cursor: 'pointer',
+                                                                            fontSize: '10px',
+                                                                            color: 'white',
+                                                                            fontWeight: 'bold',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center'
+                                                                        }}
+                                                                        title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
+                                                                        onClick={() => {
+                                                                            // Le positionnement enseignant n'est disponible que pour les compétences N2
+                                                                            const codeCompetence = ligne.niveau2?.code
+                                                                            if (codeCompetence) {
+                                                                                handleClickPositionnement(eleve, codeCompetence)
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        E
+                                                                    </div>
+                                                                ) : (
+                                                                    // Bouton pour créer un positionnement enseignant (seulement pour N2)
+                                                                    ligne.niveau2?.code && (
+                                                                        <button 
+                                                                            className="btn-positionner"
+                                                                            style={{marginLeft: '5px'}}
+                                                                            title="Cliquer pour définir un positionnement enseignant"
+                                                                            onClick={() => {
+                                                                                handleClickPositionnement(eleve, ligne.niveau2.code)
+                                                                            }}
+                                                                        >
+                                                                            + Positionner
+                                                                        </button>
+                                                                    )
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -1407,41 +1476,66 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                             )}
                                         </td>
                                         <td className="cell-positionnement">
-                                            {ligne.positionnement ? (
-                                                <div 
-                                                    style={{
-                                                        display: 'inline-block',
-                                                        width: '20px',
-                                                        height: '20px',
-                                                        borderRadius: '50%',
-                                                        backgroundColor: getCouleurCss(ligne.positionnement),
-                                                        border: '2px solid #333',
-                                                        cursor: 'pointer'
-                                                    }}
-                                                    title={`Positionnement: ${ligne.positionnement}`}
-                                                    onClick={() => {
-                                                        // Le positionnement enseignant n'est disponible que pour les compétences N2
-                                                        const codeCompetence = ligne.niveau2?.code
-                                                        if (codeCompetence) {
-                                                            handleClickPositionnement(eleve, codeCompetence)
-                                                        }
-                                                    }}
-                                                ></div>
-                                            ) : (
-                                                <span 
-                                                    style={{fontSize: '0.8em', color: '#999', cursor: 'pointer'}}
-                                                    title="Cliquer pour définir un positionnement"
-                                                    onClick={() => {
-                                                        // Le positionnement enseignant n'est disponible que pour les compétences N2
-                                                        const codeCompetence = ligne.niveau2?.code
-                                                        if (codeCompetence) {
-                                                            handleClickPositionnement(eleve, codeCompetence)
-                                                        }
-                                                    }}
-                                                >
-                                                    + Positionner
-                                                </span>
-                                            )}
+                                            <div style={{ display: 'flex', gap: '5px', alignItems: 'center', justifyContent: 'center' }}>
+                                                {/* Pastille automatique seulement pour les compétences N2 */}
+                                                {ligne.niveau2?.code && (
+                                                    <div 
+                                                        style={{
+                                                            display: 'inline-block',
+                                                            width: '20px',
+                                                            height: '20px',
+                                                            borderRadius: '50%',
+                                                            backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris'),
+                                                            border: '2px solid #333',
+                                                            cursor: 'pointer',
+                                                            position: 'relative',
+                                                            fontSize: '10px',
+                                                            color: 'white',
+                                                            fontWeight: 'bold',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}
+                                                        title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
+                                                    >
+                                                        A
+                                                    </div>
+                                                )}
+                                                
+                                                {/* Pastille enseignant si elle existe ET si c'est une compétence N2 */}
+                                                {ligne.positionnementEnseignant && ligne.niveau2?.code ? (
+                                                    <div 
+                                                        style={{
+                                                            display: 'inline-block',
+                                                            width: '20px',
+                                                            height: '20px',
+                                                            borderRadius: '50%',
+                                                            backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
+                                                            border: '2px solid #333',
+                                                            cursor: 'pointer',
+                                                            fontSize: '10px',
+                                                            color: 'white',
+                                                            fontWeight: 'bold',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}
+                                                        title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
+                                                        onClick={() => {
+                                                            // Le positionnement enseignant n'est disponible que pour les compétences N2
+                                                            const codeCompetence = ligne.niveau2?.code
+                                                            if (codeCompetence) {
+                                                                handleClickPositionnement(eleve, codeCompetence)
+                                                            }
+                                                        }}
+                                                    >
+                                                        E
+                                                    </div>
+                                                ) : (
+                                                    // En mode filtré, pas de positionnement manuel
+                                                    null
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                     )
