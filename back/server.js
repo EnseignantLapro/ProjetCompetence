@@ -38,26 +38,36 @@ db.serialize(() => {
   prof_id INTEGER
 )`)
 
+    db.run(`CREATE TABLE IF NOT EXISTS competences_n3 (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  parent_code TEXT NOT NULL,
+  code TEXT NOT NULL,
+  nom TEXT NOT NULL
+)`)
+
 
 
 })
 
 // Routes API
 
-
-
-
-// GET : liste des niveau 3 par parent
+// GET : liste des niveau 3 par parent ou toutes si pas de parent_code
 app.get('/competences-n3', (req, res) => {
     const { parent_code } = req.query
-    db.all(
-        'SELECT * FROM competences_n3 WHERE parent_code = ? ORDER BY code',
-        [parent_code],
-        (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message })
-            res.json(rows)
-        }
-    )
+    let query = 'SELECT * FROM competences_n3'
+    let params = []
+    
+    if (parent_code) {
+        query += ' WHERE parent_code = ?'
+        params.push(parent_code)
+    }
+    
+    query += ' ORDER BY code'
+    
+    db.all(query, params, (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message })
+        res.json(rows)
+    })
 })
 
 app.post('/competences-n3', (req, res) => {

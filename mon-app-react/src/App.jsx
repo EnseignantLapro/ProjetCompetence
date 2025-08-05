@@ -159,13 +159,13 @@ function App() {
             </p>
             <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>
               {!competenceChoisie.niveau3 && !competenceChoisie.niveau2 && (
-                <em>📝 Vous pouvez noter la compétence {competenceChoisie.niveau1} ET voir toutes ses sous-compétences</em>
+                <em>📝 Vous pouvez évaluer la compétence {competenceChoisie.niveau1} ET voir toutes ses sous-compétences</em>
               )}
               {competenceChoisie.niveau2 && !competenceChoisie.niveau3 && (
-                <em>📝 Vous pouvez noter cette sous-compétence {competenceChoisie.niveau2} ET voir toutes ses sous-compétences</em>
+                <em>📝 Vous pouvez évaluer cette sous-compétence {competenceChoisie.niveau2} ET voir toutes les critères d'évaluation déjà évalués</em>
               )}
               {competenceChoisie.niveau3 && (
-                <em>📝  Notation uniquement pour {competenceChoisie.niveau3}</em>
+                <em>📝  Évaluation uniquement pour {competenceChoisie.niveau3}</em>
               )}
             </div>
             <button onClick={() => {
@@ -174,7 +174,7 @@ function App() {
               // Les valeurs restent en localStorage pour que ChoixCompetence les récupère
               // Forcer le rechargement du composant ChoixCompetence
               setChoixCompetenceKey(prev => prev + 1)
-            }}>Changer</button>
+            }}>Changer la compétence à évaluer</button>
           </div>
 
 

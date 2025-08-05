@@ -117,9 +117,9 @@ useEffect(() => {
       {/* Niveau 3 */}
       {niveau2 && (
         <>
-          <label>Compétence Additionnelle (optionnel) :</label>
+          <label>Critère d'évaluation (optionnel) :</label>
           <select value={niveau3} onChange={e => setNiveau3(e.target.value)}>
-            <option value="">-- Laisser vide pour noter la compétence de niveau 2 --</option>
+            <option value="">-- Laisser vide pour évaluer la sous-compétence uniquement --</option>
             {niveau3EnBase.map(c => (
               <option key={c.code} value={c.code}>{c.code} — {c.nom}</option>
             ))}
