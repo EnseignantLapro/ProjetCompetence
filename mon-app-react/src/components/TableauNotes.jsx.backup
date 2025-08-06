@@ -12,21 +12,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
     const [modalOuvert, setModalOuvert] = useState(false)
     const [eleveActuel, setEleveActuel] = useState(null)
     const [noteDetail, setNoteDetail] = useState(null)
-    const [ouvertureModalEnCours, setOuvertureModalEnCours] = useState(false) // Empêcher les popups pendant l'ouverture de modal
 
     // États pour la modal de positionnement enseignant
     const [modalPositionnementOuvert, setModalPositionnementOuvert] = useState(false)
     const [elevePositionnement, setElevePositionnement] = useState(null)
     const [competencePositionnement, setCompetencePositionnement] = useState(null)
-
-    // État pour gérer les blocs fermés/ouverts (par défaut tous ouverts)
-    const [blocsFermes, setBlocsFermes] = useState(new Set())
-    
-    // État pour gérer l'affichage du tableau en mode filtré (masqué par défaut)
-    const [tableauVisible, setTableauVisible] = useState(false)
-    
-    // État pour tracker les dernières évaluations directes par élève/compétence
-    const [dernieresEvaluationsDirectes, setDernieresEvaluationsDirectes] = useState(new Map())
 
     const codeCompetence = competenceChoisie
         ? competenceChoisie.niveau3 || competenceChoisie.niveau2 || competenceChoisie.niveau1
@@ -51,11 +41,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         fetch('http://localhost:3001/competences-n3').then(res => res.json()).then(setCompetencesN3)
         fetch('http://localhost:3001/positionnements').then(res => res.json()).then(setPositionnementsEnseignant)
     }, [classeChoisie])
-
-    // Réinitialiser l'affichage du tableau quand la compétence change
-    useEffect(() => {
-        setTableauVisible(false)
-    }, [competenceChoisie])
 
     const getCouleur = (eleveId) => {
         const note = notes.find(n => n.eleve_id === eleveId && n.competence_code === codeCompetence)
@@ -83,13 +68,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         if (competenceCode.startsWith(codeCompetence + '.')) return true
         
         return false
-    }
-
-    // Fonction pour vérifier si le code sélectionné est une compétence N1
-    const isCompetenceN1 = (competenceCode) => {
-        if (!competenceCode) return false
-        // Une compétence N1 ne contient pas de point
-        return !competenceCode.includes('.')
     }
 
     // Fonction pour obtenir toutes les notes visibles pour un élève
@@ -129,73 +107,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         // Remplace la note s'il y en avait une (utilise la compétence de la note elle-même)
         const autres = notes.filter(n => !(n.eleve_id === nouvelleNote.eleve_id && n.competence_code === nouvelleNote.competence_code))
         setNotes([...autres, nouvelleNote])
-    }
-
-    // Fonction pour ajouter directement une note avec une couleur (mode filtré)
-    const ajouterNoteDirecte = async (eleve, competenceCode, couleur) => {
-        try {
-            const cleEleveCompetence = `${eleve.id}-${competenceCode}`
-            const derniereEvaluationDirecte = dernieresEvaluationsDirectes.get(cleEleveCompetence)
-            
-            if (derniereEvaluationDirecte) {
-                // Modifier la dernière évaluation directe existante
-                const response = await fetch(`http://localhost:3001/notes/${derniereEvaluationDirecte.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        ...derniereEvaluationDirecte,
-                        couleur: couleur,
-                        date: new Date().toISOString().split('T')[0]
-                    })
-                })
-
-                if (response.ok) {
-                    // Mettre à jour l'état local
-                    const evaluationModifiee = { ...derniereEvaluationDirecte, couleur }
-                    setDernieresEvaluationsDirectes(prev => new Map(prev.set(cleEleveCompetence, evaluationModifiee)))
-                    
-                    // Recharger toutes les notes depuis la base
-                    const notesResponse = await fetch('http://localhost:3001/notes')
-                    const toutesLesNotes = await notesResponse.json()
-                    setNotes(toutesLesNotes)
-                }
-            } else {
-                // Créer une nouvelle évaluation
-                const nouvelleNote = {
-                    eleve_id: eleve.id,
-                    competence_code: competenceCode,
-                    couleur: couleur,
-                    date: new Date().toISOString().split('T')[0],
-                    prof_id: 1 // À adapter selon votre système d'authentification
-                }
-
-                const response = await fetch('http://localhost:3001/notes', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(nouvelleNote)
-                })
-
-                if (response.ok) {
-                    const noteAjoutee = await response.json()
-                    // Tracker cette nouvelle évaluation comme la dernière directe
-                    setDernieresEvaluationsDirectes(prev => new Map(prev.set(cleEleveCompetence, noteAjoutee)))
-                    
-                    // Recharger toutes les notes depuis la base
-                    const notesResponse = await fetch('http://localhost:3001/notes')
-                    const toutesLesNotes = await notesResponse.json()
-                    setNotes(toutesLesNotes)
-                }
-            }
-        } catch (error) {
-            console.error('Erreur lors de l\'ajout/modification de la note:', error)
-        }
-    }
-
-    // Fonction pour obtenir la couleur de la dernière évaluation directe
-    const getDerniereCouleurDirecte = (eleveId, competenceCode) => {
-        const cleEleveCompetence = `${eleveId}-${competenceCode}`
-        const derniereEvaluation = dernieresEvaluationsDirectes.get(cleEleveCompetence)
-        return derniereEvaluation ? derniereEvaluation.couleur : null
     }
 
     const handleDeleteNote = async (noteId) => {
@@ -493,11 +404,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
 
         // Parcourir toutes les compétences du référentiel
         competencesN1N2.forEach(comp1 => {
-            // En mode filtré, ne traiter que la compétence N1 sélectionnée ou toutes si aucune sélection
-            if (codeCompetence && !isCompetenceInHierarchy(comp1.code)) {
-                return // Ignorer cette compétence N1 si elle ne correspond pas au filtre
-            }
-
             // Initialiser le niveau 1
             hierarchie[comp1.code] = {
                 code: comp1.code,
@@ -508,11 +414,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
 
             // Ajouter les compétences de niveau 2
             comp1.enfants.forEach(comp2 => {
-                // En mode filtré, vérifier si cette N2 doit être incluse
-                if (codeCompetence && !isCompetenceInHierarchy(comp2.code)) {
-                    return // Ignorer cette compétence N2 si elle ne correspond pas au filtre
-                }
-
                 hierarchie[comp1.code].sousNiveaux[comp2.code] = {
                     code: comp2.code,
                     nom: comp2.nom,
@@ -523,17 +424,14 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                 // Ajouter les compétences de niveau 3 pour ce niveau 2
                 const comp3List = competencesN3.filter(c3 => c3.parent_code === comp2.code)
                 comp3List.forEach(comp3 => {
-                    // En mode filtré, vérifier si cette N3 doit être incluse
-                    if (codeCompetence && !isCompetenceInHierarchy(comp3.code)) {
-                        return // Ignorer cette compétence N3 si elle ne correspond pas au filtre
-                    }
-
                     const notesComp3 = notesEleve.filter(note => note.competence_code === comp3.code)
-                    // En mode complet, ajouter toutes les compétences N3, même sans évaluation
-                    hierarchie[comp1.code].sousNiveaux[comp2.code].niveau3[comp3.code] = {
-                        code: comp3.code,
-                        nom: comp3.nom,
-                        notes: notesComp3
+                    // Ne pas ajouter les compétences niveau 3 sans évaluation
+                    if (notesComp3.length > 0) {
+                        hierarchie[comp1.code].sousNiveaux[comp2.code].niveau3[comp3.code] = {
+                            code: comp3.code,
+                            nom: comp3.nom,
+                            notes: notesComp3
+                        }
                     }
                 })
             })
@@ -677,10 +575,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         
         const moyennePoints = points.reduce((sum, val) => sum + val, 0) / points.length
         
-        // Conversion de la moyenne de points en couleur de positionnement (échelle 5-20)
-        if (moyennePoints >= 17.5) return 'vert'
-        else if (moyennePoints >= 12.5) return 'bleu'
-        else if (moyennePoints >= 7.5) return 'jaune'
+        // Conversion de la moyenne de points en couleur de positionnement (échelle 0-3)
+        if (moyennePoints >= 2.5) return 'vert'
+        else if (moyennePoints >= 1.5) return 'bleu'
+        else if (moyennePoints >= 0.5) return 'jaune'
         else return 'rouge'
     }
 
@@ -717,10 +615,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                     case 'jaune': pointsPositionnement = 1; break
                     case 'bleu': pointsPositionnement = 2; break
                     case 'vert': pointsPositionnement = 3; break
-                    default: pointsPositionnement = -1  // Valeur invalide pour ignorer
+                    default: pointsPositionnement = 0
                 }
                 
-                if (pointsPositionnement >= 0) {  // Accepter rouge (0) aussi, mais pas les invalides (-1)
+                if (pointsPositionnement > 0) {
                     // Ajouter directement au total pondéré avec le poids du N2
                     totalPoints += pointsPositionnement * enfantN2.poid
                     totalPoids += enfantN2.poid
@@ -880,29 +778,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                         totalPoints += pointsNote
                         totalContributions += 1
                     }
-                })
-                
-                // Ajouter aussi les notes N3 rattachées à chaque N2
-                const competencesN3Enfant = competencesN3.filter(c3 => c3.parent_code === enfantN2.code)
-                competencesN3Enfant.forEach(compN3 => {
-                    const notesN3 = notes.filter(note => 
-                        note.eleve_id === eleveid && 
-                        note.competence_code === compN3.code
-                    )
-                    
-                    notesN3.forEach(noteN3 => {
-                        let pointsNote = 0
-                        switch(noteN3.couleur.toLowerCase()) {
-                            case 'rouge': pointsNote = 0; break
-                            case 'jaune': pointsNote = 1; break
-                            case 'bleu': pointsNote = 2; break
-                            case 'vert': pointsNote = 3; break
-                            default: pointsNote = 0
-                        }
-                        
-                        totalPoints += pointsNote
-                        totalContributions += 1
-                    })
                 })
             })
             
@@ -1099,7 +974,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
             const parentCode = groupe.parent.code
             const positionnementPondere = calculerPositionnementPondere(parentCode, eleveId)
             
-            if (positionnementPondere && positionnementPondere.moyenne !== undefined) {
+            if (positionnementPondere && positionnementPondere.moyenne) {
                 // Utiliser directement la moyenne pondérée numérique
                 const pointsCompetence = positionnementPondere.moyenne
                 const poidsN1 = groupe.parent.poid // Utiliser le poids N1 défini dans le référentiel
@@ -1120,19 +995,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         if (moyennePonderee >= 1.5) return { couleur: 'bleu', moyenne: moyennePonderee }
         if (moyennePonderee >= 0.5) return { couleur: 'jaune', moyenne: moyennePonderee }
         return { couleur: 'rouge', moyenne: moyennePonderee }
-    }
-
-    // Fonction pour toggle l'affichage d'un bloc
-    const toggleBloc = (numeroBloc) => {
-        setBlocsFermes(prev => {
-            const nouveauxBlocsFermes = new Set(prev)
-            if (nouveauxBlocsFermes.has(numeroBloc)) {
-                nouveauxBlocsFermes.delete(numeroBloc)
-            } else {
-                nouveauxBlocsFermes.add(numeroBloc)
-            }
-            return nouveauxBlocsFermes
-        })
     }
 
     const getTitreNotation = () => {
@@ -1229,65 +1091,44 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                     // Afficher un bloc vide si pas de notes
                                     return (
                                         <div key={numeroBloc} className="bloc-section-eleve" >
-                                            <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`}>
-                                                <span 
-                                                    onClick={() => toggleBloc(parseInt(numeroBloc))}
-                                                    style={{ cursor: 'pointer', marginRight: '10px', fontSize: '16px' }}
-                                                    title={blocsFermes.has(parseInt(numeroBloc)) ? 'Ouvrir le bloc' : 'Fermer le bloc'}
-                                                >
-                                                    {blocsFermes.has(parseInt(numeroBloc)) ? '▶️' : '🔽'}
-                                                </span>
-                                                {getNomBloc(parseInt(numeroBloc))}
-                                            </h4>
-                                            {!blocsFermes.has(parseInt(numeroBloc)) && (
-                                                <div className="aucune-note-bloc">
-                                                    <em>Aucune évaluation pour ce bloc</em>
-                                                </div>
-                                            )}
+                                            <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`}>{getNomBloc(parseInt(numeroBloc))}</h4>
+                                            <div className="aucune-note-bloc">
+                                                <em>Aucune évaluation pour ce bloc</em>
+                                            </div>
                                         </div>
                                     )
                                 }
                                 
                                 return (
                                     <div key={numeroBloc} className="bloc-section-eleve">
-                                        <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`}>
-                                            <span 
-                                                onClick={() => toggleBloc(parseInt(numeroBloc))}
-                                                style={{ cursor: 'pointer', marginRight: '10px', fontSize: '16px' }}
-                                                title={blocsFermes.has(parseInt(numeroBloc)) ? 'Ouvrir le bloc' : 'Fermer le bloc'}
-                                            >
-                                                {blocsFermes.has(parseInt(numeroBloc)) ? '▶️' : '🔽'}
-                                            </span>
-                                            {getNomBloc(parseInt(numeroBloc))}
-                                        </h4>
+                                        <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`}>{getNomBloc(parseInt(numeroBloc))}</h4>
 
-                                        {!blocsFermes.has(parseInt(numeroBloc)) && (
-                                            <table className="tableau-hierarchique">
+                                        <table className="tableau-hierarchique">
                                             <thead>
                                                 <tr>
                                                     <th>Compétence principale</th>
                                                     <th>Sous-compétence</th>
                                                     <th>Critères d'évaluations</th>
                                                     <th>Evaluations</th>
-                                                    <th>Positionnement Auto/Prof</th>
+                                                    <th>Positionnement Enseignant</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {/* Afficher les lignes normales (sans les bilans par compétence) */}
                                                 {lignesBloc.filter(ligne => !ligne.estBilan).map((ligne, index) => (
-                                                        <tr key={index} 
-                                                            style={{ 
-                                                                backgroundColor: ligne.niveau1 ? getCouleurFondCompetence(ligne.niveau1.code) : 'transparent' 
-                                                            }}>
-                                                            <td className="cell-niveau1">
-                                                                {ligne.niveau1 && (
-                                                                    <div>
-                                                                        <strong>{ligne.niveau1.code}</strong>
-                                                                        <br />
-                                                                        <small>{ligne.niveau1.nom}</small>
-                                                                    </div>
-                                                                )}
-                                                            </td>
+                                                    <tr key={index} 
+                                                        style={{ 
+                                                            backgroundColor: ligne.niveau1 ? getCouleurFondCompetence(ligne.niveau1.code) : 'transparent' 
+                                                        }}>
+                                                        <td className="cell-niveau1">
+                                                            {ligne.niveau1 && (
+                                                                <div>
+                                                                    <strong>{ligne.niveau1.code}</strong>
+                                                                    <br />
+                                                                    <small>{ligne.niveau1.nom}</small>
+                                                                </div>
+                                                            )}
+                                                        </td>
                                                         <td className="cell-niveau2">
                                                             {ligne.niveau2 && (
                                                                 <div>
@@ -1308,7 +1149,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                         </td>
                                                         <td className="cell-notes-hierarchique">
                                                             {ligne.notes.length > 0 ? (
-                                                                <div style={{ display: 'flex', gap: '3px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                                <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
                                                                     {ligne.notes.map((note, i) => (
                                                                         <NotePastille 
                                                                             key={i} 
@@ -1498,50 +1339,47 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                         </td>
                                                     </tr>
                                                 ))}
+                                                
+                                                {/* Ajouter le bilan du bloc */}
+                                                {(() => {
+                                                    const bilanBloc = calculerBilanBloc(parseInt(numeroBloc), eleve.id)
+                                                    if (!bilanBloc) return null
+                                                    
+                                                    return (
+                                                        <tr key="bilan-bloc" 
+                                                            className={`bloc-section-bilan bloc-section-bilan${parseInt(numeroBloc)}`}>
+                                                           
+                                                            <td className="cell-niveau1"></td>
+                                                            <td className="cell-niveau2"></td>
+                                                            <td className="cell-niveau3">
+                                                                <div style={{ fontStyle: 'italic', color: '#667eea', fontWeight: 'bold' }}>
+                                                                    <strong>🏆 BILAN {getNomBloc(parseInt(numeroBloc))}</strong>
+                                                                </div>
+                                                            </td>
+                                                            <td className="cell-notes-hierarchique">
+                                                                <span style={{ fontSize: '0.85em', color: '#667eea', fontWeight: 'bold' }}>
+                                                                    Moyenne: {(bilanBloc.moyenne * 20/3).toFixed(1)}/20
+                                                                </span>
+                                                            </td>
+                                                            <td className="cell-positionnement">
+                                                                <div 
+                                                                    style={{
+                                                                        display: 'inline-block',
+                                                                        width: '24px',
+                                                                        height: '24px',
+                                                                        borderRadius: '50%',
+                                                                        backgroundColor: getCouleurCss(bilanBloc.couleur),
+                                                                        border: '3px solid #667eea',
+                                                                        cursor: 'pointer'
+                                                                    }}
+                                                                    title={`Positionnement bloc: ${bilanBloc.couleur} (${(bilanBloc.moyenne * 20/3).toFixed(1)}/20)`}
+                                                                ></div>
+                                                            </td>
+                                                        </tr>
+                                                    )
+                                                })()}
                                             </tbody>
                                         </table>
-                                        )}
-
-                                        {/* Bilan du bloc - toujours affiché */}
-                                        {(() => {
-                                            const bilanBloc = calculerBilanBloc(parseInt(numeroBloc), eleve.id)
-                                            if (!bilanBloc) return null
-                                            
-                                            return (
-                                                <div className={`bloc-bilan-externe bloc-bilan-externe${parseInt(numeroBloc)}`}
-                                                     style={{
-                                                         display: 'flex',
-                                                         alignItems: 'center',
-                                                         justifyContent: 'space-between',
-                                                         padding: '10px 15px',
-                                                         backgroundColor: '#f8f9ff',
-                                                         border: '2px solid #667eea',
-                                                         borderRadius: '8px',
-                                                         marginTop: '10px',
-                                                         fontSize: '14px',
-                                                         fontWeight: 'bold'
-                                                     }}>
-                                                    <div style={{ color: '#667eea', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                        <span>🏆 BILAN {getNomBloc(parseInt(numeroBloc))}</span>
-                                                        <span style={{ fontSize: '13px' }}>
-                                                            Moyenne: {(bilanBloc.moyenne * 20/3).toFixed(1)}/20
-                                                        </span>
-                                                    </div>
-                                                    <div 
-                                                        style={{
-                                                            display: 'inline-block',
-                                                            width: '28px',
-                                                            height: '28px',
-                                                            borderRadius: '50%',
-                                                            backgroundColor: getCouleurCss(bilanBloc.couleur),
-                                                            border: '3px solid #667eea',
-                                                            cursor: 'pointer'
-                                                        }}
-                                                        title={`Positionnement bloc: ${bilanBloc.couleur} (${(bilanBloc.moyenne * 20/3).toFixed(1)}/20)`}
-                                                    ></div>
-                                                </div>
-                                            )
-                                        })()}
                                     </div>
                                 )
                             })}
@@ -1552,9 +1390,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                 /* Mode compétence spécifique - affichage classique */
                 eleves.map(eleve => {
                 const hierarchie = organiserNotesParHierarchie(eleve.id)
-                // Activer le mode complet si on sélectionne une compétence N1 pour voir toutes les N2
-                const modeComplet = isCompetenceN1(codeCompetence)
-                const lignes = genererLignesTableauAvecBilan(hierarchie, eleve.id, modeComplet)
+                const lignes = genererLignesTableauAvecBilan(hierarchie, eleve.id)
                 
                 if (lignes.length === 0 && codeCompetence) {
                     // Afficher l'élève même s'il n'a pas de notes pour la compétence sélectionnée
@@ -1578,88 +1414,14 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                         <p>Classe: {getNomClasse(eleve.classe_id)}</p>
                                     </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                                    {/* Boutons de couleur directs pour éviter la popup */}
-                                    {(() => {
-                                        const derniereCouleur = getDerniereCouleurDirecte(eleve.id, codeCompetence)
-                                        return (
-                                            <>
-                                                <button 
-                                                    className="btn-noter"
-                                                    style={{
-                                                        backgroundColor: '#e74c3c',
-                                                        color: 'white',
-                                                        fontSize: '11px',
-                                                        padding: '6px 10px',
-                                                        minWidth: '80px',
-                                                        opacity: derniereCouleur && derniereCouleur !== 'rouge' ? 0.4 : 1,
-                                                        boxShadow: derniereCouleur === 'rouge' ? '0 0 8px rgba(231, 76, 60, 0.6)' : 'none',
-                                                        transform: derniereCouleur === 'rouge' ? 'scale(1.05)' : 'scale(1)',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'rouge')}
-                                                    disabled={!codeCompetence}
-                                                >
-                                                    Non acquis
-                                                </button>
-                                                <button 
-                                                    className="btn-noter"
-                                                    style={{
-                                                        backgroundColor: '#f1c40f',
-                                                        color: 'white',
-                                                        fontSize: '11px',
-                                                        padding: '6px 10px',
-                                                        minWidth: '80px',
-                                                        opacity: derniereCouleur && derniereCouleur !== 'jaune' ? 0.4 : 1,
-                                                        boxShadow: derniereCouleur === 'jaune' ? '0 0 8px rgba(241, 196, 15, 0.6)' : 'none',
-                                                        transform: derniereCouleur === 'jaune' ? 'scale(1.05)' : 'scale(1)',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'jaune')}
-                                                    disabled={!codeCompetence}
-                                                >
-                                                    Maîtrise fragile
-                                                </button>
-                                                <button 
-                                                    className="btn-noter"
-                                                    style={{
-                                                        backgroundColor: '#3498db',
-                                                        color: 'white',
-                                                        fontSize: '11px',
-                                                        padding: '6px 10px',
-                                                        minWidth: '80px',
-                                                        opacity: derniereCouleur && derniereCouleur !== 'bleu' ? 0.4 : 1,
-                                                        boxShadow: derniereCouleur === 'bleu' ? '0 0 8px rgba(52, 152, 219, 0.6)' : 'none',
-                                                        transform: derniereCouleur === 'bleu' ? 'scale(1.05)' : 'scale(1)',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'bleu')}
-                                                    disabled={!codeCompetence}
-                                                >
-                                                    Maîtrise satisfaisante
-                                                </button>
-                                                <button 
-                                                    className="btn-noter"
-                                                    style={{
-                                                        backgroundColor: '#2ecc71',
-                                                        color: 'white',
-                                                        fontSize: '11px',
-                                                        padding: '6px 10px',
-                                                        minWidth: '80px',
-                                                        opacity: derniereCouleur && derniereCouleur !== 'vert' ? 0.4 : 1,
-                                                        boxShadow: derniereCouleur === 'vert' ? '0 0 8px rgba(46, 204, 113, 0.6)' : 'none',
-                                                        transform: derniereCouleur === 'vert' ? 'scale(1.05)' : 'scale(1)',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'vert')}
-                                                    disabled={!codeCompetence}
-                                                >
-                                                    Très bonne maîtrise
-                                                </button>
-                                            </>
-                                        )
-                                    })()}
-                                </div>
+                                <button 
+                                    className="btn-noter"
+                                    onClick={() => handleClickEleve(eleve)}
+                                    disabled={!codeCompetence}
+                                    title={codeCompetence ? 'Cliquer pour noter cet élève' : 'Sélectionnez d\'abord une compétence'}
+                                >
+                                    + Evaluer
+                                </button>
                             </div>
                             <div className="aucune-note">
                                 <em>Aucune évaluation pour cette compétence</em>
@@ -1690,137 +1452,72 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                     <p>Classe: {getNomClasse(eleve.classe_id)}</p>
                                 </div>
                             </div>
-                            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                                {/* Boutons de couleur directs pour éviter la popup */}
-                                {(() => {
-                                    const derniereCouleur = getDerniereCouleurDirecte(eleve.id, codeCompetence)
-                                    return (
-                                        <>
-                                            <button 
-                                                className="btn-noter"
-                                                style={{
-                                                    backgroundColor: '#e74c3c',
-                                                    color: 'white',
-                                                    fontSize: '11px',
-                                                    padding: '6px 10px',
-                                                    minWidth: '80px',
-                                                    opacity: derniereCouleur && derniereCouleur !== 'rouge' ? 0.4 : 1,
-                                                    boxShadow: derniereCouleur === 'rouge' ? '0 0 8px rgba(231, 76, 60, 0.6)' : 'none',
-                                                    transform: derniereCouleur === 'rouge' ? 'scale(1.05)' : 'scale(1)',
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                                onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'rouge')}
-                                                disabled={!codeCompetence}
-                                            >
-                                                Non acquis
-                                            </button>
-                                            <button 
-                                                className="btn-noter"
-                                                style={{
-                                                    backgroundColor: '#f1c40f',
-                                                    color: 'white',
-                                                    fontSize: '11px',
-                                                    padding: '6px 10px',
-                                                    minWidth: '80px',
-                                                    opacity: derniereCouleur && derniereCouleur !== 'jaune' ? 0.4 : 1,
-                                                    boxShadow: derniereCouleur === 'jaune' ? '0 0 8px rgba(241, 196, 15, 0.6)' : 'none',
-                                                    transform: derniereCouleur === 'jaune' ? 'scale(1.05)' : 'scale(1)',
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                                onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'jaune')}
-                                                disabled={!codeCompetence}
-                                            >
-                                                Maîtrise fragile
-                                            </button>
-                                            <button 
-                                                className="btn-noter"
-                                                style={{
-                                                    backgroundColor: '#3498db',
-                                                    color: 'white',
-                                                    fontSize: '11px',
-                                                    padding: '6px 10px',
-                                                    minWidth: '80px',
-                                                    opacity: derniereCouleur && derniereCouleur !== 'bleu' ? 0.4 : 1,
-                                                    boxShadow: derniereCouleur === 'bleu' ? '0 0 8px rgba(52, 152, 219, 0.6)' : 'none',
-                                                    transform: derniereCouleur === 'bleu' ? 'scale(1.05)' : 'scale(1)',
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                                onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'bleu')}
-                                                disabled={!codeCompetence}
-                                            >
-                                                Maîtrise satisfaisante
-                                            </button>
-                                            <button 
-                                                className="btn-noter"
-                                                style={{
-                                                    backgroundColor: '#2ecc71',
-                                                    color: 'white',
-                                                    fontSize: '11px',
-                                                    padding: '6px 10px',
-                                                    minWidth: '80px',
-                                                    opacity: derniereCouleur && derniereCouleur !== 'vert' ? 0.4 : 1,
-                                                    boxShadow: derniereCouleur === 'vert' ? '0 0 8px rgba(46, 204, 113, 0.6)' : 'none',
-                                                    transform: derniereCouleur === 'vert' ? 'scale(1.05)' : 'scale(1)',
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                                onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'vert')}
-                                                disabled={!codeCompetence}
-                                            >
-                                                Très bonne maîtrise
-                                            </button>
-                                        </>
-                                    )
-                                })()}
-                            </div>
-                        </div>
-                        
-                        {/* Bouton pour afficher/masquer le tableau des évaluations existantes */}
-                        <div style={{ textAlign: 'right', margin: '15px 20px 15px 0' }}>
                             <button 
-                                style={{
-                                    backgroundColor: 'white',
-                                    border: '1px solid #ddd',
-                                    color: '#666',
-                                    fontSize: '14px',
-                                    padding: '8px',
-                                    borderRadius: '6px',
-                                    cursor: 'pointer',
-                                    fontWeight: 'normal',
-                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                    width: '36px',
-                                    height: '36px',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '3px',
-                                    marginLeft: '20px',
-                                }}
-                                onClick={() => setTableauVisible(!tableauVisible)}
-                                title={tableauVisible ? 'Masquer les autres évaluations' : 'Voir les autres évaluations'}
+                                className="btn-noter"
+                                onClick={() => handleClickEleve(eleve)}
+                                disabled={!codeCompetence}
+                                title={codeCompetence ? 'Cliquer pour noter cet élève' : 'Sélectionnez d\'abord une compétence'}
                             >
-                                <div style={{ width: '18px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                <div style={{ width: '18px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                <div style={{ width: '18px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                + Evaluer
                             </button>
                         </div>
                         
-                        {/* Tableau des évaluations - affiché seulement si tableauVisible est true */}
-                        {tableauVisible && (
-                            <table className="tableau-hierarchique">
-                                <thead>
-                                    <tr>
-                                        <th>Compétence principale</th>
-                                        <th>Sous-compétence</th>
-                                        <th>Critères d'évaluations spécifiques</th>
-                                        <th>Evaluations</th>
-                                        <th>Positionnement Auto/Prof</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                {lignes.filter(ligne => !ligne.estBilan).map((ligne, index) => {
-                                    // En mode filtré, on n'affiche pas les lignes de bilan
-                                    // Cas normal pour toutes les lignes
+                        <table className="tableau-hierarchique">
+                            <thead>
+                                <tr>
+                                    <th>Compétence principale</th>
+                                    <th>Sous-compétence</th>
+                                    <th>Critères d'évaluations spécifiques</th>
+                                    <th>Evaluations</th>
+                                    <th>Positionnement Enseignant</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {lignes.map((ligne, index) => {
+                                    // Cas spécial pour les lignes de bilan
+                                    if (ligne.estBilan) {
+                                        return (
+                                            <tr key={index} 
+                                                style={{ 
+                                                    backgroundColor: getCouleurFondCompetence(ligne.codeCompetence),
+                                                    borderTop: '2px solid #ddd',
+                                                    fontWeight: 'bold'
+                                                }}>
+                                                <td className="cell-niveau1"></td>
+                                                <td className="cell-niveau2"></td>
+                                                <td className="cell-niveau3">
+                                                    <div style={{ fontStyle: 'italic', color: '#666' }}>
+                                                        <strong>BILAN</strong>
+                                                    </div>
+                                                </td>
+                                                <td className="cell-notes-hierarchique">
+                                                    <span style={{ fontSize: '0.9em', color: '#666', fontStyle: 'italic' }}>
+                                                        Bilan de la compétence
+                                                    </span>
+                                                </td>
+                                                <td className="cell-positionnement">
+                                                    {ligne.positionnementBilan ? (
+                                                        <div 
+                                                            style={{
+                                                                display: 'inline-block',
+                                                                width: '20px',
+                                                                height: '20px',
+                                                                borderRadius: '50%',
+                                                                backgroundColor: getCouleurCss(ligne.positionnementBilan),
+                                                                border: '2px solid #333',
+                                                                cursor: 'pointer'
+                                                            }}
+                                                            title={`Positionnement global: ${ligne.positionnementBilan}`}
+                                                        ></div>
+                                                    ) : (
+                                                        <span style={{fontSize: '0.8em', color: '#999'}}>-</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        )
+                                    }
+                                    
+                                    // Cas normal pour les autres lignes
                                     return (
                                         <tr key={index} 
                                             style={{ 
@@ -1855,7 +1552,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                         </td>
                                         <td className="cell-notes-hierarchique">
                                             {ligne.notes.length > 0 ? (
-                                                <div style={{ display: 'flex', gap: '3px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
                                                     {ligne.notes.map((note, i) => (
                                                         <NotePastille 
                                                             key={i} 
@@ -2036,7 +1733,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                 })}
                             </tbody>
                         </table>
-                        )}
                     </div>
                 )
             }))}

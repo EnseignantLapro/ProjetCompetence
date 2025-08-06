@@ -1,6 +1,8 @@
 export const competencesN1N2 = [
   {
     code: 'C01',
+    poid: 30,
+    bloc: 3,
     nom: 'COMMUNIQUER EN SITUATION PROFESSIONNELLE',
     enfants: [
         { code: 'C01.1', nom: 'Le rapport (typographie, orthographe, illustration, lisibilité) est soigné, personnel et argumenté avec des enchaînements cohérents' , poid:20,bloc:3},
@@ -13,6 +15,8 @@ export const competencesN1N2 = [
   },
   {
     code: 'C02',
+     poid: 20,
+      bloc: 2,
     nom: 'ORGANISER UNE INTERVENTION',
     enfants: [
         { code: 'C02.1', nom: 'Les différents interlocuteurs et ressources sont identifiés',poid:25,bloc:2 },
@@ -23,6 +27,8 @@ export const competencesN1N2 = [
   },
    {
     code: 'C03',
+     poid: 15,
+      bloc: 3,
     nom: 'GERER UN PROJET',
     enfants: [
         { code: 'C03.1', nom: 'Les documents de suivis des tâches sont renseignés, le planning prévisionnel est mis à jour.', poid:10,bloc:3 },
@@ -34,6 +40,8 @@ export const competencesN1N2 = [
   },
    {
     code: 'C04',
+     poid: 50,
+      bloc: 1,
     nom: 'ANALYSER UN SYSTEME INFORMATIQUE',    
     enfants: [
         { code: 'C04.1', nom: 'Les spécifications du cahier des charges sont extraites' ,poid:20,bloc:1},
@@ -45,6 +53,8 @@ export const competencesN1N2 = [
   },
    {
     code: 'C05',
+     poid: 50,
+      bloc: 1,
     nom: 'CONCEVOIR UN SYSTEME INFORMATIQUE',
     enfants: [
         { code: 'C05.1', nom: 'Les ressources permettant de réaliser le cahier des charges sont recensées et définies',poid:20,bloc:1 },
@@ -56,6 +66,8 @@ export const competencesN1N2 = [
   },
    {
     code: 'C06',
+     poid: 20,
+      bloc: 2,
     nom: 'VALIDER UN SYSTEME INFORMATIQUE  ',
     enfants: [
         { code: 'C06.1', nom: 'Les exigences à valider sont identifiées dans le périmètre défini',poid:20,bloc:2 },
@@ -69,6 +81,8 @@ export const competencesN1N2 = [
    {
     code: 'C08',
     nom: 'CODER',
+     poid: 30,
+      bloc: 3,
     enfants: [
         { code: 'C08.1', nom: 'Les environnements sont choisis et justifiés et les données de l’entreprise sont identifiées', poid:5,bloc:3 },
         { code: 'C08.2', nom: 'Le code est versionné, commenté et le logiciel est documenté', poid:15,bloc:3},
@@ -79,6 +93,8 @@ export const competencesN1N2 = [
   },
    {
     code: 'C09',
+     poid: 30,
+      bloc: 2,
     nom: 'INSTALLER UN RESEAU INFORMATIQUE',
     enfants: [
         { code: 'C09.1', nom: 'Les équipements nécessaires à la réponse au CDC (fourni par le client) sont identifiés',poid:20,bloc:2 },
@@ -91,6 +107,8 @@ export const competencesN1N2 = [
   },
    {
     code: 'C10',
+     poid: 25,
+      bloc: 3,
     nom: 'EXPLOITER UN RESEAU INFORMATIQUE',
     enfants: [
         { code: 'C10.1', nom: 'Les différents éléments matériels et/ou logiciels sont identifiés à partir d’un schéma fourni' , poid:10 ,bloc:3},
@@ -102,6 +120,8 @@ export const competencesN1N2 = [
   },
    {
     code: 'C11',
+     poid: 30,
+      bloc: 2,
     nom: 'MAINTENIR UN RESEAU INFORMATIQUE',
     enfants: [
         { code: 'C11.1', nom: 'Les outils logiciels et matériels permettant d’effectuer les tests et l’analyse du système d’information sont identifiés et mis en œuvre selon les spécifications' ,poid:20,bloc:2},

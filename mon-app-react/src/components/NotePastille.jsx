@@ -17,7 +17,12 @@ function NotePastille({ note, onClick }) {
     margin: '2px',
     cursor: 'pointer',
   }
-  return <div style={style} title={note.competence_code} onClick={() => onClick(note)} />
+  
+  return <div 
+    style={style} 
+    title={note.competence_code} 
+    onClick={() => onClick(note)}
+  />
 }
 
 export default NotePastille
