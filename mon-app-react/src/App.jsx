@@ -138,31 +138,39 @@ function App() {
         <>
           <div>
             <h4>Compétence sélectionnée :</h4>
-            <p>
-
-              {competenceChoisie.niveau1} — {nomNiveau1 || ''}<br />
-              {competenceChoisie.niveau2 || ''} {nomNiveau2 && `— ${nomNiveau2}`}<br />
-              {competenceChoisie.niveau3 || ''} {nomNiveau3 && `— ${nomNiveau3}`}
-
-            </p>
-            <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>
-              {!competenceChoisie.niveau3 && !competenceChoisie.niveau2 && (
-                <em>📝 Vous pouvez évaluer la compétence {competenceChoisie.niveau1} ET voir toutes ses sous-compétences</em>
-              )}
-              {competenceChoisie.niveau2 && !competenceChoisie.niveau3 && (
-                <em>📝 Vous pouvez évaluer cette sous-compétence {competenceChoisie.niveau2} ET voir toutes les critères d'évaluation déjà évalués</em>
-              )}
-              {competenceChoisie.niveau3 && (
-                <em>📝  Évaluation uniquement pour {competenceChoisie.niveau3}</em>
-              )}
-            </div>
-            <button onClick={() => {
+           
+           
+            <button  className="competence-active" onClick={() => {
               setIsModifying(true)
               setCompetenceChoisie(null)
               // Les valeurs restent en localStorage pour que ChoixCompetence les récupère
               // Forcer le rechargement du composant ChoixCompetence
               setChoixCompetenceKey(prev => prev + 1)
-            }}>Changer la compétence à évaluer</button>
+            }}>
+              {/* Afficher seulement le niveau le plus spécifique */}
+               <span >
+              {competenceChoisie.niveau3 ? (
+                  <>{competenceChoisie.niveau3} — {nomNiveau3}</>
+              ) : competenceChoisie.niveau2 ? (
+                  <>{competenceChoisie.niveau2} — {nomNiveau2}</>
+              ) : (
+                  <>{competenceChoisie.niveau1} — {nomNiveau1}</>
+              )}
+              🔎
+             </span>
+             
+            </button>
+             <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>
+              {!competenceChoisie.niveau3 && !competenceChoisie.niveau2 && (
+                <em>📝  l'évaluation de la compétence {competenceChoisie.niveau1} sera répartie dans toutes ses sous-compétences</em>
+              )}
+              {competenceChoisie.niveau2 && !competenceChoisie.niveau3 && (
+                <em>📝 Vous pouvez évaluer cette sous-compétence {competenceChoisie.niveau2} et voir toutes les critères d'évaluation déjà évalués</em>
+              )}
+              {competenceChoisie.niveau3 && (
+                <em>📝  Vous évaluez uniquement : {competenceChoisie.niveau3} qui sera prise en compte dans la sous-compétence {competenceChoisie.niveau2}</em>
+              )}
+            </div>
           </div>
 
 
@@ -171,7 +179,7 @@ function App() {
 
       {!adminVisible && (
         <div className="card">
-          <h2>Liste des élèves</h2>
+        
           <TableauNotes competenceChoisie={competenceChoisie} classeChoisie={classeChoisie} classes={classes}/>
         </div>
       )}

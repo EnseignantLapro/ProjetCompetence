@@ -40,3 +40,239 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Styles pour la bannière */
+.baniere-container {
+  background-color: #f8f9fa;
+  background-image: url(/baniere.png);
+  background-size: cover;
+  background-position: right top;
+  background-repeat: no-repeat;
+  padding: 20px;
+  border-bottom: 1px solid #dee2e6;
+  margin-bottom: 20px;
+  position: relative;
+}
+
+/* Styles pour les listes déroulantes de compétences */
+.choix-competence-container {
+  max-width: 100%;
+  padding: 20px;
+}
+
+.choix-competence-container select {
+  max-width: 70vw; /* Maximum 70% de la largeur de l'écran */
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: white;
+  box-sizing: border-box;
+  
+  /* Gestion du débordement de texte */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choix-competence-container select option {
+  padding: 5px 8px;
+  /* Pour les options, on permet le retour à la ligne */
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.choix-competence-container label {
+  display: block;
+  margin: 15px 0 5px 0;
+  font-weight: 500;
+  color: #333;
+}
+
+.choix-competence-container input[type="text"] {
+  max-width: 70vw;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-right: 10px;
+  box-sizing: border-box;
+}
+
+.choix-competence-container button {
+  padding: 8px 16px;
+  margin: 10px 5px 10px 0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.choix-competence-container .btn-primary {
+  background-color: #007bff;
+  color: white;
+}
+
+.choix-competence-container .btn-primary:hover {
+  background-color: #0056b3;
+}
+
+.baniere-titre {
+  margin: 0 0 10px 0;
+  color: #2c3e50;
+  font-size: 2rem;
+}
+
+/* Styles responsives pour mobile */
+@media (max-width: 768px) {
+  /* Réduction du padding root sur mobile */
+  #root {
+    padding: 0.5rem;
+  }
+  
+  .baniere-container {
+    padding: 8px 5px; /* Réduction des marges sur mobile */
+    margin-bottom: 10px;
+  }
+  
+  .baniere-titre {
+    font-size: 1.3rem !important;
+    margin: 0 0 8px 0;
+  }
+  
+  /* Conteneur principal de la bannière sur mobile */
+  .baniere-content {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px; /* Réduction de l'espacement */
+  }
+  
+  /* Sélecteur de classe plus compact sur mobile */
+  .baniere-container select {
+    padding: 6px 10px !important;
+    font-size: 0.9rem;
+  }
+  
+  /* Bouton admin plus compact sur mobile */
+  .baniere-container button {
+    padding: 6px 12px !important;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Padding encore plus réduit pour petits écrans */
+  #root {
+    padding: 0.2rem;
+  }
+  
+  .baniere-titre {
+    font-size: 1.1rem !important;
+  }
+  
+  .baniere-container {
+    padding: 5px 3px; /* Marges encore plus réduites pour petits écrans */
+    margin-bottom: 8px;
+  }
+  
+  .baniere-content {
+    gap: 8px !important;
+  }
+}
+
+/* Styles pour les listes déroulantes de compétences */
+.choix-competence-container {
+  max-width: 100%;
+  padding: 20px;
+}
+
+.choix-competence-container select {
+  max-width: 70vw; /* Maximum 70% de la largeur de l'écran */
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: white;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+  
+  /* Gestion du débordement de texte */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choix-competence-container select option {
+  padding: 5px 8px;
+  /* Pour les options, on permet le retour à la ligne */
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.choix-competence-container label {
+  display: block;
+  margin: 15px 0 5px 0;
+  font-weight: 500;
+  color: #333;
+}
+
+.choix-competence-container input[type="text"] {
+  max-width: 70vw;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-right: 10px;
+  box-sizing: border-box;
+}
+
+.choix-competence-container button {
+  padding: 8px 16px;
+  margin: 10px 5px 10px 0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.choix-competence-container .btn-primary {
+  background-color: #007bff;
+  color: white;
+}
+
+.choix-competence-container .btn-primary:hover {
+  background-color: #0056b3;
+}
+
+/* Responsive pour les petits écrans */
+@media (max-width: 768px) {
+  .choix-competence-container select,
+  .choix-competence-container input[type="text"] {
+    max-width: 90vw; /* Plus d'espace sur mobile */
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .choix-competence-container select,
+  .choix-competence-container input[type="text"] {
+    max-width: 95vw;
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+}
+
+.competence-active{
+  font-weight: bold;
+  color: #007bff;
+  text-align: center;
+  margin-bottom: 10px;
+  border: 1px solid #007bff;
+  padding: 20px;
+}

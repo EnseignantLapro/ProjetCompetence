@@ -86,20 +86,127 @@
   width: 100%;
   border-collapse: collapse;
   margin: 0;
+  table-layout: fixed; /* Force le respect des largeurs définies */
 }
 
 .tableau-hierarchique th {
   background: #e9ecef;
-  padding: 12px;
+  padding: 12px 8px; /* Padding réduit comme le tableau simple */
   text-align: left;
   border-bottom: 2px solid #dee2e6;
   font-weight: 600;
+  font-size: 14px; /* Taille de police cohérente */
 }
 
 .tableau-hierarchique td {
-  padding: 10px 12px;
+  padding: 8px; /* Padding cohérent avec le tableau simple */
   border-bottom: 1px solid #dee2e6;
   vertical-align: top;
+  font-size: 14px;
+}
+
+/* Largeurs optimisées pour le tableau hiérarchique */
+.tableau-hierarchique th:nth-child(1),
+.tableau-hierarchique td:nth-child(1) {
+  width: 20%; /* Compétence principale */
+}
+
+.tableau-hierarchique th:nth-child(2),
+.tableau-hierarchique td:nth-child(2) {
+  width: 20%; /* Sous-compétence */
+}
+
+.tableau-hierarchique th:nth-child(3),
+.tableau-hierarchique td:nth-child(3) {
+  width: 20%; /* Critères d'évaluation */
+}
+
+.tableau-hierarchique th:nth-child(4),
+.tableau-hierarchique td:nth-child(4) {
+  width: 25%; /* Évaluations (plus d'espace pour les pastilles) */
+}
+
+.tableau-hierarchique th:nth-child(5),
+.tableau-hierarchique td:nth-child(5) {
+  width: 15%; /* Positionnement */
+}
+
+/* Styles pour le tableau simple - optimisé pour les évaluations */
+.tableau-notes table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+  table-layout: fixed;
+}
+
+.tableau-notes th {
+  background: #e9ecef;
+  padding: 12px 8px;
+  text-align: left;
+  border-bottom: 2px solid #dee2e6;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.tableau-notes td {
+  padding: 8px;
+  border-bottom: 1px solid #dee2e6;
+  vertical-align: top;
+  font-size: 14px;
+}
+
+/* Largeurs optimisées pour donner plus d'espace aux évaluations */
+.tableau-notes th:nth-child(1),
+.tableau-notes td:nth-child(1) {
+  width: 15%; /* Nom élève plus compact */
+}
+
+.tableau-notes th:nth-child(2),
+.tableau-notes td:nth-child(2) {
+  width: 45%; /* Plus d'espace pour les pastilles d'évaluation */
+}
+
+.tableau-notes th:nth-child(3),
+.tableau-notes td:nth-child(3) {
+  width: 20%; /* Positionnement */
+}
+
+.tableau-notes th:nth-child(4),
+.tableau-notes td:nth-child(4) {
+  width: 10%; /* Bilan */
+}
+
+.tableau-notes th:nth-child(5),
+.tableau-notes td:nth-child(5) {
+  width: 10%; /* Colonne supplémentaire si présente */
+}
+
+/* Optimisation de l'affichage des pastilles d'évaluation */
+.tableau-notes td:nth-child(2) {
+  line-height: 1.2;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Style pour les conteneurs de pastilles */
+.tableau-notes td:nth-child(2) > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+/* Bouton + plus compact */
+.tableau-notes .btn-ajouter {
+  margin-top: 4px;
+  margin-left: 4px;
+  font-size: 12px;
+  padding: 2px 6px;
+  min-width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .cell-niveau1,
@@ -214,13 +321,13 @@
 }
 
 .bloc-titre-eleve1 {
-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
 }
 .bloc-titre-eleve2 {
-   background: linear-gradient(135deg, #559355 0%, #ccfd88 100%);
+   background: linear-gradient(135deg, #559355 0%, #b2d77f 100%);
 }
 .bloc-titre-eleve3 {
-    background: linear-gradient(135deg, #eabc66 0%, #e98126 100%);
+    background: linear-gradient(135deg,#e98126 0%, #f8cc7bd5 100% );
 }
 
 .aucune-note-bloc {
@@ -263,4 +370,387 @@ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 12px;
   min-width: 300px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* Styles responsives pour mobile */
+@media (max-width: 768px) {
+  /* Réduction générale de la taille des textes */
+  .tableau-container {
+    margin: 5px 2px; /* Marges très réduites sur mobile */
+    max-width: 100%;
+    padding: 0; /* Suppression du padding */
+  }
+  
+  .tableau-container h2 {
+    font-size: 1.2rem;
+    margin: 5px 0; /* Marges réduites pour le titre */
+    text-align: center;
+    padding: 0 5px; /* Petit padding pour le titre uniquement */
+  }
+  
+  /* Tableau des notes avec marges réduites */
+  .tableau-notes {
+    margin: 0;
+    padding: 0 2px; /* Marges minimales */
+  }
+   .card{
+    margin-top: 10px;
+    margin-right: 0px;
+    margin-left: 0px;
+    
+    font-size: 0.8rem;
+  }
+  /* Cartes d'élèves plus compactes */
+  .eleve-card {
+    margin-top: 15px; /* Marges très réduites */
+    margin-right: 0px;
+    margin-left: 0px ;
+    border-radius: 6px;
+  }
+  
+  .eleve-header {
+    padding: 10px 12px;
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  
+  .eleve-info {
+    gap: 10px;
+  }
+  
+  .eleve-info h3 {
+    font-size: 1rem;
+  }
+  
+  .eleve-info p {
+    font-size: 0.8rem;
+  }
+  
+  .photo-eleve {
+    width: 40px;
+    height: 40px;
+  }
+  
+  /* Boutons de notation plus petits */
+  .btn-noter {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+    min-width: 60px;
+    height: 40px; /* Hauteur réduite pour tablettes */
+  }
+  
+  /* Titres de blocs plus compacts */
+  .bloc-titre-eleve {
+    font-size: 1rem;
+    padding: 0.3rem 0.6rem;
+    margin: 0.3em 0 0 0;
+  }
+  
+  /* Tableaux responsives */
+  .tableau-hierarchique {
+    font-size: 0.75rem;
+    width: 100%;
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    margin: 0;
+    padding: 0 2px; /* Marges minimales comme le tableau simple */
+  }
+  
+  .tableau-hierarchique th,
+  .tableau-hierarchique td {
+    padding: 4px 6px;
+    min-width: 80px;
+    font-size: 0.75rem;
+  }
+  
+  /* Largeurs ajustées pour mobile - tableau hiérarchique */
+  .tableau-hierarchique th:nth-child(1),
+  .tableau-hierarchique td:nth-child(1) {
+    width: 18%; /* Compétence principale */
+  }
+  
+  .tableau-hierarchique th:nth-child(2),
+  .tableau-hierarchique td:nth-child(2) {
+    width: 18%; /* Sous-compétence */
+  }
+  
+  .tableau-hierarchique th:nth-child(3),
+  .tableau-hierarchique td:nth-child(3) {
+    width: 18%; /* Critères */
+  }
+  
+  .tableau-hierarchique th:nth-child(4),
+  .tableau-hierarchique td:nth-child(4) {
+    width: 30%; /* Évaluations (priorité) */
+  }
+  
+  .tableau-hierarchique th:nth-child(5),
+  .tableau-hierarchique td:nth-child(5) {
+    width: 16%; /* Positionnement */
+  }
+  
+  /* Styles responsives pour le tableau simple */
+  .tableau-notes table {
+    font-size: 0.75rem;
+    overflow-x: auto;
+    display: block;
+    width: 100%;
+  }
+  
+  .tableau-notes thead,
+  .tableau-notes tbody,
+  .tableau-notes tr {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+  }
+  
+  .tableau-notes th,
+  .tableau-notes td {
+    padding: 6px 4px;
+    font-size: 0.75rem;
+  }
+  
+  /* Largeurs ajustées pour mobile */
+  .tableau-notes th:nth-child(1),
+  .tableau-notes td:nth-child(1) {
+    width: 20%; /* Nom élève un peu plus d'espace sur mobile */
+  }
+  
+  .tableau-notes th:nth-child(2),
+  .tableau-notes td:nth-child(2) {
+    width: 40%; /* Toujours priorité aux évaluations */
+  }
+  
+  .tableau-notes th:nth-child(3),
+  .tableau-notes td:nth-child(3) {
+    width: 25%; /* Positionnement */
+  }
+  
+  .tableau-notes th:nth-child(4),
+  .tableau-notes td:nth-child(4) {
+    width: 15%; /* Bilan */
+  }
+  
+  .tableau-hierarchique th {
+    font-size: 0.65rem;
+    font-weight: bold;
+  }
+  
+  /* Cellules spécifiques plus petites */
+  .cell-niveau1,
+  .cell-niveau2,
+  .cell-niveau3 {
+    max-width: 100px;
+    word-break: break-word;
+    white-space: normal;
+  }
+  
+  .cell-niveau1 strong,
+  .cell-niveau2 strong,
+  .cell-niveau3 strong {
+    font-size: 0.65rem;
+  }
+  
+  .cell-niveau1 small,
+  .cell-niveau2 small,
+  .cell-niveau3 small {
+    font-size: 0.6rem;
+    line-height: 1.2;
+  }
+  
+  /* Notes pastilles plus petites */
+  .cell-notes-hierarchique {
+    min-width: 100px;
+  }
+  
+  /* Positionnement plus compact */
+  .cell-positionnement {
+    min-width: 80px;
+  }
+  
+  .btn-positionner {
+    font-size: 0.6rem;
+    padding: 2px 4px;
+  }
+  
+  /* Bilan de bloc plus compact */
+  .bloc-section-bilan {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+  
+  .bloc-section-bilan span {
+    font-size: 0.75rem;
+  }
+  
+  /* Messages "aucune note" plus petits */
+  .aucune-note-bloc,
+  .aucune-note {
+    padding: 12px;
+    font-size: 0.8rem;
+  }
+  
+  /* Modal responsives */
+  .modal-content {
+    margin: 10px;
+    padding: 15px;
+    min-width: auto;
+    max-width: 90vw;
+  }
+  
+  .modal-content h4 {
+    font-size: 1rem;
+  }
+  
+  .modal-content p {
+    font-size: 0.8rem;
+    margin: 8px 0;
+  }
+  
+  .modal-content button {
+    font-size: 0.8rem;
+    padding: 8px 12px;
+  }
+  
+  /* Bouton hamburger responsive */
+  .bloc-titre-eleve button {
+    width: 20px;
+    height: 20px;
+  }
+  
+  .bloc-titre-eleve button div {
+    width: 10px;
+    height: 1.5px;
+  }
+}
+
+/* Styles pour très petits écrans (smartphones en portrait) */
+@media (max-width: 480px) {
+  .tableau-container {
+    margin: 2px 1px; /* Marges ultra-réduites */
+    padding: 0;
+  }
+  
+  .tableau-container h2 {
+    font-size: 1rem;
+    margin: 3px 0;
+    padding: 0 3px;
+  }
+  
+  .tableau-notes {
+    padding: 0 1px;
+  }
+  
+  .eleve-card {
+    margin-top: 10px;
+  }
+  
+  .eleve-header {
+    padding: 8px 10px;
+  }
+  
+  .eleve-info h3 {
+    font-size: 0.9rem;
+  }
+  
+  .photo-eleve {
+    width: 35px;
+    height: 35px;
+  }
+  
+  .btn-noter {
+    font-size: 0.65rem;
+    padding: 3px 6px;
+    min-width: 50px;
+    height: 35px; /* Hauteur réduite pour mobiles */
+  }
+  
+  .bloc-titre-eleve {
+    font-size: 0.9rem;
+    padding: 0.25rem 0.5rem;
+  }
+  
+  .tableau-hierarchique {
+    font-size: 0.65rem;
+    padding: 0 1px; /* Marges ultra-réduites */
+  }
+  
+  .tableau-hierarchique th,
+  .tableau-hierarchique td {
+    padding: 3px 4px;
+    min-width: 70px;
+    font-size: 0.65rem;
+  }
+  
+  /* Largeurs ultra-compactes pour petits écrans */
+  .tableau-hierarchique th:nth-child(1),
+  .tableau-hierarchique td:nth-child(1) {
+    width: 16%; /* Compétence principale */
+  }
+  
+  .tableau-hierarchique th:nth-child(2),
+  .tableau-hierarchique td:nth-child(2) {
+    width: 16%; /* Sous-compétence */
+  }
+  
+  .tableau-hierarchique th:nth-child(3),
+  .tableau-hierarchique td:nth-child(3) {
+    width: 16%; /* Critères */
+  }
+  
+  .tableau-hierarchique th:nth-child(4),
+  .tableau-hierarchique td:nth-child(4) {
+    width: 35%; /* Évaluations (maximum d'espace) */
+  }
+  
+  .tableau-hierarchique th:nth-child(5),
+  .tableau-hierarchique td:nth-child(5) {
+    width: 17%; /* Positionnement */
+  }
+  
+  .cell-niveau1 strong,
+  .cell-niveau2 strong,
+  .cell-niveau3 strong {
+    font-size: 0.6rem;
+  }
+  
+  .cell-niveau1 small,
+  .cell-niveau2 small,
+  .cell-niveau3 small {
+    font-size: 0.55rem;
+  }
+
+  .card{
+    margin-top: 10px;
+    margin-right: 0px;
+    margin-left: 0px;
+    
+    font-size: 0.8rem;
+  }
+}
+
+/* Classe pour les pastilles de positionnement automatique */
+.pastille-auto {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #333;
+  cursor: pointer;
+  position: relative;
+  font-size: 10px;
+  color: white;
+  font-weight: bold;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Ajuster la taille du texte "A" sur mobile pour les pastilles automatiques */
+@media (max-width: 768px) {
+  .pastille-auto {
+    font-size: 8px; /* Réduire mais garder visible le texte "A" */
+  }
 }

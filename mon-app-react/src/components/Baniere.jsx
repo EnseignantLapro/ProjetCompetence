@@ -1,4 +1,6 @@
 // components/Baniere.jsx
+import '../App.css'
+
 function Baniere({ 
     classes, 
     classeChoisie, 
@@ -14,17 +16,7 @@ function Baniere({
     }
 
     return (
-        <div style={{ 
-            backgroundColor: '#f8f9fa',
-            backgroundImage: 'url(/baniere.png)',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center top',
-            backgroundRepeat: 'no-repeat',
-            padding: '20px',
-            borderBottom: '1px solid #dee2e6',
-            marginBottom: '20px',
-            position: 'relative'
-        }}>
+        <div className="baniere-container">
             {/* Overlay pour améliorer la lisibilité du texte */}
             <div style={{
                 position: 'absolute',
@@ -36,17 +28,20 @@ function Baniere({
                 zIndex: 1
             }}></div>
             
-            <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center',
-                maxWidth: '1200px',
-                margin: '0 auto',
-                position: 'relative',
-                zIndex: 2
-            }}>
+            <div 
+                className="baniere-content"
+                style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    maxWidth: '1200px',
+                    margin: '0 auto',
+                    position: 'relative',
+                    zIndex: 2
+                }}
+            >
                 <div>
-                    <h1 style={{ margin: '0 0 10px 0', color: '#2c3e50' }}>
+                    <h1 className="baniere-titre">
                         Evaluation au fil de l'eau
                     </h1>
                     
