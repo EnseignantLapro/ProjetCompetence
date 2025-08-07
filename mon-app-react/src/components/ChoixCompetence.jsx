@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { competencesN1N2 } from '../data/competences'
+import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import '../App.css'
 
 function ChoixCompetence({ onChoixFinal }) {
@@ -34,12 +34,45 @@ function ChoixCompetence({ onChoixFinal }) {
 
 useEffect(() => {
   if (niveau2) {
+    // 1. Charger les compétences N3 de la base de données (créées par les profs)
     fetch(`http://${window.location.hostname}:3001/competences-n3?parent_code=${niveau2}`)
       .then(res => res.json())
-      .then(data => {
-        setNiveau3EnBase(data)
-        // NE PAS auto-sélectionner le premier élément
-        // L'utilisateur peut vouloir juste une compétence de niveau 2
+      .then(competencesN3BDD => {
+        
+        // 2. Charger les tâches professionnelles du fichier selon la compétence N1 du N2 sélectionné
+        let tachesFromFile = []
+        
+        // Extraire la compétence N1 du code N2 (ex: C01.1 -> C01)
+        const competenceN1 = niveau2.split('.')[0]
+        
+        if (competenceN1) {
+          // Filtrer les tâches professionnelles qui contiennent cette compétence N1
+          const tachesCompatibles = tachesProfessionelles.filter(tache => 
+            tache.competences.includes(competenceN1)
+          )
+          
+          // Créer une liste de toutes les tâches associées avec leur parent
+          tachesCompatibles.forEach(tacheProf => {
+            tacheProf.TacheAssociees.forEach(tache => {
+              tachesFromFile.push({
+                code: `${niveau2}.${tacheProf.code}.${tache.code}`, // Ex: C01.1.R1.T1
+                nom: `${tacheProf.nom} — ${tache.nom}`, // Nom simplifié
+                parent_code: niveau2,
+                source: 'fichier', // Pour identifier la source
+                tacheProf: tacheProf,
+                tache: tache
+              })
+            })
+          })
+        }
+        
+        // 3. Combiner les deux sources
+        const toutesLesOptions = [
+          ...competencesN3BDD.map(comp => ({ ...comp, source: 'bdd' })),
+          ...tachesFromFile
+        ]
+        
+        setNiveau3EnBase(toutesLesOptions)
       })
   } else {
     setNiveau3EnBase([])
@@ -141,13 +174,13 @@ useEffect(() => {
       {/* Niveau 2 */}
       {sousCompetences.length > 0 && (
         <>
-          <label>Sous-compétence :</label>
+          <label>Compétence secondaire <small>(recommandée)</small> : </label>
           <select value={niveau2} onChange={e => {
             setNiveau2(e.target.value)
             setNiveau3('')
             setNiveau3Texte('')
-          }} title="Sélectionnez une sous-compétence">
-            <option value="">Aucune sous compétence</option>
+          }} title="Sélectionnez une compétence secondaire">
+            <option value="">Aucune compétence secondaire</option>
             {sousCompetences.map(sc => (
               <option key={sc.code} value={sc.code} title={`${sc.code} — ${sc.nom}`}>
                 {sc.code} — {sc.nom}
@@ -157,10 +190,10 @@ useEffect(() => {
         </>
       )}
 <br></br>
-      {/* Niveau 3 */}
+      {/* Niveau 3 - Compétences BDD + Tâches professionnelles */}
       {niveau2 && (
         <>
-          <label>Critère d'évaluation (optionnel) :</label>
+          <label>Critère d'évaluation / activité <small>(optionnel)</small> :</label>
           <select value={niveau3} onChange={e => {
             if (e.target.value === OPTION_AJOUTER) {
               setShowModal(true)
@@ -168,13 +201,14 @@ useEffect(() => {
               setNiveau3(e.target.value)
             }
           }} title="Sélectionnez un critère d'évaluation">
-            <option value="">-- Laisser vide pour évaluer la sous-compétence uniquement --</option>
+            <option value="">-- Laisser vide pour évaluer la compétence secondaire uniquement --</option>
+             <option value={OPTION_AJOUTER}>➕ Ajouter un nouveau critère d'évaluation ou activité</option>
             {niveau3EnBase.map(c => (
-              <option key={c.code} value={c.code} title={`${c.code} — ${c.nom}`}>
-                {c.code} — {c.nom}
+              <option key={c.code} value={c.code} title={c.nom}>
+                {`${c.code} — ${c.nom}`}
               </option>
             ))}
-            <option value={OPTION_AJOUTER}>➕ Ajouter une nouvelle sous-compétence</option>
+            <option value={OPTION_AJOUTER}>➕ Ajouter un nouveau critère d'évaluation ou activité</option>
           </select>
           <br></br>
         </>
@@ -188,7 +222,7 @@ useEffect(() => {
         {!niveau1 ? "🏆 Vue d'ensemble" : "Valider le choix"}
       </button>
 
-      {/* Modal pour ajouter une nouvelle sous-compétence */}
+      {/* Modal pour ajouter une nouvelle compétence secondaire*/}
       {showModal && (
         <div style={{
           position: 'fixed',

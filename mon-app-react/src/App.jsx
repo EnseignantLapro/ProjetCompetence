@@ -3,7 +3,7 @@ import AdminPanel from './components/AdminPanel'
 import TableauNotes from './components/TableauNotes'
 import ChoixCompetence from './components/ChoixCompetence'
 import Baniere from './components/Baniere'
-import { competencesN1N2 } from './data/competences'
+import { competencesN1N2, tachesProfessionelles } from './data/competences'
 
 import './App.css'
 
@@ -42,14 +42,34 @@ function App() {
       setNomNiveau2(sous?.nom || '')
     }
 
-    // Niveau 3 depuis la BDD
+    // Niveau 3 depuis la BDD ou les tâches professionnelles
     if (niveau2 && niveau3) {
-      fetch(`http://${window.location.hostname}:3001/competences-n3?parent_code=${niveau2}`)
-        .then(res => res.json())
-        .then(data => {
-          const found = data.find(sc => sc.code === niveau3)
-          setNomNiveau3(found?.nom || '')
-        })
+      // Vérifier si c'est un code de tâche professionnelle (4 parties : C01.1.R1.T1)
+      const parts = niveau3.split('.')
+      if (parts.length === 4) {
+        const tacheCode = parts[2] // R1, R2, etc.
+        const taskCode = parts[3]  // T1, T2, etc.
+        
+        const tacheProf = tachesProfessionelles.find(t => t.code === tacheCode)
+        if (tacheProf) {
+          const tache = tacheProf.TacheAssociees.find(t => t.code === taskCode)
+          if (tache) {
+            setNomNiveau3(`${tacheProf.nom} — ${tache.nom}`)
+          } else {
+            setNomNiveau3(niveau3) // Fallback au code si non trouvé
+          }
+        } else {
+          setNomNiveau3(niveau3) // Fallback au code si non trouvé
+        }
+      } else {
+        // Code BDD traditionnel
+        fetch(`http://${window.location.hostname}:3001/competences-n3?parent_code=${niveau2}`)
+          .then(res => res.json())
+          .then(data => {
+            const found = data.find(sc => sc.code === niveau3)
+            setNomNiveau3(found?.nom || niveau3)
+          })
+      }
     } else {
       setNomNiveau3('')
     }
@@ -112,11 +132,12 @@ function App() {
             border: '1px solid #cce7ff'
           }}>
             <h4 style={{ margin: '0 0 10px 0', color: '#2c5282' }}>
-              📊 Mode Vue d'ensemble
+              📊  Bilan de la période pour chaque Bloc de compétence.
             </h4>
             <p style={{ margin: 0, color: '#2d3748' }}>
-              Aucune compétence sélectionnée : vous voyez <strong>toutes les notes de tous les élèves</strong> pour toutes les compétences. 
-              Sélectionnez une compétence ci-dessus pour pouvoir noter les élèves ou filtrer l'affichage.
+             Vous voyez toutes <strong>les évaluations</strong> pour toutes <strong>les compétences par bloc</strong>. 
+             Vous pouvez Bypasser le Positionnement Automatique d'une compétence secondaire. Pour déterminer la note final sur 20 d'un bloc
+<br></br> Les évaluations sont triées par date croissante.
             </p>
           </div>
         </>
@@ -162,13 +183,13 @@ function App() {
             </button>
              <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>
               {!competenceChoisie.niveau3 && !competenceChoisie.niveau2 && (
-                <em>📝  l'évaluation de la compétence {competenceChoisie.niveau1} sera répartie dans toutes ses sous-compétences</em>
+                <em>📝  l'évaluation de la compétence {competenceChoisie.niveau1} sera répartie dans toutes ses compétences secondaires</em>
               )}
               {competenceChoisie.niveau2 && !competenceChoisie.niveau3 && (
-                <em>📝 Vous pouvez évaluer cette sous-compétence {competenceChoisie.niveau2} et voir toutes les critères d'évaluation déjà évalués</em>
+                <em>📝 Vous pouvez évaluer cette compétence secondaire {competenceChoisie.niveau2} et voir toutes les critères d'évaluation déjà évalués</em>
               )}
               {competenceChoisie.niveau3 && (
-                <em>📝  Vous évaluez uniquement : {competenceChoisie.niveau3} qui sera prise en compte dans la sous-compétence {competenceChoisie.niveau2}</em>
+                <em>📝  Vous évaluez uniquement : {competenceChoisie.niveau3} qui sera prise en compte dans la compétence secondaire {competenceChoisie.niveau2}</em>
               )}
             </div>
           </div>

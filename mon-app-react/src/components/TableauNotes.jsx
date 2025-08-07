@@ -3,7 +3,7 @@ import './TableauNotes.css'
 import ColorPickerModal from './ColorPickerModal'
 import PositionnementModal from './PositionnementModal'
 import NotePastille from './NotePastille'
-import { competencesN1N2 } from '../data/competences'
+import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 
 function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
     const [eleves, setEleves] = useState([])
@@ -52,7 +52,45 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
             .then(res => res.json())
             .then(setEleves)
         fetch(`http://${window.location.hostname}:3001/notes`).then(res => res.json()).then(setNotes)
-        fetch(`http://${window.location.hostname}:3001/competences-n3`).then(res => res.json()).then(setCompetencesN3)
+        
+        // Charger les competences N3 de la BDD + les tâches professionnelles
+        fetch(`http://${window.location.hostname}:3001/competences-n3`)
+            .then(res => res.json())
+            .then(competencesBDD => {
+                // Ajouter toutes les tâches professionnelles comme compétences N3
+                const tachesN3 = []
+                
+                // Pour chaque compétence N2, ajouter les tâches compatibles
+                competencesN1N2.forEach(compN1 => {
+                    compN1.enfants.forEach(compN2 => {
+                        // Filtrer les tâches professionnelles compatibles avec cette N1
+                        const tachesCompatibles = tachesProfessionelles.filter(tache => 
+                            tache.competences.includes(compN1.code)
+                        )
+                        
+                        // Ajouter chaque tâche associée
+                        tachesCompatibles.forEach(tacheProf => {
+                            tacheProf.TacheAssociees.forEach(tache => {
+                                tachesN3.push({
+                                    code: `${compN2.code}.${tacheProf.code}.${tache.code}`,
+                                    nom: `${tacheProf.nom} — ${tache.nom}`,
+                                    parent_code: compN2.code,
+                                    source: 'fichier'
+                                })
+                            })
+                        })
+                    })
+                })
+                
+                // Combiner BDD + tâches professionnelles
+                const toutesCompetencesN3 = [
+                    ...competencesBDD.map(comp => ({ ...comp, source: 'bdd' })),
+                    ...tachesN3
+                ]
+                
+                setCompetencesN3(toutesCompetencesN3)
+            })
+            
         fetch(`http://${window.location.hostname}:3001/positionnements`).then(res => res.json()).then(setPositionnementsEnseignant)
     }, [classeChoisie])
 
@@ -323,6 +361,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
             return c2 ? `${c2.code} — ${c2.nom}` : code
         }
 
+        // Pour les codes N3 (3 ou 4 parties), chercher dans competencesN3 qui contient maintenant tout
         const c3 = competencesN3.find(c => c.code === code)
         return c3 ? `${c3.code} — ${c3.nom}` : code
     }
@@ -578,28 +617,9 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                     notes: notesEleve.filter(note => note.competence_code === comp2.code)
                 }
 
-                // Ajouter les compétences de niveau 3 pour ce niveau 2
-                const comp3List = competencesN3.filter(c3 => c3.parent_code === comp2.code)
-                comp3List.forEach(comp3 => {
-                    // Si on filtre sur une compétence N1, ne pas afficher les lignes N3 
-                    // car les évaluations N3 sont maintenant visibles dans les lignes N2
-                    if (codeCompetence && isCompetenceN1(codeCompetence)) {
-                        return // Ignorer les compétences N3 quand on filtre sur N1
-                    }
-                    
-                    // En mode filtré sur N2 ou N3, vérifier si cette N3 doit être incluse
-                    if (codeCompetence && !isCompetenceInHierarchy(comp3.code)) {
-                        return // Ignorer cette compétence N3 si elle ne correspond pas au filtre
-                    }
-
-                    const notesComp3 = notesEleve.filter(note => note.competence_code === comp3.code)
-                    // En mode complet, ajouter toutes les compétences N3, même sans évaluation
-                    hierarchie[comp1.code].sousNiveaux[comp2.code].niveau3[comp3.code] = {
-                        code: comp3.code,
-                        nom: comp3.nom,
-                        notes: notesComp3
-                    }
-                })
+                // En mode complet (vue d'ensemble), ne pas créer de lignes N3 séparées
+                // Les évaluations N3 seront affichées sous forme de pastilles dans les lignes N2
+                // via la fonction getEvaluationsN3PourN2
             })
         })
 
@@ -618,12 +638,33 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         const lignesBase = genererLignesTableau(hierarchieAUtiliser)
         const lignesAvecBilan = []
 
-        // Enrichir les lignes de base avec le positionnement
+        // Enrichir les lignes de base avec le positionnement ET les références de compétences
         const lignesEnrichies = lignesBase.map(ligne => {
             // Le positionnement automatique est TOUJOURS calculé sur les N2 uniquement
             const codeCompetenceN2 = ligne.niveau2?.code
+            
+            // Ajouter la référence de compétence pour le filtrage par bloc
+            let competenceRef = null
+            
+            if (ligne.niveau2?.code) {
+                // Pour N2, trouver la compétence dans le référentiel N1N2
+                const parts = ligne.niveau2.code.split('.')
+                const comp1 = competencesN1N2.find(c => c.code === parts[0])
+                competenceRef = comp1?.enfants?.find(c => c.code === ligne.niveau2.code)
+            } else if (ligne.niveau1?.code) {
+                // Pour N1, trouver la compétence dans le référentiel N1N2
+                competenceRef = competencesN1N2.find(c => c.code === ligne.niveau1.code)
+            } else if (ligne.niveau3?.code) {
+                // Pour N3, utiliser la compétence N3 mais avec le bloc de son parent N2
+                const codeN2Parent = ligne.niveau3.code.split('.').slice(0, 2).join('.')
+                const parts = codeN2Parent.split('.')
+                const comp1 = competencesN1N2.find(c => c.code === parts[0])
+                competenceRef = comp1?.enfants?.find(c => c.code === codeN2Parent)
+            }
+            
             return {
                 ...ligne,
+                competence: competenceRef, // Ajouter la référence de compétence
                 positionnementAuto: codeCompetenceN2 ? calculerPositionnementAuto(codeCompetenceN2, eleveId) : null,
                 positionnementEnseignant: ligne.niveau2?.code ? getPositionnementEnseignant(eleveId, ligne.niveau2.code) : null,
                 positionnement: ligne.niveau1 ? calculerPositionnement(ligne.niveau1.code, eleveId) :
@@ -1370,8 +1411,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                 <thead>
                                                     <tr>
                                                         <th>Compétence principale</th>
-                                                        <th>Sous-compétence</th>
-                                                        <th>Critères d'évaluations</th>
+                                                        <th>Compétence secondaire</th>
+                                                        <th>Critères d'évaluations / Tâches professionnelles</th>
                                                         <th>Evaluations</th>
                                                         <th>Positionnement Auto / Enseignant</th>
                                                     </tr>
@@ -1402,13 +1443,92 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                 )}
                                                             </td>
                                                             <td className="cell-niveau3">
-                                                                {ligne.niveau3 && (
-                                                                    <div>
-                                                                        <strong>{ligne.niveau3.code}</strong>
-                                                                        <br />
-                                                                        <small>{ligne.niveau3.nom}</small>
-                                                                    </div>
-                                                                )}
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                                    {ligne.niveau3 && (
+                                                                        <div>
+                                                                            <strong>{ligne.niveau3.code}</strong>
+                                                                            <br />
+                                                                            <small>{ligne.niveau3.nom}</small>
+                                                                        </div>
+                                                                    )}
+                                                                    
+                                                                    {/* Afficher les évaluations N3 si on est sur une ligne N2 - en mode filtré N1 OU en mode vue d'ensemble */}
+                                                                    {ligne.niveau2?.code && (
+                                                                        (!codeCompetence) || // Mode vue d'ensemble
+                                                                        (codeCompetence && isCompetenceN1(codeCompetence)) // Mode filtré N1
+                                                                    ) && (() => {
+                                                                        const evaluationsN3 = getEvaluationsN3PourN2(eleve.id, ligne.niveau2.code);
+                                                                        if (evaluationsN3.length > 0) {
+                                                                            return (
+                                                                                <div style={{ 
+                                                                                    display: 'flex', 
+                                                                                    gap: '2px', 
+                                                                                    alignItems: 'center', 
+                                                                                    flexWrap: 'wrap',
+                                                                                    paddingTop: '4px',
+                                                                                    marginTop: '4px'
+                                                                                }}>
+                                                                                    
+                                                                                    {(() => {
+                                                                                        // Regrouper les évaluations par code de compétence
+                                                                                        const evaluationsGroupees = evaluationsN3.reduce((acc, note) => {
+                                                                                            if (!acc[note.competenceCode]) {
+                                                                                                acc[note.competenceCode] = [];
+                                                                                            }
+                                                                                            acc[note.competenceCode].push(note);
+                                                                                            return acc;
+                                                                                        }, {});
+
+                                                                                        // Afficher chaque groupe
+                                                                                        return Object.entries(evaluationsGroupees).map(([competenceCode, notes]) => (
+                                                                                            <div key={competenceCode} style={{ 
+                                                                                                display: 'flex', 
+                                                                                                alignItems: 'center', 
+                                                                                                gap: '3px', 
+                                                                                                marginRight: '8px',
+                                                                                                marginBottom: '2px',
+                                                                                                flexWrap: 'wrap'
+                                                                                            }}>
+                                                                                                <span style={{ fontSize: '10px', color: '#666', marginRight: '3px', flexShrink: 0 }}>
+                                                                                                    {competenceCode}
+                                                                                                </span>
+                                                                                                <div style={{ 
+                                                                                                    display: 'flex', 
+                                                                                                    gap: '2px', 
+                                                                                                    flexWrap: 'wrap', 
+                                                                                                    alignItems: 'center' 
+                                                                                                }}>
+                                                                                                    {notes.map((note, i) => (
+                                                                                                        <div
+                                                                                                            key={i}
+                                                                                                            style={{
+                                                                                                                display: 'inline-block',
+                                                                                                                width: '12px',
+                                                                                                                height: '12px',
+                                                                                                                borderRadius: '50%',
+                                                                                                                backgroundColor: getCouleurCss(note.couleur),
+                                                                                                                border: '1px solid #333',
+                                                                                                                cursor: 'pointer',
+                                                                                                                title: `${note.competenceCode} - ${note.couleur} (${note.date})`
+                                                                                                            }}
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation();
+                                                                                                                if (!ouvertureModalEnCours) {
+                                                                                                                    setNoteDetail(note);
+                                                                                                                }
+                                                                                                            }}
+                                                                                                        />
+                                                                                                    ))}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        ));
+                                                                                    })()}
+                                                                                </div>
+                                                                            );
+                                                                        }
+                                                                        return null;
+                                                                    })()}
+                                                                </div>
                                                             </td>
                                                             <td className="cell-notes-hierarchique">
                                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -1521,52 +1641,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                             }}
                                                                         >+</div>
                                                                     )}
-                                                                    
-                                                                    {/* Afficher les évaluations N3 si on est sur une ligne N2 et qu'on filtre sur N1 */}
-                                                                    {ligne.niveau2?.code && codeCompetence && isCompetenceN1(codeCompetence) && (() => {
-                                                                        const evaluationsN3 = getEvaluationsN3PourN2(eleve.id, ligne.niveau2.code);
-                                                                        if (evaluationsN3.length > 0) {
-                                                                            return (
-                                                                                <div style={{ 
-                                                                                    display: 'flex', 
-                                                                                    gap: '2px', 
-                                                                                    alignItems: 'center', 
-                                                                                    flexWrap: 'wrap',
-                                                                                    borderTop: '1px solid #ddd',
-                                                                                    paddingTop: '2px',
-                                                                                    marginTop: '2px'
-                                                                                }}>
-                                                                                    <span style={{ 
-                                                                                        fontSize: '10px', 
-                                                                                        color: '#666',
-                                                                                        marginRight: '3px'
-                                                                                    }}>N3:</span>
-                                                                                    {evaluationsN3.map((note, i) => (
-                                                                                        <div
-                                                                                            key={i}
-                                                                                            style={{
-                                                                                                display: 'inline-block',
-                                                                                                width: '12px',
-                                                                                                height: '12px',
-                                                                                                borderRadius: '50%',
-                                                                                                backgroundColor: getCouleurCss(note.couleur),
-                                                                                                border: '1px solid #333',
-                                                                                                cursor: 'pointer',
-                                                                                                title: `${note.competenceCode} - ${note.couleur} (${note.date})`
-                                                                                            }}
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
-                                                                                                if (!ouvertureModalEnCours) {
-                                                                                                    setNoteDetail(note);
-                                                                                                }
-                                                                                            }}
-                                                                                        />
-                                                                                    ))}
-                                                                                </div>
-                                                                            );
-                                                                        }
-                                                                        return null;
-                                                                    })()}
                                                                 </div>
                                                             </td>
                                                             <td className="cell-positionnement">
@@ -1849,8 +1923,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                     <thead>
                                         <tr>
                                             <th>Compétence principale</th>
-                                            <th>Sous-compétence</th>
-                                            <th>Critères d'évaluations spécifiques</th>
+                                            <th>Compétence secondaire</th>
+                                            <th>Critères d'évaluations / Tâches professionnelles</th>
                                             <th>Evaluations</th>
                                             <th>Positionnement Auto/Prof</th>
                                         </tr>
@@ -1892,8 +1966,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                 </div>
                                                             )}
                                                             
-                                                            {/* Afficher les évaluations N3 si on est sur une ligne N2 et qu'on filtre sur N1 */}
-                                                            {ligne.niveau2?.code && codeCompetence && isCompetenceN1(codeCompetence) && (() => {
+                                                            {/* Afficher les évaluations N3 si on est sur une ligne N2 - en mode filtré N1 OU en mode vue d'ensemble */}
+                                                            {ligne.niveau2?.code && (
+                                                                (!codeCompetence) || // Mode vue d'ensemble
+                                                                (codeCompetence && isCompetenceN1(codeCompetence)) // Mode filtré N1
+                                                            ) && (() => {
                                                                 const evaluationsN3 = getEvaluationsN3PourN2(eleve.id, ligne.niveau2.code);
                                                                 
                                                                 if (evaluationsN3.length > 0) {
@@ -1903,37 +1980,64 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                             gap: '2px', 
                                                                             alignItems: 'center', 
                                                                             flexWrap: 'wrap',
-                                                                            borderTop: '1px solid #ddd',
                                                                             paddingTop: '4px',
                                                                             marginTop: '4px'
                                                                         }}>
-                                                                            <span style={{ 
-                                                                                fontSize: '10px', 
-                                                                                color: '#666',
-                                                                                marginRight: '3px',
-                                                                                fontWeight: 'bold'
-                                                                            }}>N3:</span>
-                                                                            {evaluationsN3.map((note, i) => (
-                                                                                <div
-                                                                                    key={i}
-                                                                                    style={{
-                                                                                        display: 'inline-block',
-                                                                                        width: '12px',
-                                                                                        height: '12px',
-                                                                                        borderRadius: '50%',
-                                                                                        backgroundColor: getCouleurCss(note.couleur),
-                                                                                        border: '1px solid #333',
-                                                                                        cursor: 'pointer',
-                                                                                        title: `${note.competenceCode} - ${note.couleur} (${note.date})`
-                                                                                    }}
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        if (!ouvertureModalEnCours) {
-                                                                                            setNoteDetail(note);
-                                                                                        }
-                                                                                    }}
-                                                                                />
-                                                                            ))}
+                                                                            
+                                                                            {(() => {
+                                                                                // Regrouper les évaluations par code de compétence
+                                                                                const evaluationsGroupees = evaluationsN3.reduce((acc, note) => {
+                                                                                    if (!acc[note.competenceCode]) {
+                                                                                        acc[note.competenceCode] = [];
+                                                                                    }
+                                                                                    acc[note.competenceCode].push(note);
+                                                                                    return acc;
+                                                                                }, {});
+
+                                                                                // Afficher chaque groupe
+                                                                                return Object.entries(evaluationsGroupees).map(([competenceCode, notes]) => (
+                                                                                    <div key={competenceCode} style={{ 
+                                                                                        display: 'flex', 
+                                                                                        alignItems: 'center', 
+                                                                                        gap: '3px', 
+                                                                                        marginRight: '8px',
+                                                                                        marginBottom: '2px',
+                                                                                        flexWrap: 'wrap'
+                                                                                    }}>
+                                                                                        <span style={{ fontSize: '10px', color: '#666', marginRight: '3px', flexShrink: 0 }}>
+                                                                                            {competenceCode}
+                                                                                        </span>
+                                                                                        <div style={{ 
+                                                                                            display: 'flex', 
+                                                                                            gap: '2px', 
+                                                                                            flexWrap: 'wrap', 
+                                                                                            alignItems: 'center' 
+                                                                                        }}>
+                                                                                            {notes.map((note, i) => (
+                                                                                                <div
+                                                                                                    key={i}
+                                                                                                    style={{
+                                                                                                        display: 'inline-block',
+                                                                                                        width: '12px',
+                                                                                                        height: '12px',
+                                                                                                        borderRadius: '50%',
+                                                                                                        backgroundColor: getCouleurCss(note.couleur),
+                                                                                                        border: '1px solid #333',
+                                                                                                        cursor: 'pointer',
+                                                                                                        title: `${note.competenceCode} - ${note.couleur} (${note.date})`
+                                                                                                    }}
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        if (!ouvertureModalEnCours) {
+                                                                                                            setNoteDetail(note);
+                                                                                                        }
+                                                                                                    }}
+                                                                                                />
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ));
+                                                                            })()}
                                                                         </div>
                                                                     );
                                                                 }

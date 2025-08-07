@@ -113,7 +113,7 @@
 
 .tableau-hierarchique th:nth-child(2),
 .tableau-hierarchique td:nth-child(2) {
-  width: 20%; /* Sous-compétence */
+  width: 20%; /* Compétence secondaire */
 }
 
 .tableau-hierarchique th:nth-child(3),
@@ -473,7 +473,7 @@ background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
   
   .tableau-hierarchique th:nth-child(2),
   .tableau-hierarchique td:nth-child(2) {
-    width: 18%; /* Sous-compétence */
+    width: 18%; /* Compétence secondaire */
   }
   
   .tableau-hierarchique th:nth-child(3),
@@ -693,7 +693,7 @@ background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
   
   .tableau-hierarchique th:nth-child(2),
   .tableau-hierarchique td:nth-child(2) {
-    width: 16%; /* Sous-compétence */
+    width: 16%; /* Compétence secondaire SEO */
   }
   
   .tableau-hierarchique th:nth-child(3),

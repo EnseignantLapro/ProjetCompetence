@@ -132,3 +132,115 @@ export const competencesN1N2 = [
     ]
   },
 ];
+
+export const tachesProfessionelles = [
+  {
+    code: 'R1',
+    nom: 'Accompagnement du client',
+    description: '',
+    competences: ['C01', 'C04', 'C05'],
+    duree: '',
+    niveau: '',
+    TacheAssociees: [
+        { code: 'T1', nom: 'Analyse des besoins du client' },
+        { code: 'T2', nom: 'Réception de l’installation avec le client' },
+        { code: 'T3', nom: 'Formation du client' },
+        { code: 'T4', nom: 'Explication des modalités de l’intervention' },
+        { code: 'T5', nom: 'Information et/ou conseil au client' },
+        { code: 'T6', nom: 'Fidélisation de la clientèle' }
+    ]
+  },
+    {
+    code: 'R2',
+    nom: 'Installation et qualification ',
+    description: '',
+    competences: ['C04', 'C05', 'C06', 'C08', 'C09', 'C10'],
+    duree: '',
+    niveau: '',
+    TacheAssociees: [
+        { code: 'T1', nom: 'Analyse de la demande du client' },
+        { code: 'T2', nom: 'Production des documents pour la mise en œuvre (plans d\'exécution, protocoles, paramétrages etc.)' },
+        { code: 'T3', nom: 'Vérification du dossier et interprétation des plans d’exécution' },
+        { code: 'T4', nom: 'Préparation du chantier en fonction de l’intervention souhaitée' },
+        { code: 'T5', nom: 'Réalisation des opérations avec, en particulier, prise en compte des contraintes client et contrôle matériel et logiciel de l’installation' },
+        { code: 'T6', nom: 'Recettage de l’installation' }
+    ]
+  },
+    {
+        code: 'R3',
+        nom: 'Exploitation et maintien en condition opérationnelle',
+        description: '',
+        competences: ['C02', 'C06', 'C08', 'C09', 'C10', 'C11'],
+        duree: '',
+        niveau: '',
+        TacheAssociees: [
+            { code: 'T1', nom: 'Suivi de l’exploitation technique' },
+            { code: 'T2', nom: 'Contact avec les supports techniques externes' },
+            { code: 'T3', nom: 'Supervision de l’état du réseau dans son périmètre' },
+            { code: 'T4', nom: 'Réalisation d’un diagnostic de premier niveau' },
+            { code: 'T5', nom: 'Configuration matérielle et logicielle des équipements' },
+            { code: 'T6', nom: 'Intégration de nouveaux équipements' },
+            { code: 'T7', nom: 'Mise à jour des équipements' }
+        ]
+    },
+    {
+        code: 'R4',
+        nom: 'Gestion de projet et d’équipe',
+        description: '',
+        competences: ['C01', 'C02', 'C03'],
+        duree: '',
+        niveau: '',
+        TacheAssociees: [
+            { code: 'T1', nom: 'Identification de toutes les étapes du projet jusqu’à la réception des travaux' },
+            { code: 'T2', nom: 'Identification des ressources humaines et matérielles' },
+            { code: 'T3', nom: 'Management des équipes opérationnelles internes' },
+            { code: 'T4', nom: 'Gestion de la sous-traitance' },
+            { code: 'T5', nom: 'Pilotage de l’exécution des travaux' },
+            { code: 'T6', nom: 'Encadrement des équipes externes' }
+        ]
+    },
+    {
+        code: 'R5',
+        nom: 'Maintenance des réseaux informatiques',
+        description: '',
+        competences: ['C02', 'C04', 'C06', 'C09', 'C10', 'C11'],
+        duree: '',
+        niveau: '',
+        TacheAssociees: [
+            { code: 'T1', nom: 'Analyse des dysfonctionnements' },
+            { code: 'T2', nom: 'Mise en œuvre de la maintenance préventive' },
+            { code: 'T3', nom: 'Mise en œuvre de la maintenance corrective' },
+            { code: 'T4', nom: 'Réalisation des tests de validation' },
+            { code: 'T5', nom: 'Rédaction des rapports d’intervention' }
+        ]
+    },
+    {
+        code: 'D1',
+        nom: 'Élaboration et appropriation d’un cahier des charges',
+        description: '',
+        competences: ['C01', 'C03', 'C04', 'C05'],
+        duree: '',
+        niveau: '',
+        TacheAssociees: [
+            { code: 'T1', nom: 'Collecte des informations' },
+            { code: 'T2', nom: 'Analyse des informations' },
+            { code: 'T3', nom: 'Interprétation d’un cahier des charges' },
+            { code: 'T4', nom: 'Formalisation du cahier des charges' }
+        ]
+    },
+    {
+        code: 'D2',
+        nom: 'Développement et validation de solutions logicielles',
+        description: '',
+        competences: ['C05', 'C06', 'C08'],
+        duree: '',
+        niveau: '',
+        TacheAssociees: [
+            { code: 'T1', nom: 'Conception de l’architecture d’une solution logicielle' },
+            { code: 'T2', nom: 'Modélisation d’une solution logicielle' },
+            { code: 'T3', nom: 'Développement, utilisation ou adaptation de composants logiciels' },
+            { code: 'T4', nom: 'Tests de mise en production' },
+            { code: 'T5', nom: 'Recette et validation' }
+        ]
+    }
+];
