@@ -12,7 +12,7 @@ function AdminPanel({ classeChoisie, classes }) {
 
   // Chargement initial
   useEffect(() => {
-    fetch('http://localhost:3001/competences')
+    fetch(`http://${window.location.hostname}:3001/competences`)
       .then(res => res.json())
       .then(setCompetences)
   }, [])
@@ -44,7 +44,7 @@ function AdminPanel({ classeChoisie, classes }) {
           }
 
           try {
-            const response = await fetch('http://localhost:3001/eleves', {
+            const response = await fetch(`http://${window.location.hostname}:3001/eleves`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -82,7 +82,7 @@ function AdminPanel({ classeChoisie, classes }) {
   // Ajout compétence
   const ajouterCompetence = async () => {
     if (!newComp.trim()) return
-    const res = await fetch('http://localhost:3001/competences', {
+    const res = await fetch(`http://${window.location.hostname}:3001/competences`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nom: newComp }),
@@ -95,7 +95,7 @@ function AdminPanel({ classeChoisie, classes }) {
   // Ajout classe
   const ajouterClasse = async () => {
     if (!newClasse.trim()) return
-    const res = await fetch('http://localhost:3001/classes', {
+    const res = await fetch(`http://${window.location.hostname}:3001/classes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nom: newClasse }),
@@ -109,7 +109,7 @@ function AdminPanel({ classeChoisie, classes }) {
   // Modifier classe
   const updateClasse = async () => {
     if (!editingClasseNom.trim()) return
-    const res = await fetch(`http://localhost:3001/classes/${editingClasseId}`, {
+    const res = await fetch(`http://${window.location.hostname}:3001/classes/${editingClasseId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nom: editingClasseNom }),
@@ -124,7 +124,7 @@ function AdminPanel({ classeChoisie, classes }) {
   // Supprimer classe
   const supprimerClasse = async (id) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette classe ?')) return
-    await fetch(`http://localhost:3001/classes/${id}`, {
+    await fetch(`http://${window.location.hostname}:3001/classes/${id}`, {
       method: 'DELETE',
     })
     // Note: Il faudrait remonter cette info à App.jsx pour mettre à jour la liste

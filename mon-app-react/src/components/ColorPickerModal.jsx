@@ -17,7 +17,7 @@ function ColorPickerModal({ eleve, competenceCode, onClose, ajouterNote }) {
     prof_id: 1
   }
 
-  const res = await fetch('http://localhost:3001/notes', {
+  const res = await fetch(`http://${window.location.hostname}:3001/notes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(note)

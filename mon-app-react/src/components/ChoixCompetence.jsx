@@ -29,7 +29,7 @@ function ChoixCompetence({ onChoixFinal }) {
 
 useEffect(() => {
   if (niveau2) {
-    fetch(`http://localhost:3001/competences-n3?parent_code=${niveau2}`)
+    fetch(`http://${window.location.hostname}:3001/competences-n3?parent_code=${niveau2}`)
       .then(res => res.json())
       .then(data => {
         setNiveau3EnBase(data)
@@ -55,7 +55,7 @@ useEffect(() => {
     if (!nom) return
     const code = genererCodeN3()
 
-    const res = await fetch('http://localhost:3001/competences-n3', {
+    const res = await fetch(`http://${window.location.hostname}:3001/competences-n3`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parent_code: niveau2, code, nom }),
@@ -142,7 +142,7 @@ useEffect(() => {
       )}
 
       <br />
-      <button onClick={valider}>Valider le choix</button>
+      <button className='btn btn-primary' onClick={valider}>Valider le choix</button>
     </div>
   )
 }

@@ -19,8 +19,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
     const [elevePositionnement, setElevePositionnement] = useState(null)
     const [competencePositionnement, setCompetencePositionnement] = useState(null)
 
-    // État pour gérer les blocs fermés/ouverts (par défaut tous ouverts)
-    const [blocsFermes, setBlocsFermes] = useState(new Set())
+    // État pour gérer les blocs fermés/ouverts (par défaut tous fermés)
+    const [blocsFermes, setBlocsFermes] = useState(new Set([1, 2, 3]))
     
     // État pour gérer l'affichage du tableau en mode filtré (masqué par défaut)
     const [tableauVisible, setTableauVisible] = useState(false)
@@ -38,18 +38,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
     useEffect(() => {
         const idClasse = classeChoisie
         if (!idClasse) {
-            fetch('http://localhost:3001/eleves')
+            fetch(`http://${window.location.hostname}:3001/eleves`)
                 .then(res => res.json())
                 .then(setEleves)
             return
         }
 
-        fetch(`http://localhost:3001/eleves?classe_id=${idClasse}`)
+        fetch(`http://${window.location.hostname}:3001/eleves?classe_id=${idClasse}`)
             .then(res => res.json())
             .then(setEleves)
-        fetch('http://localhost:3001/notes').then(res => res.json()).then(setNotes)
-        fetch('http://localhost:3001/competences-n3').then(res => res.json()).then(setCompetencesN3)
-        fetch('http://localhost:3001/positionnements').then(res => res.json()).then(setPositionnementsEnseignant)
+        fetch(`http://${window.location.hostname}:3001/notes`).then(res => res.json()).then(setNotes)
+        fetch(`http://${window.location.hostname}:3001/competences-n3`).then(res => res.json()).then(setCompetencesN3)
+        fetch(`http://${window.location.hostname}:3001/positionnements`).then(res => res.json()).then(setPositionnementsEnseignant)
     }, [classeChoisie])
 
     // Réinitialiser l'affichage du tableau quand la compétence change
@@ -139,7 +139,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
             
             if (derniereEvaluationDirecte) {
                 // Modifier la dernière évaluation directe existante
-                const response = await fetch(`http://localhost:3001/notes/${derniereEvaluationDirecte.id}`, {
+                const response = await fetch(`http://${window.location.hostname}:3001/notes/${derniereEvaluationDirecte.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -155,7 +155,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                     setDernieresEvaluationsDirectes(prev => new Map(prev.set(cleEleveCompetence, evaluationModifiee)))
                     
                     // Recharger toutes les notes depuis la base
-                    const notesResponse = await fetch('http://localhost:3001/notes')
+                    const notesResponse = await fetch(`http://${window.location.hostname}:3001/notes`)
                     const toutesLesNotes = await notesResponse.json()
                     setNotes(toutesLesNotes)
                 }
@@ -169,7 +169,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                     prof_id: 1 // À adapter selon votre système d'authentification
                 }
 
-                const response = await fetch('http://localhost:3001/notes', {
+                const response = await fetch(`http://${window.location.hostname}:3001/notes`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(nouvelleNote)
@@ -181,7 +181,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                     setDernieresEvaluationsDirectes(prev => new Map(prev.set(cleEleveCompetence, noteAjoutee)))
                     
                     // Recharger toutes les notes depuis la base
-                    const notesResponse = await fetch('http://localhost:3001/notes')
+                    const notesResponse = await fetch(`http://${window.location.hostname}:3001/notes`)
                     const toutesLesNotes = await notesResponse.json()
                     setNotes(toutesLesNotes)
                 }
@@ -204,7 +204,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         }
 
         try {
-            const res = await fetch(`http://localhost:3001/notes/${noteId}`, {
+            const res = await fetch(`http://${window.location.hostname}:3001/notes/${noteId}`, {
                 method: 'DELETE'
             })
 
@@ -233,7 +233,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         if (!elevePositionnement || !competencePositionnement) return
 
         try {
-            const response = await fetch('http://localhost:3001/positionnements', {
+            const response = await fetch(`http://${window.location.hostname}:3001/positionnements`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -248,7 +248,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
 
             if (response.ok) {
                 // Recharger les positionnements enseignant
-                const positionnementsResponse = await fetch('http://localhost:3001/positionnements')
+                const positionnementsResponse = await fetch(`http://${window.location.hostname}:3001/positionnements`)
                 if (positionnementsResponse.ok) {
                     const nouveauxPositionnements = await positionnementsResponse.json()
                     setPositionnementsEnseignant(nouveauxPositionnements)
@@ -1229,15 +1229,30 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                     // Afficher un bloc vide si pas de notes
                                     return (
                                         <div key={numeroBloc} className="bloc-section-eleve" >
-                                            <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`}>
-                                                <span 
+                                            <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span>{getNomBloc(parseInt(numeroBloc))}</span>
+                                                <button 
                                                     onClick={() => toggleBloc(parseInt(numeroBloc))}
-                                                    style={{ cursor: 'pointer', marginRight: '10px', fontSize: '16px' }}
+                                                    style={{
+                                                        backgroundColor: 'white',
+                                                        border: 'none',
+                                                        cursor: 'pointer',
+                                                        padding: '4px 8px',
+                                                        borderRadius: '4px',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        gap: '2px',
+                                                        width: '24px',
+                                                        height: '24px'
+                                                    }}
                                                     title={blocsFermes.has(parseInt(numeroBloc)) ? 'Ouvrir le bloc' : 'Fermer le bloc'}
                                                 >
-                                                    {blocsFermes.has(parseInt(numeroBloc)) ? '▶️' : '🔽'}
-                                                </span>
-                                                {getNomBloc(parseInt(numeroBloc))}
+                                                    <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                    <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                    <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                </button>
                                             </h4>
                                             {!blocsFermes.has(parseInt(numeroBloc)) && (
                                                 <div className="aucune-note-bloc">
@@ -1250,15 +1265,30 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                 
                                 return (
                                     <div key={numeroBloc} className="bloc-section-eleve">
-                                        <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`}>
-                                            <span 
+                                        <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span>{getNomBloc(parseInt(numeroBloc))}</span>
+                                            <button 
                                                 onClick={() => toggleBloc(parseInt(numeroBloc))}
-                                                style={{ cursor: 'pointer', marginRight: '10px', fontSize: '16px' }}
+                                                style={{
+                                                    backgroundColor: 'white',
+                                                    border: 'none',
+                                                    cursor: 'pointer',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '4px',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: '2px',
+                                                    width: '24px',
+                                                    height: '24px'
+                                                }}
                                                 title={blocsFermes.has(parseInt(numeroBloc)) ? 'Ouvrir le bloc' : 'Fermer le bloc'}
                                             >
-                                                {blocsFermes.has(parseInt(numeroBloc)) ? '▶️' : '🔽'}
-                                            </span>
-                                            {getNomBloc(parseInt(numeroBloc))}
+                                                <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                            </button>
                                         </h4>
 
                                         {!blocsFermes.has(parseInt(numeroBloc)) && (
@@ -1508,37 +1538,31 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                             if (!bilanBloc) return null
                                             
                                             return (
-                                                <div className={`bloc-bilan-externe bloc-bilan-externe${parseInt(numeroBloc)}`}
-                                                     style={{
-                                                         display: 'flex',
-                                                         alignItems: 'center',
-                                                         justifyContent: 'space-between',
-                                                         padding: '10px 15px',
-                                                         backgroundColor: '#f8f9ff',
-                                                         border: '2px solid #667eea',
-                                                         borderRadius: '8px',
-                                                         marginTop: '10px',
-                                                         fontSize: '14px',
-                                                         fontWeight: 'bold'
-                                                     }}>
-                                                    <div style={{ color: '#667eea', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                <div className={`bloc-section-bilan bloc-section-bilan${parseInt(numeroBloc)}`}
+                                                    >
+                                                    <div style={{  display: 'flex', alignItems: 'center', gap: '10px' }}>
                                                         <span>🏆 BILAN {getNomBloc(parseInt(numeroBloc))}</span>
-                                                        <span style={{ fontSize: '13px' }}>
-                                                            Moyenne: {(bilanBloc.moyenne * 20/3).toFixed(1)}/20
-                                                        </span>
+                                                        
                                                     </div>
                                                     <div 
                                                         style={{
                                                             display: 'inline-block',
-                                                            width: '28px',
-                                                            height: '28px',
+                                                            width: '30px',
+                                                            height: '30px',
+                                                            padding: '2px',
                                                             borderRadius: '50%',
                                                             backgroundColor: getCouleurCss(bilanBloc.couleur),
-                                                            border: '3px solid #667eea',
-                                                            cursor: 'pointer'
+                                                            border: `3px solid ${getCouleurCss(bilanBloc.couleur)}`,
+                                                            cursor: 'pointer',
+                                                            color: 'white',
+                                                            fontSize: '14px',
+                                                            fontWeight: 'bold',
                                                         }}
+                                                        
                                                         title={`Positionnement bloc: ${bilanBloc.couleur} (${(bilanBloc.moyenne * 20/3).toFixed(1)}/20)`}
-                                                    ></div>
+                                                    >
+                                                        {(bilanBloc.moyenne * 20/3).toFixed(1)}
+                                                    </div>
                                                 </div>
                                             )
                                         })()}
@@ -2007,7 +2031,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                             fontSize: '10px',
                                                             color: 'white',
                                                             fontWeight: 'bold',
-                                                            display: 'flex',
+                                                           
                                                             alignItems: 'center',
                                                             justifyContent: 'center'
                                                         }}

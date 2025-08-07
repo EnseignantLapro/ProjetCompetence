@@ -27,18 +27,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
     useEffect(() => {
         const idClasse = classeChoisie
         if (!idClasse) {
-            fetch('http://localhost:3001/eleves')
+            fetch(`http://${window.location.hostname}:3001/eleves`)
                 .then(res => res.json())
                 .then(setEleves)
             return
         }
 
-        fetch(`http://localhost:3001/eleves?classe_id=${idClasse}`)
+        fetch(`http://${window.location.hostname}:3001/eleves?classe_id=${idClasse}`)
             .then(res => res.json())
             .then(setEleves)
-        fetch('http://localhost:3001/notes').then(res => res.json()).then(setNotes)
-        fetch('http://localhost:3001/competences-n3').then(res => res.json()).then(setCompetencesN3)
-        fetch('http://localhost:3001/positionnements').then(res => res.json()).then(setPositionnementsEnseignant)
+        fetch(`http://${window.location.hostname}:3001/notes`).then(res => res.json()).then(setNotes)
+        fetch(`http://${window.location.hostname}:3001/competences-n3`).then(res => res.json()).then(setCompetencesN3)
+        fetch(`http://${window.location.hostname}:3001/positionnements`).then(res => res.json()).then(setPositionnementsEnseignant)
     }, [classeChoisie])
 
     const getCouleur = (eleveId) => {
@@ -101,7 +101,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
 
     const handleDeleteNote = async (noteId) => {
         try {
-            const res = await fetch(`http://localhost:3001/notes/${noteId}`, {
+            const res = await fetch(`http://${window.location.hostname}:3001/notes/${noteId}`, {
                 method: 'DELETE'
             })
             
@@ -242,7 +242,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                 couleur: couleur
             }
 
-            const response = await fetch('http://localhost:3001/positionnements', {
+            const response = await fetch(`http://${window.location.hostname}:3001/positionnements`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(positionnement)

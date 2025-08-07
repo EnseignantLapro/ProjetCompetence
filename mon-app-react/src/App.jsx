@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import AdminPanel from './components/AdminPanel'
 import TableauNotes from './components/TableauNotes'
 import ChoixCompetence from './components/ChoixCompetence'
+import Baniere from './components/Baniere'
 import { competencesN1N2 } from './data/competences'
 
 import './App.css'
@@ -43,7 +44,7 @@ function App() {
 
     // Niveau 3 depuis la BDD
     if (niveau2 && niveau3) {
-      fetch(`http://localhost:3001/competences-n3?parent_code=${niveau2}`)
+      fetch(`http://${window.location.hostname}:3001/competences-n3?parent_code=${niveau2}`)
         .then(res => res.json())
         .then(data => {
           const found = data.find(sc => sc.code === niveau3)
@@ -62,7 +63,7 @@ function App() {
       setClasseChoisie(savedClasse)
     }
 
-    fetch('http://localhost:3001/classes')
+    fetch(`http://${window.location.hostname}:3001/classes`)
       .then(res => res.json())
       .then(setClasses)
 
@@ -75,36 +76,23 @@ function App() {
     localStorage.setItem('classe_choisie', value)
   }
 
-  const getClasseName = () => {
-    if (!classeChoisie) return ''
-    const classe = classes.find(c => c.id == classeChoisie)
-    return classe ? classe.nom : ''
+  const handleToggleAdmin = () => {
+    setAdminVisible(!adminVisible)
   }
 
   return (
     <>
-      <h1>Compétence Julien Code</h1>
+      <Baniere
+        classes={classes}
+        classeChoisie={classeChoisie}
+        onClasseChange={handleClasseChange}
+        isAdmin={isAdmin}
+        adminVisible={adminVisible}
+        onToggleAdmin={handleToggleAdmin}
+      />
 
-      <div>
-        <label htmlFor="select-classe">Classe :</label>{' '}
-        <select id="select-classe" value={classeChoisie} onChange={handleClasseChange}>
-          <option value="">-- Choisir une classe --</option>
-          {classes.map(c => (
-            <option key={c.id} value={c.id}>{c.nom}</option>
-          ))}
-        </select>
-       
-      </div>
-
-      {isAdmin && !adminVisible && (
-        <button onClick={() => setAdminVisible(true)}>Gérer l’appli</button>
-      )}
-
-      {isAdmin && adminVisible && (
-        <>
-          <button onClick={() => setAdminVisible(false)}>Revenir</button>
-          <AdminPanel classeChoisie={classeChoisie} classes={classes} />
-        </>
+      {adminVisible && (
+        <AdminPanel classeChoisie={classeChoisie} classes={classes} />
       )}
 
       {(!competenceChoisie && !isModifying) && (
