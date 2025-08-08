@@ -393,6 +393,48 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         return evaluationsN3
     }
 
+    // Fonction pour récupérer les évaluations N1 d'une compétence N1 pour un élève
+    const getEvaluationsN1PourN1 = (eleveId, codeCompetenceN1) => {
+        if (!codeCompetenceN1 || codeCompetenceN1.includes('.')) return []
+        
+        // Récupérer les évaluations directes sur cette compétence N1
+        const evaluationsN1 = notes.filter(note => 
+            note.eleve_id === eleveId && 
+            note.competence_code === codeCompetenceN1
+        )
+        
+        return evaluationsN1.map(note => ({
+            ...note,
+            competenceNom: getNomCompetence(codeCompetenceN1),
+            competenceCode: codeCompetenceN1
+        }))
+    }
+
+    // Fonction pour vérifier si le code sélectionné est une compétence N3
+    const isCompetenceN3 = (competenceCode) => {
+        if (!competenceCode) return false
+        // Une compétence N3 contient au moins 2 points (ex: C01.1.R1 ou C01.1.R1.T1)
+        const points = (competenceCode.match(/\./g) || []).length
+        return points >= 2
+    }
+
+    // Fonction pour récupérer les évaluations N2 d'une compétence N2 pour un élève
+    const getEvaluationsN2PourN2 = (eleveId, codeCompetenceN2) => {
+        if (!codeCompetenceN2 || !codeCompetenceN2.includes('.')) return []
+        
+        // Récupérer les évaluations directes sur cette compétence N2
+        const evaluationsN2 = notes.filter(note => 
+            note.eleve_id === eleveId && 
+            note.competence_code === codeCompetenceN2
+        )
+        
+        return evaluationsN2.map(note => ({
+            ...note,
+            competenceNom: getNomCompetence(codeCompetenceN2),
+            competenceCode: codeCompetenceN2
+        }))
+    }
+
     // Fonction pour organiser les notes par hiérarchie pour un élève
     const organiserNotesParHierarchie = (eleveId) => {
         const notesEleve = getNotesVisibles(eleveId)
@@ -1430,6 +1472,54 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                         <strong>{ligne.niveau1.code}</strong>
                                                                         <br />
                                                                         <small>{ligne.niveau1.nom}</small>
+                                                                        
+                                                                        {/* Petites pastilles pour les évaluations N1 */}
+                                                                        {(() => {
+                                                                            // Ne pas afficher les pastilles N1 en mode vue d'ensemble
+                                                                            if (!codeCompetence) return null
+                                                                            
+                                                                            // Ne pas afficher les pastilles N1 si on a sélectionné cette même compétence N1
+                                                                            if (codeCompetence === ligne.niveau1.code) return null
+                                                                            
+                                                                            // Ne pas afficher les pastilles N1 dans les bilans car on voit déjà les N1 dans les évaluations
+                                                                            if (ligne.estBilan) return null
+                                                                            
+                                                                            const evaluationsN1 = getEvaluationsN1PourN1(eleve.id, ligne.niveau1.code)
+                                                                            if (evaluationsN1.length === 0) return null
+                                                                            
+                                                                            return (
+                                                                                <div style={{ 
+                                                                                    marginTop: '5px',
+                                                                                    display: 'flex', 
+                                                                                    gap: '2px', 
+                                                                                    flexWrap: 'wrap', 
+                                                                                    alignItems: 'center' 
+                                                                                }}>
+                                                                                   
+                                                                                    {evaluationsN1.map((note, i) => (
+                                                                                        <div
+                                                                                            key={i}
+                                                                                            style={{
+                                                                                                display: 'inline-block',
+                                                                                                width: '12px',
+                                                                                                height: '12px',
+                                                                                                borderRadius: '50%',
+                                                                                                backgroundColor: getCouleurCss(note.couleur),
+                                                                                                border: '1px solid #333',
+                                                                                                cursor: 'pointer',
+                                                                                                title: `${note.competenceCode} - ${note.couleur} (${note.date})`
+                                                                                            }}
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                if (!ouvertureModalEnCours) {
+                                                                                                    setNoteDetail(note);
+                                                                                                }
+                                                                                            }}
+                                                                                        />
+                                                                                    ))}
+                                                                                </div>
+                                                                            )
+                                                                        })()}
                                                                     </div>
                                                                 )}
                                                             </td>
@@ -1944,6 +2034,54 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                 <strong>{ligne.niveau1.code}</strong>
                                                                 <br />
                                                                 <small>{ligne.niveau1.nom}</small>
+                                                                
+                                                                {/* Petites pastilles pour les évaluations N1 */}
+                                                                {(() => {
+                                                                    // Ne pas afficher les pastilles N1 en mode vue d'ensemble
+                                                                    if (!codeCompetence) return null
+                                                                    
+                                                                    // Ne pas afficher les pastilles N1 si on a sélectionné cette même compétence N1
+                                                                    if (codeCompetence === ligne.niveau1.code) return null
+                                                                    
+                                                                    // Ne pas afficher les pastilles N1 dans les bilans car on voit déjà les N1 dans les évaluations
+                                                                    if (ligne.estBilan) return null
+                                                                    
+                                                                    const evaluationsN1 = getEvaluationsN1PourN1(eleve.id, ligne.niveau1.code)
+                                                                    if (evaluationsN1.length === 0) return null
+                                                                    
+                                                                    return (
+                                                                        <div style={{ 
+                                                                            marginTop: '5px',
+                                                                            display: 'flex', 
+                                                                            gap: '2px', 
+                                                                            flexWrap: 'wrap', 
+                                                                            alignItems: 'center' 
+                                                                        }}>
+                                                                           
+                                                                            {evaluationsN1.map((note, i) => (
+                                                                                <div
+                                                                                    key={i}
+                                                                                    style={{
+                                                                                        display: 'inline-block',
+                                                                                        width: '12px',
+                                                                                        height: '12px',
+                                                                                        borderRadius: '50%',
+                                                                                        backgroundColor: getCouleurCss(note.couleur),
+                                                                                        border: '1px solid #333',
+                                                                                        cursor: 'pointer',
+                                                                                        title: `${note.competenceCode} - ${note.couleur} (${note.date})`
+                                                                                    }}
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        if (!ouvertureModalEnCours) {
+                                                                                            setNoteDetail(note);
+                                                                                        }
+                                                                                    }}
+                                                                                />
+                                                                            ))}
+                                                                        </div>
+                                                                    )
+                                                                })()}
                                                             </div>
                                                         )}
                                                     </td>
@@ -1953,6 +2091,54 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                 <strong>{ligne.niveau2.code}</strong>
                                                                 <br />
                                                                 <small>{ligne.niveau2.nom}</small>
+                                                                
+                                                                {/* Petites pastilles pour les évaluations N2 en mode filtré N3 */}
+                                                                {(() => {
+                                                                    // Afficher les pastilles N2 uniquement en mode filtré N3
+                                                                    if (!codeCompetence || !isCompetenceN3(codeCompetence)) return null
+                                                                    
+                                                                    // Ne pas afficher les pastilles N2 si on a sélectionné cette même compétence N2
+                                                                    if (codeCompetence === ligne.niveau2.code) return null
+                                                                    
+                                                                    // Ne pas afficher les pastilles N2 dans les bilans car on voit déjà les N2 dans les évaluations
+                                                                    if (ligne.estBilan) return null
+                                                                    
+                                                                    const evaluationsN2 = getEvaluationsN2PourN2(eleve.id, ligne.niveau2.code)
+                                                                    if (evaluationsN2.length === 0) return null
+                                                                    
+                                                                    return (
+                                                                        <div style={{ 
+                                                                            marginTop: '5px',
+                                                                            display: 'flex', 
+                                                                            gap: '2px', 
+                                                                            flexWrap: 'wrap', 
+                                                                            alignItems: 'center' 
+                                                                        }}>
+                                                                           
+                                                                            {evaluationsN2.map((note, i) => (
+                                                                                <div
+                                                                                    key={i}
+                                                                                    style={{
+                                                                                        display: 'inline-block',
+                                                                                        width: '12px',
+                                                                                        height: '12px',
+                                                                                        borderRadius: '50%',
+                                                                                        backgroundColor: getCouleurCss(note.couleur),
+                                                                                        border: '1px solid #333',
+                                                                                        cursor: 'pointer',
+                                                                                        title: `${note.competenceCode} - ${note.couleur} (${note.date})`
+                                                                                    }}
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        if (!ouvertureModalEnCours) {
+                                                                                            setNoteDetail(note);
+                                                                                        }
+                                                                                    }}
+                                                                                />
+                                                                            ))}
+                                                                        </div>
+                                                                    )
+                                                                })()}
                                                             </div>
                                                         )}
                                                     </td>

@@ -183,7 +183,7 @@ function App() {
             </button>
              <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>
               {!competenceChoisie.niveau3 && !competenceChoisie.niveau2 && (
-                <em>📝  l'évaluation de la compétence {competenceChoisie.niveau1} sera répartie dans toutes ses compétences secondaires</em>
+                <em>📝  l'évaluation de la compétence {competenceChoisie.niveau1} sera distillée dans toutes ses compétences secondaires</em>
               )}
               {competenceChoisie.niveau2 && !competenceChoisie.niveau3 && (
                 <em>📝 Vous pouvez évaluer cette compétence secondaire {competenceChoisie.niveau2} et voir toutes les critères d'évaluation déjà évalués</em>
