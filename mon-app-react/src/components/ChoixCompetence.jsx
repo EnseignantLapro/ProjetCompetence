@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import '../App.css'
 
-function ChoixCompetence({ onChoixFinal, isStudentMode = false }) {
+function ChoixCompetence({ onChoixFinal, isStudentMode = false, isTeacherMode = false }) {
   const [niveau1, setNiveau1] = useState('')
   const [niveau2, setNiveau2] = useState('')
   const [niveau3, setNiveau3] = useState('')
@@ -14,7 +14,7 @@ function ChoixCompetence({ onChoixFinal, isStudentMode = false }) {
 
   useEffect(() => {
     // En mode élève, ne pas charger les données du localStorage
-    if (!isStudentMode) {
+    if (!isStudentMode && !isTeacherMode) {
       const saved = localStorage.getItem('choix_competence')
       if (saved) {
         const { niveau1, niveau2, niveau3 } = JSON.parse(saved)
@@ -33,14 +33,14 @@ function ChoixCompetence({ onChoixFinal, isStudentMode = false }) {
       // Marquer qu'on vient de charger la page (nouvelle évaluation)
       localStorage.setItem('mode_evaluation', 'nouvelle')
     } else {
-      // En mode élève, réinitialiser complètement
+      // En mode élève ou enseignant, réinitialiser complètement
       setNiveau1('')
       setNiveau2('')
       setNiveau3('')
       setNiveau3Texte('')
       setNiveau3EnBase([])
     }
-  }, [isStudentMode])
+  }, [isStudentMode, isTeacherMode])
 
 useEffect(() => {
   if (niveau2) {
@@ -134,8 +134,8 @@ useEffect(() => {
     // Si aucun niveau1 n'est sélectionné, passer en mode vue d'ensemble
     if (!niveau1) {
       const selection = null
-      // Ne sauvegarder que si on n'est pas en mode élève
-      if (!isStudentMode) {
+      // Ne sauvegarder que si on n'est pas en mode élève ou enseignant
+      if (!isStudentMode && !isTeacherMode) {
         localStorage.setItem('choix_competence', JSON.stringify({ niveau1: '', niveau2: '', niveau3: '' }))
         localStorage.setItem('mode_evaluation', 'nouvelle')
       }
@@ -159,8 +159,8 @@ useEffect(() => {
     // Définir le mode selon le changement
     const mode = competenceAChange ? 'nouvelle' : 'edition'
     
-    // Ne sauvegarder que si on n'est pas en mode élève
-    if (!isStudentMode) {
+    // Ne sauvegarder que si on n'est pas en mode élève ou enseignant
+    if (!isStudentMode && !isTeacherMode) {
       localStorage.setItem('choix_competence', JSON.stringify(nouvelleSelection))
       localStorage.setItem('mode_evaluation', mode)
     }

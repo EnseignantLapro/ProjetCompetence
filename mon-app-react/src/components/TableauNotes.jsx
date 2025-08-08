@@ -5,7 +5,7 @@ import PositionnementModal from './PositionnementModal'
 import NotePastille from './NotePastille'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 
-function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode = false, studentInfo = null, appInitialized = false }) {
+function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false }) {
     const [eleves, setEleves] = useState([])
     const [notes, setNotes] = useState([])
 
@@ -19,11 +19,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
     const [elevePositionnement, setElevePositionnement] = useState(null)
     const [competencePositionnement, setCompetencePositionnement] = useState(null)
 
-    // État pour gérer les blocs fermés/ouverts (par défaut fermés en mode enseignant, ouverts en mode élève)
-    const [blocsFermes, setBlocsFermes] = useState(isStudentMode ? new Set() : new Set([1, 2, 3]))
+    // État pour gérer les blocs fermés/ouverts (par défaut fermés en mode enseignant normal, ouverts en mode élève et enseignant connecté)
+    const [blocsFermes, setBlocsFermes] = useState((isStudentMode || isTeacherMode) ? new Set() : new Set([1, 2, 3]))
 
-    // État pour gérer l'affichage du tableau en mode filtré (masqué par défaut en mode enseignant, visible en mode élève)
-    const [tableauVisible, setTableauVisible] = useState(isStudentMode)
+    // État pour gérer l'affichage du tableau en mode filtré (visible par défaut en mode élève et enseignant connecté)
+    const [tableauVisible, setTableauVisible] = useState(isStudentMode || isTeacherMode)
 
     // État pour tracker les dernières évaluations directes par élève/compétence
     const [dernieresEvaluationsDirectes, setDernieresEvaluationsDirectes] = useState(new Map())

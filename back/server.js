@@ -62,7 +62,26 @@ db.serialize(() => {
   FOREIGN KEY (eleve_id) REFERENCES eleves(id)
 )`)
 
+    // Table pour les enseignants
+    db.run(`CREATE TABLE IF NOT EXISTS enseignants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id_moodle INTEGER UNIQUE,
+  nom TEXT NOT NULL,
+  prenom TEXT NOT NULL,
+  photo TEXT,
+  etablissement TEXT,
+  token TEXT UNIQUE
+)`)
 
+    // Table d'association enseignant-classe
+    db.run(`CREATE TABLE IF NOT EXISTS enseignant_classes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  enseignant_id INTEGER,
+  classe_id INTEGER,
+  FOREIGN KEY (enseignant_id) REFERENCES enseignants(id),
+  FOREIGN KEY (classe_id) REFERENCES classes(id),
+  UNIQUE(enseignant_id, classe_id)
+)`)
 
 })
 
@@ -329,6 +348,228 @@ app.post('/auth/verify-token', (req, res) => {
           classe_id: eleve.classe_id,
           photo: eleve.photo
         }
+      })
+    }
+  )
+})
+
+// Routes pour les enseignants
+// Récupérer tous les enseignants
+app.get('/enseignants', (req, res) => {
+  db.all('SELECT * FROM enseignants ORDER BY nom, prenom', [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message })
+    res.json(rows)
+  })
+})
+
+// Récupérer un enseignant par ID
+app.get('/enseignants/:id', (req, res) => {
+  const { id } = req.params
+  db.get('SELECT * FROM enseignants WHERE id = ?', [id], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message })
+    if (!row) return res.status(404).json({ error: 'Enseignant non trouvé' })
+    res.json(row)
+  })
+})
+
+// Ajouter un enseignant
+app.post('/enseignants', (req, res) => {
+  const { id_moodle, nom, prenom, photo, etablissement } = req.body
+  const token = generateToken()
+  
+  db.run(
+    'INSERT INTO enseignants (id_moodle, nom, prenom, photo, etablissement, token) VALUES (?, ?, ?, ?, ?, ?)',
+    [id_moodle, nom, prenom, photo || 'default.jpg', etablissement, token],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message })
+      res.json({ 
+        id: this.lastID, 
+        id_moodle, 
+        nom, 
+        prenom, 
+        photo: photo || 'default.jpg',
+        etablissement,
+        token
+      })
+    }
+  )
+})
+
+// Modifier un enseignant
+app.put('/enseignants/:id', (req, res) => {
+  const { id } = req.params
+  const { id_moodle, nom, prenom, photo, etablissement, token } = req.body
+  
+  db.run(
+    'UPDATE enseignants SET id_moodle = ?, nom = ?, prenom = ?, photo = ?, etablissement = ?, token = ? WHERE id = ?',
+    [id_moodle, nom, prenom, photo || 'default.jpg', etablissement, token, id],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message })
+      if (this.changes === 0) return res.status(404).json({ error: 'Enseignant non trouvé' })
+      res.json({ 
+        id: parseInt(id), 
+        id_moodle, 
+        nom, 
+        prenom, 
+        photo: photo || 'default.jpg',
+        etablissement,
+        token
+      })
+    }
+  )
+})
+
+// Supprimer un enseignant
+app.delete('/enseignants/:id', (req, res) => {
+  const { id } = req.params
+  
+  // Supprimer d'abord les associations enseignant-classe
+  db.run('DELETE FROM enseignant_classes WHERE enseignant_id = ?', [id], (err) => {
+    if (err) return res.status(500).json({ error: err.message })
+    
+    // Puis supprimer l'enseignant
+    db.run('DELETE FROM enseignants WHERE id = ?', [id], function (err) {
+      if (err) return res.status(500).json({ error: err.message })
+      if (this.changes === 0) return res.status(404).json({ error: 'Enseignant non trouvé' })
+      res.json({ message: 'Enseignant supprimé' })
+    })
+  })
+})
+
+// Régénérer le token d'un enseignant
+app.post('/enseignants/:id/regenerate-token', (req, res) => {
+  const { id } = req.params
+  const newToken = generateToken()
+  
+  db.run(
+    'UPDATE enseignants SET token = ? WHERE id = ?',
+    [newToken, id],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message })
+      if (this.changes === 0) return res.status(404).json({ error: 'Enseignant non trouvé' })
+      res.json({ id: parseInt(id), token: newToken })
+    }
+  )
+})
+
+// Routes pour l'association enseignant-classe
+// Récupérer les classes d'un enseignant
+app.get('/enseignants/:id/classes', (req, res) => {
+  const { id } = req.params
+  const query = `
+    SELECT c.* 
+    FROM classes c
+    JOIN enseignant_classes ec ON c.id = ec.classe_id
+    WHERE ec.enseignant_id = ?
+    ORDER BY c.nom
+  `
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message })
+    res.json(rows)
+  })
+})
+
+// Récupérer les enseignants d'une classe
+app.get('/classes/:id/enseignants', (req, res) => {
+  const { id } = req.params
+  const query = `
+    SELECT e.* 
+    FROM enseignants e
+    JOIN enseignant_classes ec ON e.id = ec.enseignant_id
+    WHERE ec.classe_id = ?
+    ORDER BY e.nom, e.prenom
+  `
+  
+  db.all(query, [id], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message })
+    res.json(rows)
+  })
+})
+
+// Associer un enseignant à une classe
+app.post('/enseignant-classes', (req, res) => {
+  const { enseignant_id, classe_id } = req.body
+  
+  db.run(
+    'INSERT INTO enseignant_classes (enseignant_id, classe_id) VALUES (?, ?)',
+    [enseignant_id, classe_id],
+    function (err) {
+      if (err) {
+        if (err.message.includes('UNIQUE constraint failed')) {
+          return res.status(400).json({ error: 'Cet enseignant est déjà associé à cette classe' })
+        }
+        return res.status(500).json({ error: err.message })
+      }
+      res.json({ id: this.lastID, enseignant_id, classe_id })
+    }
+  )
+})
+
+// Supprimer l'association enseignant-classe
+app.delete('/enseignant-classes/:enseignantId/:classeId', (req, res) => {
+  const { enseignantId, classeId } = req.params
+  
+  db.run(
+    'DELETE FROM enseignant_classes WHERE enseignant_id = ? AND classe_id = ?',
+    [enseignantId, classeId],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message })
+      if (this.changes === 0) return res.status(404).json({ error: 'Association non trouvée' })
+      res.json({ message: 'Association supprimée' })
+    }
+  )
+})
+
+// Vérifier un token d'enseignant
+app.post('/auth/verify-teacher-token', (req, res) => {
+  const { token } = req.body
+  
+  if (!token) {
+    return res.status(400).json({ error: 'Token manquant' })
+  }
+  
+  // Récupérer l'enseignant et ses classes
+  db.get(
+    'SELECT id, prenom, nom, id_moodle, photo, etablissement FROM enseignants WHERE token = ?',
+    [token],
+    (err, enseignant) => {
+      if (err) {
+        console.error('Erreur lors de la vérification du token enseignant:', err)
+        return res.status(500).json({ error: err.message })
+      }
+      
+      if (!enseignant) {
+        return res.json({ valid: false, message: 'Token invalide' })
+      }
+      
+      // Récupérer les classes de l'enseignant
+      const query = `
+        SELECT c.* 
+        FROM classes c
+        JOIN enseignant_classes ec ON c.id = ec.classe_id
+        WHERE ec.enseignant_id = ?
+        ORDER BY c.nom
+      `
+      
+      db.all(query, [enseignant.id], (err, classes) => {
+        if (err) {
+          console.error('Erreur lors de la récupération des classes:', err)
+          return res.status(500).json({ error: err.message })
+        }
+        
+        res.json({ 
+          valid: true, 
+          enseignant: {
+            id: enseignant.id,
+            prenom: enseignant.prenom,
+            nom: enseignant.nom,
+            id_moodle: enseignant.id_moodle,
+            photo: enseignant.photo,
+            etablissement: enseignant.etablissement,
+            classes: classes
+          }
+        })
       })
     }
   )

@@ -3,6 +3,7 @@ import AdminEleve from './AdminEleve'
 import AdminCompetence from './AdminCompetence'
 import AdminClasse from './AdminClasse'
 import AdminEvaluation from './AdminEvaluation'
+import AdminEnseignant from './AdminEnseignant'
 
 function AdminPanel({ classeChoisie, classes }) {
   const [activeTab, setActiveTab] = useState('competences') // État pour les onglets
@@ -29,6 +30,7 @@ function AdminPanel({ classeChoisie, classes }) {
         { key: 'competences', label: 'Compétences' },
         { key: 'classes', label: 'Classes' },
         { key: 'eleves', label: 'Élèves' },
+        { key: 'enseignants', label: 'Enseignants' },
         { key: 'evaluations', label: 'Évaluations' }
       ].map(tab => (
         <button
@@ -68,6 +70,10 @@ function AdminPanel({ classeChoisie, classes }) {
 
       {activeTab === 'eleves' && (
         <AdminEleve classe={getClasseObject()} />
+      )}
+
+      {activeTab === 'enseignants' && (
+        <AdminEnseignant />
       )}
 
       {activeTab === 'evaluations' && (

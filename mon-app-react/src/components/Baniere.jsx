@@ -10,7 +10,10 @@ function Baniere({
     onToggleAdmin,
     isStudentMode = false,
     studentInfo = null,
-    onStudentLogout = null
+    onStudentLogout = null,
+    isTeacherMode = false,
+    teacherInfo = null,
+    onTeacherLogout = null
 }) {
     const getClasseName = () => {
         if (!classeChoisie) return ''
@@ -43,7 +46,9 @@ function Baniere({
             >
                 <div>
                     <h1 className="baniere-titre">
-                        {isStudentMode ? 'Mon bilan de compétences' : 'Evaluation au fil de l\'eau'}
+                        {isStudentMode ? 'Mon bilan de compétences' : 
+                         isTeacherMode ? 'Espace Enseignant' :
+                         'Evaluation au fil de l\'eau'}
                     </h1>
                     
                     {/* Affichage pour le mode élève */}
@@ -54,6 +59,18 @@ function Baniere({
                             </span>
                             <span style={{ color: '#666', fontSize: '14px' }}>
                                 • {studentInfo.prenom} {studentInfo.nom}
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Affichage pour le mode enseignant */}
+                    {isTeacherMode && teacherInfo && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
+                            <span style={{ fontWeight: '500', color: '#333' }}>
+                                {teacherInfo.prenom} {teacherInfo.nom}
+                            </span>
+                            <span style={{ color: '#666', fontSize: '14px' }}>
+                                • {teacherInfo.etablissement} • {teacherInfo.classes?.length || 0} classe(s)
                             </span>
                         </div>
                     )}
@@ -83,8 +100,8 @@ function Baniere({
                     )}
                 </div>
 
-                {/* Bouton admin en mode enseignant */}
-                {isAdmin && !isStudentMode && (
+                {/* Bouton admin en mode normal */}
+                {isAdmin && !isStudentMode && !isTeacherMode && (
                     <div>
                         <button 
                             onClick={onToggleAdmin}
@@ -119,6 +136,26 @@ function Baniere({
                             }}
                         >
                             🚪 Déconnexion
+                        </button>
+                    </div>
+                )}
+
+                {/* Bouton de déconnexion en mode enseignant */}
+                {isTeacherMode && teacherInfo && onTeacherLogout && (
+                    <div>
+                        <button
+                            onClick={onTeacherLogout}
+                            style={{
+                                backgroundColor: '#8b2c7a',
+                                color: 'white',
+                                border: 'none',
+                                padding: '10px 20px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontWeight: '500'
+                            }}
+                        >
+                            👨‍🏫 Déconnexion
                         </button>
                     </div>
                 )}

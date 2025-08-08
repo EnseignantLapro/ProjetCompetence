@@ -4,13 +4,15 @@ import TableauNotes from './components/TableauNotes'
 import ChoixCompetence from './components/ChoixCompetence'
 import Baniere from './components/Baniere'
 import { competencesN1N2, tachesProfessionelles } from './data/competences'
-
 import './App.css'
 
 function App() {
   const [isStudentMode, setIsStudentMode] = useState(false)
   const [studentToken, setStudentToken] = useState(null)
   const [studentInfo, setStudentInfo] = useState(null)
+  const [isTeacherMode, setIsTeacherMode] = useState(false)
+  const [teacherToken, setTeacherToken] = useState(null)
+  const [teacherInfo, setTeacherInfo] = useState(null)
   const [appInitialized, setAppInitialized] = useState(false) // Nouveau flag
   
   const isAdmin = true // À remplacer plus tard par détection Moodle
@@ -25,8 +27,8 @@ function App() {
   const [nomNiveau2, setNomNiveau2] = useState('')
   const [nomNiveau3, setNomNiveau3] = useState('')
 
-  // Fonction pour vérifier le token côté serveur
-  const verifyToken = async (token) => {
+  // Fonction pour vérifier le token élève côté serveur
+  const verifyStudentToken = async (token) => {
     try {
       const response = await fetch(`http://${window.location.hostname}:3001/auth/verify-token`, {
         method: 'POST',
@@ -40,28 +42,61 @@ function App() {
       }
       return { valid: false }
     } catch (error) {
-      console.error('Erreur lors de la vérification du token:', error)
+      console.error('Erreur lors de la vérification du token élève:', error)
       return { valid: false }
     }
   }
 
-  // Fonction pour nettoyer l'URL et sauvegarder le token
-  const handleTokenFromURL = () => {
-    const urlParams = new URLSearchParams(window.location.search)
-    const token = urlParams.get('token')
-    
-    if (token) {
-      // Sauvegarder le token dans localStorage
-      localStorage.setItem('student_token', token)
+  // Fonction pour vérifier le token enseignant côté serveur
+  const verifyTeacherToken = async (token) => {
+    try {
+      const response = await fetch(`http://${window.location.hostname}:3001/auth/verify-teacher-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      })
       
+      if (response.ok) {
+        const data = await response.json()
+        return data // { valid: true, enseignant: {...} }
+      }
+      return { valid: false }
+    } catch (error) {
+      console.error('Erreur lors de la vérification du token enseignant:', error)
+      return { valid: false }
+    }
+  }
+
+  // Fonction pour nettoyer l'URL et sauvegarder les tokens
+  const handleTokensFromURL = () => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const studentToken = urlParams.get('token')
+    const teacherToken = urlParams.get('teacher_token')
+    
+    let foundToken = null
+    let tokenType = null
+    
+    if (studentToken) {
+      // Token élève : supprimer le token enseignant s'il existe
+      localStorage.removeItem('teacher_token')
+      localStorage.setItem('student_token', studentToken)
+      foundToken = studentToken
+      tokenType = 'student'
+    } else if (teacherToken) {
+      // Token enseignant : supprimer le token élève s'il existe
+      localStorage.removeItem('student_token')
+      localStorage.setItem('teacher_token', teacherToken)
+      foundToken = teacherToken
+      tokenType = 'teacher'
+    }
+    
+    if (foundToken) {
       // Nettoyer l'URL pour cacher le token
       const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname
       window.history.replaceState({}, document.title, newUrl)
-      
-      return token
     }
     
-    return null
+    return { token: foundToken, type: tokenType }
   }
 
   // Fonction de déconnexion élève
@@ -74,46 +109,81 @@ function App() {
     setCompetenceChoisie(null)
   }
 
+  // Fonction de déconnexion enseignant
+  const handleTeacherLogout = () => {
+    localStorage.removeItem('teacher_token')
+    setIsTeacherMode(false)
+    setTeacherToken(null)
+    setTeacherInfo(null)
+    // Garder les autres états pour retourner en mode normal
+  }
+
   // Initialisation au chargement
   useEffect(() => {
     const initializeApp = async () => {
-      // 1. Vérifier s'il y a un token dans l'URL
-      const urlToken = handleTokenFromURL()
+      // 1. Vérifier s'il y a des tokens dans l'URL (priorité absolue)
+      const urlTokens = handleTokensFromURL()
       
-      // 2. Si pas de token dans l'URL, vérifier le localStorage
-      const storedToken = urlToken || localStorage.getItem('student_token')
+      // 2. Déterminer quel token utiliser
+      let tokenToCheck = null
+      let tokenType = null
       
-      let isStudentMode = false
-      let verification = null
-      
-      if (storedToken) {
-        // 3. Vérifier la validité du token côté serveur
-        verification = await verifyToken(storedToken)
+      if (urlTokens.token) {
+        // Token dans l'URL - priorité absolue
+        tokenToCheck = urlTokens.token
+        tokenType = urlTokens.type
+      } else {
+        // Pas de token dans l'URL, vérifier localStorage
+        const storedStudentToken = localStorage.getItem('student_token')
+        const storedTeacherToken = localStorage.getItem('teacher_token')
         
-        if (verification.valid) {
-          // Token valide - mode élève
-          isStudentMode = true
-          setIsStudentMode(true)
-          setStudentToken(storedToken)
-          setStudentInfo(verification.eleve)
-          setClasseChoisie(verification.eleve.classe_id.toString())
-          // En mode élève, toujours forcer le bilan (pas de compétence choisie)
-          setCompetenceChoisie(null)
-        } else {
-          // Token invalide - le supprimer
-          localStorage.removeItem('student_token')
+        if (storedStudentToken) {
+          tokenToCheck = storedStudentToken
+          tokenType = 'student'
+        } else if (storedTeacherToken) {
+          tokenToCheck = storedTeacherToken
+          tokenType = 'teacher'
         }
       }
       
-      // 4. Si mode enseignant, restaurer la compétence sauvegardée
-      if (!isStudentMode) {
+      // 3. Vérifier le token selon son type
+      if (tokenToCheck && tokenType === 'student') {
+        const studentVerification = await verifyStudentToken(tokenToCheck)
+        
+        if (studentVerification.valid) {
+          // Token élève valide
+          setIsStudentMode(true)
+          setStudentToken(tokenToCheck)
+          setStudentInfo(studentVerification.eleve)
+          setClasseChoisie(studentVerification.eleve.classe_id.toString())
+          // En mode élève, toujours forcer le bilan (pas de compétence choisie)
+          setCompetenceChoisie(null)
+        } else {
+          // Token élève invalide - le supprimer
+          localStorage.removeItem('student_token')
+        }
+      } else if (tokenToCheck && tokenType === 'teacher') {
+        const teacherVerification = await verifyTeacherToken(tokenToCheck)
+        
+        if (teacherVerification.valid) {
+          // Token enseignant valide
+          setIsTeacherMode(true)
+          setTeacherToken(tokenToCheck)
+          setTeacherInfo(teacherVerification.enseignant)
+          // Les enseignants gardent leur comportement normal (compétence persistée)
+        } else {
+          // Token enseignant invalide - le supprimer
+          localStorage.removeItem('teacher_token')
+        }
+      } else {
+        // Aucun token valide - mode normal
         const saved = localStorage.getItem('choix_competence')
         if (saved) {
           setCompetenceChoisie(JSON.parse(saved))
         }
       }
       
-      // 5. Marquer l'app comme initialisée
+      // 4. Marquer l'app comme initialisée
       setAppInitialized(true)
     }
     
@@ -170,17 +240,32 @@ function App() {
   useEffect(() => {
     // En mode élève, ne pas charger la classe depuis localStorage
     // La classe sera automatiquement définie lors de la vérification du token
-    if (!isStudentMode) {
+    // En mode enseignant, charger depuis les classes assignées ou localStorage
+    if (!isStudentMode && !isTeacherMode) {
       const savedClasse = localStorage.getItem('classe_choisie')
       if (savedClasse) {
         setClasseChoisie(savedClasse)
       }
+    } else if (isTeacherMode && teacherInfo && teacherInfo.classes && teacherInfo.classes.length > 0) {
+      // En mode enseignant, sélectionner la première classe assignée par défaut
+      if (!classeChoisie) {
+        setClasseChoisie(teacherInfo.classes[0].id.toString())
+      }
     }
 
+    // Charger toutes les classes pour l'affichage
     fetch(`http://${window.location.hostname}:3001/classes`)
       .then(res => res.json())
-      .then(setClasses)
-  }, [isStudentMode])
+      .then(allClasses => {
+        if (isTeacherMode && teacherInfo && teacherInfo.classes) {
+          // En mode enseignant, filtrer pour ne montrer que les classes assignées
+          setClasses(teacherInfo.classes)
+        } else {
+          // Mode normal ou élève : toutes les classes
+          setClasses(allClasses)
+        }
+      })
+  }, [isStudentMode, isTeacherMode, teacherInfo])
 
   const handleClasseChange = (e) => {
     // Empêcher le changement de classe en mode élève
@@ -188,7 +273,11 @@ function App() {
     
     const value = e.target.value
     setClasseChoisie(value)
-    localStorage.setItem('classe_choisie', value)
+    
+    // Sauvegarder en localStorage seulement en mode normal (pas enseignant connecté)
+    if (!isTeacherMode) {
+      localStorage.setItem('classe_choisie', value)
+    }
   }
 
   const handleToggleAdmin = () => {
@@ -197,46 +286,50 @@ function App() {
 
   return (
     <>
-      {/* Bouton de déconnexion pour les élèves - maintenant dans la bannière */}
+      {/* Bannière avec gestion des modes élève et enseignant */}
       <Baniere
         classes={classes}
         classeChoisie={classeChoisie}
         onClasseChange={handleClasseChange}
-        isAdmin={isAdmin && !isStudentMode} // Masquer les fonctions admin en mode élève
-        adminVisible={adminVisible && !isStudentMode}
+        isAdmin={isAdmin && !isStudentMode && !isTeacherMode} // Masquer les fonctions admin en mode élève/enseignant
+        adminVisible={adminVisible && !isStudentMode && !isTeacherMode}
         onToggleAdmin={handleToggleAdmin}
         isStudentMode={isStudentMode}
         studentInfo={studentInfo}
         onStudentLogout={handleStudentLogout}
+        isTeacherMode={isTeacherMode}
+        teacherInfo={teacherInfo}
+        onTeacherLogout={handleTeacherLogout}
       />
 
       <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem' }}>
-        {/* Panneau admin - masqué en mode élève */}
-        {(adminVisible && !isStudentMode) ? (
+        {/* Panneau admin - masqué en mode élève et enseignant */}
+        {(adminVisible && !isStudentMode && !isTeacherMode) ? (
           <div className="card">
             <AdminPanel classeChoisie={classeChoisie} classes={classes} />
           </div>
         ) : (
           <>
-            {/* Mode de présentation élève ou première visite - masquer le choix de compétence en mode élève */}
+            {/* Mode de présentation normale - masquer le choix de compétence en mode élève */}
             {(!competenceChoisie && !isModifying && !isStudentMode) && (
               <div className="card">
                 <ChoixCompetence
                   key={choixCompetenceKey}
                   isStudentMode={isStudentMode}
+                  isTeacherMode={isTeacherMode}
                   onChoixFinal={(selection) => {
                     setCompetenceChoisie(selection)
                     setIsModifying(false)
                   }}
                 />
                 <div style={{
-                  backgroundColor: isStudentMode ? '#f0fff0' : '#f0f8ff',
+                  backgroundColor: isStudentMode ? '#f0fff0' : isTeacherMode ? '#fff0f5' : '#f0f8ff',
                   padding: '15px',
                   borderRadius: '8px',
                   marginTop: '20px',
-                  border: `1px solid ${isStudentMode ? '#ccf5cc' : '#cce7ff'}`
+                  border: `1px solid ${isStudentMode ? '#ccf5cc' : isTeacherMode ? '#f5ccf5' : '#cce7ff'}`
                 }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: isStudentMode ? '#2d5a2d' : '#2c5282' }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: isStudentMode ? '#2d5a2d' : isTeacherMode ? '#8b2c7a' : '#2c5282' }}>
                     {isStudentMode ? '� Votre bilan personnel par bloc de compétence' : '📊 Bilan de la période pour chaque Bloc de compétence'}
                   </h4>
                   <p style={{ margin: 0, color: '#2d3748' }}>
@@ -334,6 +427,8 @@ function App() {
                 classes={classes}
                 isStudentMode={isStudentMode}
                 studentInfo={studentInfo}
+                isTeacherMode={isTeacherMode}
+                teacherInfo={teacherInfo}
                 appInitialized={appInitialized}
               />
             </div>
