@@ -34,8 +34,6 @@ function Baniere({
                     display: 'flex', 
                     justifyContent: 'space-between', 
                     alignItems: 'center',
-                    maxWidth: '1200px',
-                    margin: '0 auto',
                     position: 'relative',
                     zIndex: 2
                 }}

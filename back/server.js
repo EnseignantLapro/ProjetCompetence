@@ -93,6 +93,32 @@ app.post('/competences-n3', (req, res) => {
     )
 })
 
+// Modifier une compétence N3
+app.put('/competences-n3/:id', (req, res) => {
+    const { id } = req.params
+    const { parent_code, code, nom } = req.body
+    
+    db.run(
+        'UPDATE competences_n3 SET parent_code = ?, code = ?, nom = ? WHERE id = ?',
+        [parent_code, code, nom, id],
+        function (err) {
+            if (err) return res.status(500).json({ error: err.message })
+            if (this.changes === 0) return res.status(404).json({ error: 'Compétence non trouvée' })
+            res.json({ id: parseInt(id), parent_code, code, nom })
+        }
+    )
+})
+
+// Supprimer une compétence N3
+app.delete('/competences-n3/:id', (req, res) => {
+    const { id } = req.params
+    db.run('DELETE FROM competences_n3 WHERE id = ?', [id], function (err) {
+        if (err) return res.status(500).json({ error: err.message })
+        if (this.changes === 0) return res.status(404).json({ error: 'Compétence non trouvée' })
+        res.json({ message: 'Compétence supprimée', id: parseInt(id) })
+    })
+})
+
 
 
 app.get('/eleves', (req, res) => {
@@ -111,11 +137,42 @@ app.get('/eleves', (req, res) => {
   })
 })
 
+// Récupérer les élèves avec le nombre de notes et positionnements
+app.get('/eleves/with-counts', (req, res) => {
+  const { classe_id } = req.query
+  let whereClause = ''
+  const params = []
+
+  if (classe_id) {
+    whereClause = 'WHERE e.classe_id = ?'
+    params.push(classe_id)
+  }
+
+  const query = `
+    SELECT 
+      e.*,
+      COUNT(DISTINCT n.id) as notes_count,
+      COUNT(DISTINCT p.id) as positionnements_count,
+      (COUNT(DISTINCT n.id) + COUNT(DISTINCT p.id)) as total_data_count
+    FROM eleves e 
+    LEFT JOIN notes n ON e.id = n.eleve_id 
+    LEFT JOIN positionnements_enseignant p ON e.id = p.eleve_id 
+    ${whereClause}
+    GROUP BY e.id, e.nom, e.prenom, e.id_moodle, e.photo, e.classe_id
+    ORDER BY e.nom, e.prenom
+  `
+
+  db.all(query, params, (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message })
+    res.json(rows)
+  })
+})
+
 app.post('/eleves', (req, res) => {
-  const { nom, prenom, moodle_id, classe_id } = req.body
+  const { nom, prenom, moodle_id, classe_id, photo } = req.body
   db.run(
-    'INSERT INTO eleves (nom, prenom, id_moodle, classe_id) VALUES (?, ?, ?, ?)',
-    [nom, prenom, moodle_id, classe_id],
+    'INSERT INTO eleves (nom, prenom, id_moodle, classe_id, photo) VALUES (?, ?, ?, ?, ?)',
+    [nom, prenom, moodle_id, classe_id, photo || 'default.jpg'],
     function (err) {
       if (err) return res.status(500).json({ error: err.message })
       res.json({ 
@@ -123,10 +180,95 @@ app.post('/eleves', (req, res) => {
         nom, 
         prenom, 
         id_moodle: moodle_id, 
-        classe_id 
+        classe_id,
+        photo: photo || 'default.jpg'
       })
     }
   )
+})
+
+// Modifier un élève
+app.put('/eleves/:id', (req, res) => {
+  const { id } = req.params
+  const { nom, prenom, moodle_id, classe_id, photo } = req.body
+  
+  db.run(
+    'UPDATE eleves SET nom = ?, prenom = ?, id_moodle = ?, classe_id = ?, photo = ? WHERE id = ?',
+    [nom, prenom, moodle_id, classe_id, photo || 'default.jpg', id],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message })
+      if (this.changes === 0) return res.status(404).json({ error: 'Élève non trouvé' })
+      res.json({ 
+        id: parseInt(id), 
+        nom, 
+        prenom, 
+        id_moodle: moodle_id, 
+        classe_id,
+        photo: photo || 'default.jpg'
+      })
+    }
+  )
+})
+
+// Supprimer un élève
+app.delete('/eleves/:id', (req, res) => {
+  const { id } = req.params
+  const { forceDelete } = req.query // Paramètre pour forcer la suppression
+  
+  // D'abord, vérifier s'il y a des notes et positionnements pour cet élève
+  db.get(`
+    SELECT 
+      (SELECT COUNT(*) FROM notes WHERE eleve_id = ?) as notes_count,
+      (SELECT COUNT(*) FROM positionnements_enseignant WHERE eleve_id = ?) as positionnements_count
+  `, [id, id], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message })
+    
+    const notesCount = row.notes_count
+    const positionnementsCount = row.positionnements_count
+    const totalDataCount = notesCount + positionnementsCount
+    
+    if (totalDataCount > 0 && forceDelete !== 'true') {
+      // Il y a des données liées à cet élève et on ne force pas la suppression
+      return res.status(400).json({ 
+        error: 'Cannot delete student with data', 
+        message: `Cet élève possède ${notesCount} note(s) et ${positionnementsCount} positionnement(s). Supprimez d'abord ces données ou utilisez la suppression forcée.`,
+        notesCount,
+        positionnementsCount,
+        totalDataCount
+      })
+    }
+    
+    if (forceDelete === 'true' && totalDataCount > 0) {
+      // Suppression forcée : supprimer d'abord toutes les données liées
+      db.serialize(() => {
+        db.run('DELETE FROM notes WHERE eleve_id = ?', [id], (err) => {
+          if (err) return res.status(500).json({ error: err.message })
+          
+          db.run('DELETE FROM positionnements_enseignant WHERE eleve_id = ?', [id], (err) => {
+            if (err) return res.status(500).json({ error: err.message })
+            
+            // Puis supprimer l'élève
+            db.run('DELETE FROM eleves WHERE id = ?', [id], function (err) {
+              if (err) return res.status(500).json({ error: err.message })
+              if (this.changes === 0) return res.status(404).json({ error: 'Élève non trouvé' })
+              res.json({ 
+                message: `Élève supprimé avec ${notesCount} note(s) et ${positionnementsCount} positionnement(s)`,
+                deletedNotes: notesCount,
+                deletedPositionnements: positionnementsCount
+              })
+            })
+          })
+        })
+      })
+    } else {
+      // Pas de données liées à l'élève, suppression normale
+      db.run('DELETE FROM eleves WHERE id = ?', [id], function (err) {
+        if (err) return res.status(500).json({ error: err.message })
+        if (this.changes === 0) return res.status(404).json({ error: 'Élève non trouvé' })
+        res.json({ message: 'Élève supprimé' })
+      })
+    }
+  })
 })
 
 app.post('/notes', (req, res) => {
@@ -184,6 +326,20 @@ app.get('/classes', (req, res) => {
   })
 })
 
+// Récupérer toutes les classes avec le nombre d'élèves
+app.get('/classes/with-counts', (req, res) => {
+  db.all(`
+    SELECT c.*, COUNT(e.id) as student_count 
+    FROM classes c 
+    LEFT JOIN eleves e ON c.id = e.classe_id 
+    GROUP BY c.id, c.nom 
+    ORDER BY c.nom
+  `, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message })
+    res.json(rows)
+  })
+})
+
 // Ajouter une classe
 app.post('/classes', (req, res) => {
   const { nom } = req.body
@@ -208,9 +364,47 @@ app.put('/classes/:id', (req, res) => {
 
 // Supprimer une classe
 app.delete('/classes/:id', (req, res) => {
-  db.run('DELETE FROM classes WHERE id = ?', [req.params.id], function (err) {
+  const { id } = req.params
+  const { forceDelete } = req.query // Paramètre pour forcer la suppression
+  
+  // D'abord, vérifier s'il y a des élèves dans cette classe
+  db.get('SELECT COUNT(*) as count FROM eleves WHERE classe_id = ?', [id], (err, row) => {
     if (err) return res.status(500).json({ error: err.message })
-    res.status(204).end()
+    
+    const eleveCount = row.count
+    
+    if (eleveCount > 0 && forceDelete !== 'true') {
+      // Il y a des élèves dans la classe et on ne force pas la suppression
+      return res.status(400).json({ 
+        error: 'Cannot delete class with students', 
+        message: `Cette classe contient ${eleveCount} élève(s). Supprimez d'abord les élèves ou utilisez la suppression forcée.`,
+        studentCount: eleveCount
+      })
+    }
+    
+    if (forceDelete === 'true' && eleveCount > 0) {
+      // Suppression forcée : supprimer d'abord tous les élèves de la classe
+      db.run('DELETE FROM eleves WHERE classe_id = ?', [id], (err) => {
+        if (err) return res.status(500).json({ error: err.message })
+        
+        // Puis supprimer la classe
+        db.run('DELETE FROM classes WHERE id = ?', [id], function (err) {
+          if (err) return res.status(500).json({ error: err.message })
+          if (this.changes === 0) return res.status(404).json({ error: 'Classe non trouvée' })
+          res.json({ 
+            message: `Classe supprimée avec ${eleveCount} élève(s)`,
+            deletedStudents: eleveCount
+          })
+        })
+      })
+    } else {
+      // Pas d'élèves dans la classe, suppression normale
+      db.run('DELETE FROM classes WHERE id = ?', [id], function (err) {
+        if (err) return res.status(500).json({ error: err.message })
+        if (this.changes === 0) return res.status(404).json({ error: 'Classe non trouvée' })
+        res.json({ message: 'Classe supprimée' })
+      })
+    }
   })
 })
 
@@ -294,6 +488,150 @@ app.delete('/positionnements/:id', (req, res) => {
     if (err) return res.status(500).json({ error: err.message })
     res.status(204).end()
   })
+})
+
+// Route pour récupérer les élèves d'une classe avec leurs statistiques d'évaluations
+app.get('/eleves/with-evaluations/:classeId', (req, res) => {
+  const classeId = req.params.classeId
+  
+  const query = `
+    SELECT 
+      e.id,
+      e.prenom,
+      e.nom,
+      e.id_moodle,
+      e.photo,
+      e.classe_id,
+      COUNT(DISTINCT n.id) as evaluations_count,
+      COUNT(DISTINCT p.id) as positionnements_count
+    FROM eleves e
+    LEFT JOIN notes n ON e.id = n.eleve_id
+    LEFT JOIN positionnements_enseignant p ON e.id = p.eleve_id
+    WHERE e.classe_id = ?
+    GROUP BY e.id, e.prenom, e.nom, e.id_moodle, e.photo, e.classe_id
+    ORDER BY e.nom, e.prenom
+  `
+  
+  db.all(query, [classeId], (err, rows) => {
+    if (err) {
+      console.error('Erreur lors de la récupération des élèves avec évaluations:', err)
+      return res.status(500).json({ error: err.message })
+    }
+    res.json(rows)
+  })
+})
+
+// Route pour supprimer toutes les évaluations d'un élève
+app.delete('/eleves/:id/evaluations', (req, res) => {
+  const eleveId = req.params.id
+  
+  db.run('DELETE FROM notes WHERE eleve_id = ?', [eleveId], function(err) {
+    if (err) {
+      console.error('Erreur lors de la suppression des évaluations:', err)
+      return res.status(500).json({ error: err.message })
+    }
+    res.json({ 
+      message: `${this.changes} évaluation(s) supprimée(s)`,
+      deletedCount: this.changes 
+    })
+  })
+})
+
+// Route pour importer des évaluations par CSV
+app.post('/evaluations/import', (req, res) => {
+  const { id_moodle, prenom, nom, classe_id, evaluations } = req.body
+  
+  if (!id_moodle || !classe_id || !evaluations || !Array.isArray(evaluations)) {
+    return res.status(400).json({ error: 'Données manquantes' })
+  }
+  
+  // D'abord, trouver ou créer l'élève
+  db.get(
+    'SELECT id FROM eleves WHERE id_moodle = ? AND classe_id = ?',
+    [id_moodle, classe_id],
+    (err, eleve) => {
+      if (err) {
+        console.error('Erreur lors de la recherche de l\'élève:', err)
+        return res.status(500).json({ error: err.message })
+      }
+      
+      let eleveId = eleve ? eleve.id : null
+      
+      const processEvaluations = (eleveId) => {
+        // Insérer les évaluations
+        const promises = evaluations.map(evaluation => {
+          return new Promise((resolve, reject) => {
+            const { code, couleur } = evaluation
+            if (!code || !couleur) {
+              resolve() // Ignorer les évaluations vides
+              return
+            }
+            
+            // Vérifier si une évaluation existe déjà pour cette compétence
+            db.get(
+              'SELECT id FROM notes WHERE eleve_id = ? AND competence_code = ?',
+              [eleveId, code],
+              (err, existingNote) => {
+                if (err) {
+                  reject(err)
+                  return
+                }
+                
+                if (existingNote) {
+                  // Mettre à jour l'évaluation existante
+                  db.run(
+                    'UPDATE notes SET couleur = ?, date = datetime("now") WHERE id = ?',
+                    [couleur, existingNote.id],
+                    (err) => {
+                      if (err) reject(err)
+                      else resolve()
+                    }
+                  )
+                } else {
+                  // Créer une nouvelle évaluation
+                  db.run(
+                    'INSERT INTO notes (eleve_id, competence_code, couleur, date) VALUES (?, ?, ?, datetime("now"))',
+                    [eleveId, code, couleur],
+                    (err) => {
+                      if (err) reject(err)
+                      else resolve()
+                    }
+                  )
+                }
+              }
+            )
+          })
+        })
+        
+        Promise.all(promises)
+          .then(() => {
+            res.json({ message: 'Évaluations importées avec succès', eleveId })
+          })
+          .catch(err => {
+            console.error('Erreur lors de l\'insertion des évaluations:', err)
+            res.status(500).json({ error: err.message })
+          })
+      }
+      
+      if (eleveId) {
+        // L'élève existe déjà
+        processEvaluations(eleveId)
+      } else {
+        // Créer l'élève
+        db.run(
+          'INSERT INTO eleves (id_moodle, prenom, nom, classe_id) VALUES (?, ?, ?, ?)',
+          [id_moodle, prenom, nom, classe_id],
+          function(err) {
+            if (err) {
+              console.error('Erreur lors de la création de l\'élève:', err)
+              return res.status(500).json({ error: err.message })
+            }
+            processEvaluations(this.lastID)
+          }
+        )
+      }
+    }
+  )
 })
 
 app.listen(PORT, () => {

@@ -49,7 +49,7 @@ function App() {
       if (parts.length === 4) {
         const tacheCode = parts[2] // R1, R2, etc.
         const taskCode = parts[3]  // T1, T2, etc.
-        
+
         const tacheProf = tachesProfessionelles.find(t => t.code === tacheCode)
         if (tacheProf) {
           const tache = tacheProf.TacheAssociees.find(t => t.code === taskCode)
@@ -87,7 +87,7 @@ function App() {
       .then(res => res.json())
       .then(setClasses)
 
-    
+
   }, [])
 
   const handleClasseChange = (e) => {
@@ -111,101 +111,101 @@ function App() {
         onToggleAdmin={handleToggleAdmin}
       />
 
-      {adminVisible && (
-        <AdminPanel classeChoisie={classeChoisie} classes={classes} />
-      )}
-
-      {(!competenceChoisie && !isModifying) && (
-        <>
-          <ChoixCompetence 
-            key={choixCompetenceKey} 
-            onChoixFinal={(selection) => {
-              setCompetenceChoisie(selection)
-              setIsModifying(false)
-            }} 
-          />
-          <div style={{ 
-            backgroundColor: '#f0f8ff', 
-            padding: '15px', 
-            borderRadius: '8px', 
-            marginTop: '20px',
-            border: '1px solid #cce7ff'
-          }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#2c5282' }}>
-              📊  Bilan de la période pour chaque Bloc de compétence.
-            </h4>
-            <p style={{ margin: 0, color: '#2d3748' }}>
-             Vous voyez toutes <strong>les évaluations</strong> pour toutes <strong>les compétences par bloc</strong>. 
-             Vous pouvez Bypasser le Positionnement Automatique d'une compétence secondaire. Pour déterminer la note final sur 20 d'un bloc
-<br></br> Les évaluations sont triées par date croissante.
-            </p>
+      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem' }}>
+        {adminVisible ? (
+          <div className="card">
+            <AdminPanel classeChoisie={classeChoisie} classes={classes} />
           </div>
-        </>
-      )}
+        ) : (
+          <>
+            {(!competenceChoisie && !isModifying) && (
+              <div className="card">
+                <ChoixCompetence
+                  key={choixCompetenceKey}
+                  onChoixFinal={(selection) => {
+                    setCompetenceChoisie(selection)
+                    setIsModifying(false)
+                  }}
+                />
+                <div style={{
+                  backgroundColor: '#f0f8ff',
+                  padding: '15px',
+                  borderRadius: '8px',
+                  marginTop: '20px',
+                  border: '1px solid #cce7ff'
+                }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: '#2c5282' }}>
+                    📊  Bilan de la période pour chaque Bloc de compétence.
+                  </h4>
+                  <p style={{ margin: 0, color: '#2d3748' }}>
+                    Vous voyez toutes <strong>les évaluations</strong> pour toutes <strong>les compétences par bloc</strong>.
+                    Vous pouvez Bypasser le Positionnement Automatique d'une compétence secondaire. Pour déterminer la note final sur 20 d'un bloc
+                    <br></br> Les évaluations sont triées par date croissante.
+                  </p>
+                </div>
+              </div>
+            )}
 
-      {(!competenceChoisie && isModifying) && (
-        <ChoixCompetence 
-          key={choixCompetenceKey} 
-          onChoixFinal={(selection) => {
-            setCompetenceChoisie(selection)
-            setIsModifying(false)
-          }} 
-        />
-      )}
+            {(!competenceChoisie && isModifying) && (
+              <div className="card">
+                <ChoixCompetence
+                  key={choixCompetenceKey}
+                  onChoixFinal={(selection) => {
+                    setCompetenceChoisie(selection)
+                    setIsModifying(false)
+                  }}
+                />
+              </div>
+            )}
 
+            {competenceChoisie && (
+              <div className="card">
+                <div>
+                  <h4>Compétence sélectionnée :</h4>
 
+                  <button className="competence-active" onClick={() => {
+                    setIsModifying(true)
+                    setCompetenceChoisie(null)
+                    // Les valeurs restent en localStorage pour que ChoixCompetence les récupère
+                    // Forcer le rechargement du composant ChoixCompetence
+                    setChoixCompetenceKey(prev => prev + 1)
+                  }}>
+                    {/* Afficher seulement le niveau le plus spécifique */}
+                    <span >
+                      {competenceChoisie.niveau3 ? (
+                        <>{competenceChoisie.niveau3} — {nomNiveau3}</>
+                      ) : competenceChoisie.niveau2 ? (
+                        <>{competenceChoisie.niveau2} — {nomNiveau2}</>
+                      ) : (
+                        <>{competenceChoisie.niveau1} — {nomNiveau1}</>
+                      )}
+                      🔎
+                    </span>
+                  </button>
+                  <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>
+                    {!competenceChoisie.niveau3 && !competenceChoisie.niveau2 && (
+                      <em>📝  l'évaluation de la compétence {competenceChoisie.niveau1} sera distillée dans toutes ses compétences secondaires</em>
+                    )}
+                    {competenceChoisie.niveau2 && !competenceChoisie.niveau3 && (
+                      <em>📝 Vous pouvez évaluer cette compétence secondaire {competenceChoisie.niveau2} et voir toutes les critères d'évaluation déjà évalués</em>
+                    )}
+                    {competenceChoisie.niveau3 && (
+                      <em>📝  Vous évaluez uniquement : {competenceChoisie.niveau3} qui sera prise en compte dans la compétence secondaire {competenceChoisie.niveau2}</em>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
-      {competenceChoisie && (
-        <>
-          <div>
-            <h4>Compétence sélectionnée :</h4>
-           
-           
-            <button  className="competence-active" onClick={() => {
-              setIsModifying(true)
-              setCompetenceChoisie(null)
-              // Les valeurs restent en localStorage pour que ChoixCompetence les récupère
-              // Forcer le rechargement du composant ChoixCompetence
-              setChoixCompetenceKey(prev => prev + 1)
-            }}>
-              {/* Afficher seulement le niveau le plus spécifique */}
-               <span >
-              {competenceChoisie.niveau3 ? (
-                  <>{competenceChoisie.niveau3} — {nomNiveau3}</>
-              ) : competenceChoisie.niveau2 ? (
-                  <>{competenceChoisie.niveau2} — {nomNiveau2}</>
-              ) : (
-                  <>{competenceChoisie.niveau1} — {nomNiveau1}</>
-              )}
-              🔎
-             </span>
-             
-            </button>
-             <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>
-              {!competenceChoisie.niveau3 && !competenceChoisie.niveau2 && (
-                <em>📝  l'évaluation de la compétence {competenceChoisie.niveau1} sera distillée dans toutes ses compétences secondaires</em>
-              )}
-              {competenceChoisie.niveau2 && !competenceChoisie.niveau3 && (
-                <em>📝 Vous pouvez évaluer cette compétence secondaire {competenceChoisie.niveau2} et voir toutes les critères d'évaluation déjà évalués</em>
-              )}
-              {competenceChoisie.niveau3 && (
-                <em>📝  Vous évaluez uniquement : {competenceChoisie.niveau3} qui sera prise en compte dans la compétence secondaire {competenceChoisie.niveau2}</em>
-              )}
+            <div className="card">
+              <TableauNotes competenceChoisie={competenceChoisie} classeChoisie={classeChoisie} classes={classes} />
             </div>
-          </div>
-
-
-        </>
-      )}
-
-      {!adminVisible && (
-        <div className="card">
-        
-          <TableauNotes competenceChoisie={competenceChoisie} classeChoisie={classeChoisie} classes={classes}/>
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </>
   )
+
 }
 
 export default App

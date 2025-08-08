@@ -48,10 +48,19 @@
   background-size: cover;
   background-position: right top;
   background-repeat: no-repeat;
-  padding: 20px;
+  padding: 20px 0; /* Padding vertical seulement */
   border-bottom: 1px solid #dee2e6;
-  margin-bottom: 20px;
+  margin-bottom: 0; /* Supprimé la marge bottom */
   position: relative;
+  width: 100vw; /* Prend toute la largeur de l'écran */
+  margin-left: calc(-50vw + 50%); /* Centre la bannière */
+}
+
+/* Contenu centré de la bannière */
+.baniere-content {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 2rem;
 }
 
 /* Styles pour les listes déroulantes de compétences */
