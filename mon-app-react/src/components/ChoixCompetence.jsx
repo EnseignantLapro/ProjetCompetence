@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import '../App.css'
 
-function ChoixCompetence({ onChoixFinal }) {
+function ChoixCompetence({ onChoixFinal, isStudentMode = false }) {
   const [niveau1, setNiveau1] = useState('')
   const [niveau2, setNiveau2] = useState('')
   const [niveau3, setNiveau3] = useState('')
@@ -13,24 +13,34 @@ function ChoixCompetence({ onChoixFinal }) {
   const OPTION_AJOUTER = '__ajouter__'
 
   useEffect(() => {
-    const saved = localStorage.getItem('choix_competence')
-    if (saved) {
-      const { niveau1, niveau2, niveau3 } = JSON.parse(saved)
-      setNiveau1(niveau1)
-      setNiveau2(niveau2 || '')
-      setNiveau3(niveau3 || '')
+    // En mode élève, ne pas charger les données du localStorage
+    if (!isStudentMode) {
+      const saved = localStorage.getItem('choix_competence')
+      if (saved) {
+        const { niveau1, niveau2, niveau3 } = JSON.parse(saved)
+        setNiveau1(niveau1)
+        setNiveau2(niveau2 || '')
+        setNiveau3(niveau3 || '')
+      } else {
+        // Si aucune sauvegarde, réinitialiser complètement
+        setNiveau1('')
+        setNiveau2('')
+        setNiveau3('')
+        setNiveau3Texte('')
+        setNiveau3EnBase([])
+      }
+      
+      // Marquer qu'on vient de charger la page (nouvelle évaluation)
+      localStorage.setItem('mode_evaluation', 'nouvelle')
     } else {
-      // Si aucune sauvegarde, réinitialiser complètement
+      // En mode élève, réinitialiser complètement
       setNiveau1('')
       setNiveau2('')
       setNiveau3('')
       setNiveau3Texte('')
       setNiveau3EnBase([])
     }
-    
-    // Marquer qu'on vient de charger la page (nouvelle évaluation)
-    localStorage.setItem('mode_evaluation', 'nouvelle')
-  }, [])
+  }, [isStudentMode])
 
 useEffect(() => {
   if (niveau2) {
@@ -124,8 +134,11 @@ useEffect(() => {
     // Si aucun niveau1 n'est sélectionné, passer en mode vue d'ensemble
     if (!niveau1) {
       const selection = null
-      localStorage.setItem('choix_competence', JSON.stringify({ niveau1: '', niveau2: '', niveau3: '' }))
-      localStorage.setItem('mode_evaluation', 'nouvelle')
+      // Ne sauvegarder que si on n'est pas en mode élève
+      if (!isStudentMode) {
+        localStorage.setItem('choix_competence', JSON.stringify({ niveau1: '', niveau2: '', niveau3: '' }))
+        localStorage.setItem('mode_evaluation', 'nouvelle')
+      }
       onChoixFinal(selection)
       return
     }
@@ -146,8 +159,11 @@ useEffect(() => {
     // Définir le mode selon le changement
     const mode = competenceAChange ? 'nouvelle' : 'edition'
     
-    localStorage.setItem('choix_competence', JSON.stringify(nouvelleSelection))
-    localStorage.setItem('mode_evaluation', mode)
+    // Ne sauvegarder que si on n'est pas en mode élève
+    if (!isStudentMode) {
+      localStorage.setItem('choix_competence', JSON.stringify(nouvelleSelection))
+      localStorage.setItem('mode_evaluation', mode)
+    }
     onChoixFinal(nouvelleSelection)
   }
 

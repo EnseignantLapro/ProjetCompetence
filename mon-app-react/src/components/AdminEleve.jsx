@@ -6,7 +6,8 @@ function AdminEleve({ classe }) {
         nom: '',
         prenom: '',
         id_moodle: '',
-        photo: 'default.jpg'
+        photo: 'default.jpg',
+        token: ''
     })
     const [eleveEnEdition, setEleveEnEdition] = useState(null)
     const [loading, setLoading] = useState(false)
@@ -119,12 +120,13 @@ function AdminEleve({ classe }) {
                 body: JSON.stringify({
                     ...nouvelEleve,
                     classe_id: classe.id,
-                    moodle_id: nouvelEleve.id_moodle || null
+                    moodle_id: nouvelEleve.id_moodle || null,
+                    token: nouvelEleve.token || undefined // Laisser undefined pour génération auto
                 })
             })
 
             if (response.ok) {
-                setNouvelEleve({ nom: '', prenom: '', id_moodle: '', photo: 'default.jpg' })
+                setNouvelEleve({ nom: '', prenom: '', id_moodle: '', photo: 'default.jpg', token: '' })
                 chargerEleves()
                 alert('Élève ajouté avec succès')
             } else {
@@ -232,6 +234,30 @@ function AdminEleve({ classe }) {
     // Annuler l'édition
     const annulerEdition = () => {
         setEleveEnEdition(null)
+    }
+
+    // Régénérer le token d'un élève
+    const regenererToken = async (eleve) => {
+        if (!confirm(`Êtes-vous sûr de vouloir régénérer le token de ${eleve.prenom} ${eleve.nom} ?\n\nL'ancien token ne fonctionnera plus !`)) {
+            return
+        }
+
+        try {
+            const response = await fetch(`http://${window.location.hostname}:3001/eleves/${eleve.id}/regenerate-token`, {
+                method: 'POST'
+            })
+
+            if (response.ok) {
+                const data = await response.json()
+                chargerEleves() // Recharger la liste pour afficher le nouveau token
+                alert(`Token régénéré avec succès !\nNouveau token : ${data.token}`)
+            } else {
+                alert('Erreur lors de la régénération du token')
+            }
+        } catch (error) {
+            console.error('Erreur:', error)
+            alert('Erreur de connexion lors de la régénération du token')
+        }
     }
 
     // Fonctions pour l'import CSV
@@ -403,6 +429,17 @@ function AdminEleve({ classe }) {
                             onChange={(e) => setNouvelEleve({ ...nouvelEleve, photo: e.target.value })}
                             style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
                             placeholder="nom_fichier.jpg"
+                        />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <label>Token (optionnel)</label>
+                        <input
+                            type="text"
+                            value={nouvelEleve.token}
+                            onChange={(e) => setNouvelEleve({ ...nouvelEleve, token: e.target.value })}
+                            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                            placeholder="Auto-généré si vide"
+                            title="Laissez vide pour génération automatique"
                         />
                     </div>
                     <button 
@@ -614,6 +651,14 @@ function AdminEleve({ classe }) {
                                             style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '120px' }}
                                             placeholder="Photo"
                                         />
+                                        <input
+                                            type="text"
+                                            value={eleveEnEdition.token || ''}
+                                            onChange={(e) => setEleveEnEdition({ ...eleveEnEdition, token: e.target.value })}
+                                            style={{ padding: '6px', borderRadius: '4px', border: '1px solid #ccc', minWidth: '150px' }}
+                                            placeholder="Token"
+                                            title="Token d'accès pour l'élève"
+                                        />
                                         <div style={{ display: 'flex', gap: '5px' }}>
                                             <button 
                                                 type="submit"
@@ -671,6 +716,7 @@ function AdminEleve({ classe }) {
                                                 <div style={{ fontSize: '14px', color: '#666', marginTop: '4px' }}>
                                                     {eleve.id_moodle && <span>ID Moodle: {eleve.id_moodle} • </span>}
                                                     <span>Photo: {eleve.photo || 'default.jpg'}</span>
+                                                    {eleve.token && <span> • Token: {eleve.token}</span>}
                                                 </div>
                                                 <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                                                     <span style={{ 
@@ -710,6 +756,21 @@ function AdminEleve({ classe }) {
                                                 }}
                                             >
                                                 Modifier
+                                            </button>
+                                            <button 
+                                                onClick={() => regenererToken(eleve)}
+                                                style={{
+                                                    backgroundColor: '#6f42c1',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    padding: '8px 16px',
+                                                    borderRadius: '4px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '14px'
+                                                }}
+                                                title="Régénérer le token d'accès pour cet élève"
+                                            >
+                                                🔄 Token
                                             </button>
                                             <button 
                                                 onClick={() => supprimerEleve(eleve)}

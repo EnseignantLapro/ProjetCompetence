@@ -5,7 +5,7 @@ import PositionnementModal from './PositionnementModal'
 import NotePastille from './NotePastille'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 
-function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
+function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode = false, studentInfo = null, appInitialized = false }) {
     const [eleves, setEleves] = useState([])
     const [notes, setNotes] = useState([])
 
@@ -19,11 +19,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
     const [elevePositionnement, setElevePositionnement] = useState(null)
     const [competencePositionnement, setCompetencePositionnement] = useState(null)
 
-    // État pour gérer les blocs fermés/ouverts (par défaut tous fermés)
-    const [blocsFermes, setBlocsFermes] = useState(new Set([1, 2, 3]))
+    // État pour gérer les blocs fermés/ouverts (par défaut fermés en mode enseignant, ouverts en mode élève)
+    const [blocsFermes, setBlocsFermes] = useState(isStudentMode ? new Set() : new Set([1, 2, 3]))
 
-    // État pour gérer l'affichage du tableau en mode filtré (masqué par défaut)
-    const [tableauVisible, setTableauVisible] = useState(false)
+    // État pour gérer l'affichage du tableau en mode filtré (masqué par défaut en mode enseignant, visible en mode élève)
+    const [tableauVisible, setTableauVisible] = useState(isStudentMode)
 
     // État pour tracker les dernières évaluations directes par élève/compétence
     const [dernieresEvaluationsDirectes, setDernieresEvaluationsDirectes] = useState(new Map())
@@ -40,20 +40,49 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
     const [positionnementsEnseignant, setPositionnementsEnseignant] = useState([])
 
     useEffect(() => {
+        // Ne pas charger tant que l'app n'est pas initialisée
+        if (!appInitialized) return
+        
         const idClasse = classeChoisie
-        if (!idClasse) {
-            fetch(`http://${window.location.hostname}:3001/eleves`)
+        
+        // En mode élève, charger seulement l'élève connecté
+        if (isStudentMode && studentInfo) {
+            setEleves([studentInfo])
+            // Charger les notes de cet élève seulement
+            fetch(`http://${window.location.hostname}:3001/notes`)
+                .then(res => res.json())
+                .then(allNotes => {
+                    // Filtrer les notes pour cet élève uniquement
+                    const studentNotes = allNotes.filter(note => note.eleve_id === studentInfo.id)
+                    setNotes(studentNotes)
+                })
+            
+            // Charger les positionnements de cet élève seulement
+            fetch(`http://${window.location.hostname}:3001/positionnements?eleve_id=${studentInfo.id}`)
+                .then(res => res.json())
+                .then(setPositionnementsEnseignant)
+        } else if (isStudentMode && !studentInfo) {
+            // En mode élève mais pas encore d'infos - ne rien charger
+            setEleves([])
+            setNotes([])
+            setPositionnementsEnseignant([])
+        } else {
+            // Mode normal (enseignant)
+            if (!idClasse) {
+                fetch(`http://${window.location.hostname}:3001/eleves`)
+                    .then(res => res.json())
+                    .then(setEleves)
+                return
+            }
+
+            fetch(`http://${window.location.hostname}:3001/eleves?classe_id=${idClasse}`)
                 .then(res => res.json())
                 .then(setEleves)
-            return
+            fetch(`http://${window.location.hostname}:3001/notes`).then(res => res.json()).then(setNotes)
+            fetch(`http://${window.location.hostname}:3001/positionnements`).then(res => res.json()).then(setPositionnementsEnseignant)
         }
-
-        fetch(`http://${window.location.hostname}:3001/eleves?classe_id=${idClasse}`)
-            .then(res => res.json())
-            .then(setEleves)
-        fetch(`http://${window.location.hostname}:3001/notes`).then(res => res.json()).then(setNotes)
         
-        // Charger les competences N3 de la BDD + les tâches professionnelles
+        // Charger les competences N3 de la BDD + les tâches professionnelles (commun aux deux modes)
         fetch(`http://${window.location.hostname}:3001/competences-n3`)
             .then(res => res.json())
             .then(competencesBDD => {
@@ -90,9 +119,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                 
                 setCompetencesN3(toutesCompetencesN3)
             })
-            
-        fetch(`http://${window.location.hostname}:3001/positionnements`).then(res => res.json()).then(setPositionnementsEnseignant)
-    }, [classeChoisie])
+    }, [classeChoisie, isStudentMode, studentInfo, appInitialized])
 
     // Réinitialiser l'affichage du tableau quand la compétence change
     useEffect(() => {
@@ -165,6 +192,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
     }
 
     const handleClickEleve = (eleve, competenceCodeSpecifique = null) => {
+        // Désactiver les interactions en mode élève
+        if (isStudentMode) {
+            return
+        }
+        
         // Utiliser la compétence spécifique passée en paramètre ou celle du state global
         const competenceAUtiliser = competenceCodeSpecifique || codeCompetence
 
@@ -196,6 +228,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
 
     // Fonction pour ajouter directement une note avec une couleur (mode filtré)
     const ajouterNoteDirecte = async (eleve, competenceCode, couleur) => {
+        // Désactiver les interactions en mode élève
+        if (isStudentMode) {
+            return
+        }
+        
         try {
             const modeEvaluation = localStorage.getItem('mode_evaluation') || 'nouvelle'
             const cleEleveCompetence = `${eleve.id}-${competenceCode}`
@@ -1661,53 +1698,55 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                                     }}
                                                                                 />
                                                                             ))}
-                                                                            {/* Bouton + pour ajouter une nouvelle évaluation - maintenant pour tous les niveaux */}
-                                                                            <button
-                                                                                style={{
-                                                                                    display: 'inline-block',
-                                                                                    width: '20px',
-                                                                                    height: '20px',
-                                                                                    borderRadius: '50%',
-                                                                                    backgroundColor: '#f0f0f0',
-                                                                                    border: '1px solid #999',
-                                                                                    cursor: 'pointer',
-                                                                                    fontSize: '12px',
-                                                                                    fontWeight: 'bold',
-                                                                                    color: '#666',
+                                                                            {/* Bouton + pour ajouter une nouvelle évaluation - maintenant pour tous les niveaux - masqué en mode élève */}
+                                                                            {!isStudentMode && (
+                                                                                <button
+                                                                                    style={{
+                                                                                        display: 'inline-block',
+                                                                                        width: '20px',
+                                                                                        height: '20px',
+                                                                                        borderRadius: '50%',
+                                                                                        backgroundColor: '#f0f0f0',
+                                                                                        border: '1px solid #999',
+                                                                                        cursor: 'pointer',
+                                                                                        fontSize: '12px',
+                                                                                        fontWeight: 'bold',
+                                                                                        color: '#666',
 
-                                                                                    alignItems: 'center',
-                                                                                    justifyContent: 'center',
-                                                                                    padding: '0',
-                                                                                    lineHeight: '1',
-                                                                                    marginLeft: '2px'
-                                                                                }}
-                                                                                title="Ajouter une nouvelle évaluation"
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    setOuvertureModalEnCours(true); // Bloquer les popups
-                                                                                    setNoteDetail(null); // Fermer toute popup d'info
-                                                                                    // Déterminer le code de compétence selon le niveau
-                                                                                    let codeCompetence;
-                                                                                    if (ligne.niveau3) {
-                                                                                        codeCompetence = ligne.niveau3.code;
-                                                                                    } else if (ligne.niveau2) {
-                                                                                        codeCompetence = ligne.niveau2.code;
-                                                                                    } else if (ligne.niveau1) {
-                                                                                        codeCompetence = ligne.niveau1.code;
-                                                                                    }
-                                                                                    if (codeCompetence) {
-                                                                                        // Délai pour s'assurer que la popup se ferme avant d'ouvrir la modal
-                                                                                        setTimeout(() => {
-                                                                                            handleClickEleve(eleve, codeCompetence);
-                                                                                            // Remettre à false après un délai pour permettre les futures popups
-                                                                                            setTimeout(() => setOuvertureModalEnCours(false), 100);
-                                                                                        }, 50);
-                                                                                    }
-                                                                                }}
-                                                                            >+</button>
+                                                                                        alignItems: 'center',
+                                                                                        justifyContent: 'center',
+                                                                                        padding: '0',
+                                                                                        lineHeight: '1',
+                                                                                        marginLeft: '2px'
+                                                                                    }}
+                                                                                    title="Ajouter une nouvelle évaluation"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setOuvertureModalEnCours(true); // Bloquer les popups
+                                                                                        setNoteDetail(null); // Fermer toute popup d'info
+                                                                                        // Déterminer le code de compétence selon le niveau
+                                                                                        let codeCompetence;
+                                                                                        if (ligne.niveau3) {
+                                                                                            codeCompetence = ligne.niveau3.code;
+                                                                                        } else if (ligne.niveau2) {
+                                                                                            codeCompetence = ligne.niveau2.code;
+                                                                                        } else if (ligne.niveau1) {
+                                                                                            codeCompetence = ligne.niveau1.code;
+                                                                                        }
+                                                                                        if (codeCompetence) {
+                                                                                            // Délai pour s'assurer que la popup se ferme avant d'ouvrir la modal
+                                                                                            setTimeout(() => {
+                                                                                                handleClickEleve(eleve, codeCompetence);
+                                                                                                // Remettre à false après un délai pour permettre les futures popups
+                                                                                                setTimeout(() => setOuvertureModalEnCours(false), 100);
+                                                                                            }, 50);
+                                                                                        }
+                                                                                    }}
+                                                                                >+</button>
+                                                                            )}
                                                                         </div>
                                                                     ) : (
-                                                                        // Afficher pastille grise pour tous les niveaux
+                                                                        // Afficher pastille grise pour tous les niveaux - non cliquable en mode élève
                                                                         <div
                                                                             style={{
                                                                                 display: 'inline-flex',
@@ -1718,13 +1757,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                                 borderRadius: '50%',
                                                                                 backgroundColor: '#cccccc',
                                                                                 border: '2px solid #999',
-                                                                                cursor: 'pointer',
+                                                                                cursor: isStudentMode ? 'default' : 'pointer',
                                                                                 fontSize: '12px',
                                                                                 fontWeight: 'bold',
                                                                                 color: '#666'
                                                                             }}
-                                                                            title="Non évalué - Cliquer pour évaluer"
-                                                                            onClick={(e) => {
+                                                                            title={isStudentMode ? "Non évalué" : "Non évalué - Cliquer pour évaluer"}
+                                                                            onClick={!isStudentMode ? (e) => {
                                                                                 e.stopPropagation();
                                                                                 setOuvertureModalEnCours(true); // Bloquer les popups
                                                                                 setNoteDetail(null); // Fermer toute popup d'info
@@ -1745,76 +1784,76 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                                         setTimeout(() => setOuvertureModalEnCours(false), 100);
                                                                                     }, 50);
                                                                                 }
-                                                                            }}
+                                                                            } : undefined}
                                                                         >+</div>
                                                                     )}
                                                                 </div>
                                                             </td>
                                                             <td className="cell-positionnement">
                                                                 <div style={{ display: 'flex', gap: '5px', alignItems: 'center', justifyContent: 'center' }}>
-                                                                    {/* Pastille automatique seulement pour les compétences N2 */}
                                                                     {ligne.niveau2?.code && (
-                                                                        <div
-                                                                            className="pastille-auto"
-                                                                            style={{
-                                                                                backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris')
-                                                                            }}
-                                                                            title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation(); // Empêcher la propagation d'événement
-                                                                            }}
-                                                                        >
-                                                                            A
-                                                                        </div>
-                                                                    )}
+                                                                        <>
+                                                                            {/* Si il y a un positionnement enseignant, afficher uniquement celui-ci */}
+                                                                            {ligne.positionnementEnseignant ? (
+                                                                                <div
+                                                                                    style={{
+                                                                                        display: 'inline-block',
+                                                                                        width: '20px',
+                                                                                        height: '20px',
+                                                                                        borderRadius: '50%',
+                                                                                        backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
+                                                                                        border: '2px solid #333',
+                                                                                        cursor: isStudentMode ? 'default' : 'pointer',
+                                                                                        fontSize: '10px',
+                                                                                        color: 'white',
+                                                                                        fontWeight: 'bold',
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center',
+                                                                                        justifyContent: 'center'
+                                                                                    }}
+                                                                                    title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        if (isStudentMode || ouvertureModalEnCours) return;
+                                                                                        const codeCompetence = ligne.niveau2?.code
+                                                                                        if (codeCompetence) {
+                                                                                            handleClickPositionnement(eleve, codeCompetence)
+                                                                                        }
+                                                                                    }}
+                                                                                >
+                                                                                    {isStudentMode ? 'P' : ''}
+                                                                                </div>
+                                                                            ) : (
+                                                                                /* Sinon, afficher le positionnement automatique */
+                                                                                <div
+                                                                                    className="pastille-auto"
+                                                                                    style={{
+                                                                                        backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris')
+                                                                                    }}
+                                                                                    title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                    }}
+                                                                                >
+                                                                                    {isStudentMode ? 'P' : 'A'}
+                                                                                </div>
+                                                                            )}
 
-                                                                    {/* Pastille enseignant si elle existe ET si c'est une compétence N2 */}
-                                                                    {ligne.positionnementEnseignant && ligne.niveau2?.code ? (
-                                                                        <div
-                                                                            style={{
-                                                                                display: 'inline-block',
-                                                                                width: '20px',
-                                                                                height: '20px',
-                                                                                borderRadius: '50%',
-                                                                                backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
-                                                                                border: '2px solid #333',
-                                                                                cursor: 'pointer',
-                                                                                fontSize: '10px',
-                                                                                color: 'white',
-                                                                                fontWeight: 'bold',
-
-                                                                                alignItems: 'center',
-                                                                                justifyContent: 'center'
-                                                                            }}
-                                                                            title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation(); // Empêcher la propagation
-                                                                                // Ne pas ouvrir si on est en train d'ouvrir une modal d'évaluation
-                                                                                if (ouvertureModalEnCours) return;
-                                                                                // Le positionnement enseignant n'est disponible que pour les compétences N2
-                                                                                const codeCompetence = ligne.niveau2?.code
-                                                                                if (codeCompetence) {
-                                                                                    handleClickPositionnement(eleve, codeCompetence)
-                                                                                }
-                                                                            }}
-                                                                        >
-                                                                            E
-                                                                        </div>
-                                                                    ) : (
-                                                                        // Bouton pour créer un positionnement enseignant (seulement pour N2)
-                                                                        ligne.niveau2?.code && (
-                                                                            <button
-                                                                                className="btn-positionner"
-                                                                                style={{ marginLeft: '5px' }}
-                                                                                title="Cliquer pour définir un positionnement enseignant"
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation(); // Empêcher la propagation
-                                                                                    handleClickPositionnement(eleve, ligne.niveau2.code)
-                                                                                }}
-                                                                            >
-                                                                                + Positionner
-                                                                            </button>
-                                                                        )
+                                                                            {/* Bouton pour créer un positionnement enseignant (seulement si pas déjà existant et pas en mode élève) */}
+                                                                            {!ligne.positionnementEnseignant && !isStudentMode && (
+                                                                                <button
+                                                                                    className="btn-positionner"
+                                                                                    style={{ marginLeft: '5px' }}
+                                                                                    title="Cliquer pour définir un positionnement enseignant"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        handleClickPositionnement(eleve, ligne.niveau2.code)
+                                                                                    }}
+                                                                                >
+                                                                                    + Positionner
+                                                                                </button>
+                                                                            )}
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             </td>
@@ -1901,8 +1940,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                                    {/* Boutons de couleur directs pour éviter la popup */}
-                                    {(() => {
+                                    {/* Boutons de couleur directs pour éviter la popup - masqués en mode élève */}
+                                    {!isStudentMode && (() => {
                                         const derniereCouleur = getDerniereCouleurDirecte(eleve.id, codeCompetence)
                                         return (
                                             <>
@@ -2272,52 +2311,54 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                             }}
                                                                         />
                                                                     ))}
-                                                                    {/* Bouton + pour ajouter une nouvelle évaluation - maintenant pour tous les niveaux */}
-                                                                    <button
-                                                                        style={{
-                                                                            display: 'inline-block',
-                                                                            width: '20px',
-                                                                            height: '20px',
-                                                                            borderRadius: '50%',
-                                                                            backgroundColor: '#f0f0f0',
-                                                                            border: '1px solid #999',
-                                                                            cursor: 'pointer',
-                                                                            fontSize: '12px',
-                                                                            fontWeight: 'bold',
-                                                                            color: '#666',
-                                                                            alignItems: 'center',
-                                                                            justifyContent: 'center',
-                                                                            padding: '0',
-                                                                            lineHeight: '1',
-                                                                            marginLeft: '2px'
-                                                                        }}
-                                                                        title="Ajouter une nouvelle évaluation"
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            setOuvertureModalEnCours(true); // Bloquer les popups
-                                                                            setNoteDetail(null); // Fermer toute popup d'info
-                                                                            // Déterminer le code de compétence selon le niveau
-                                                                            let codeCompetence;
-                                                                            if (ligne.niveau3) {
-                                                                                codeCompetence = ligne.niveau3.code;
-                                                                            } else if (ligne.niveau2) {
-                                                                                codeCompetence = ligne.niveau2.code;
-                                                                            } else if (ligne.niveau1) {
-                                                                                codeCompetence = ligne.niveau1.code;
-                                                                            }
-                                                                            if (codeCompetence) {
-                                                                                // Délai pour s'assurer que la popup se ferme avant d'ouvrir la modal
-                                                                                setTimeout(() => {
-                                                                                    handleClickEleve(eleve, codeCompetence);
-                                                                                    // Remettre à false après un délai pour permettre les futures popups
-                                                                                    setTimeout(() => setOuvertureModalEnCours(false), 100);
-                                                                                }, 50);
-                                                                            }
-                                                                        }}
-                                                                    >+</button>
+                                                                    {/* Bouton + pour ajouter une nouvelle évaluation - maintenant pour tous les niveaux - masqué en mode élève */}
+                                                                    {!isStudentMode && (
+                                                                        <button
+                                                                            style={{
+                                                                                display: 'inline-block',
+                                                                                width: '20px',
+                                                                                height: '20px',
+                                                                                borderRadius: '50%',
+                                                                                backgroundColor: '#f0f0f0',
+                                                                                border: '1px solid #999',
+                                                                                cursor: 'pointer',
+                                                                                fontSize: '12px',
+                                                                                fontWeight: 'bold',
+                                                                                color: '#666',
+                                                                                alignItems: 'center',
+                                                                                justifyContent: 'center',
+                                                                                padding: '0',
+                                                                                lineHeight: '1',
+                                                                                marginLeft: '2px'
+                                                                            }}
+                                                                            title="Ajouter une nouvelle évaluation"
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setOuvertureModalEnCours(true); // Bloquer les popups
+                                                                                setNoteDetail(null); // Fermer toute popup d'info
+                                                                                // Déterminer le code de compétence selon le niveau
+                                                                                let codeCompetence;
+                                                                                if (ligne.niveau3) {
+                                                                                    codeCompetence = ligne.niveau3.code;
+                                                                                } else if (ligne.niveau2) {
+                                                                                    codeCompetence = ligne.niveau2.code;
+                                                                                } else if (ligne.niveau1) {
+                                                                                    codeCompetence = ligne.niveau1.code;
+                                                                                }
+                                                                                if (codeCompetence) {
+                                                                                    // Délai pour s'assurer que la popup se ferme avant d'ouvrir la modal
+                                                                                    setTimeout(() => {
+                                                                                        handleClickEleve(eleve, codeCompetence);
+                                                                                        // Remettre à false après un délai pour permettre les futures popups
+                                                                                        setTimeout(() => setOuvertureModalEnCours(false), 100);
+                                                                                    }, 50);
+                                                                                }
+                                                                            }}
+                                                                        >+</button>
+                                                                    )}
                                                                 </div>
                                                             ) : (
-                                                                // Afficher pastille grise pour tous les niveaux
+                                                                // Afficher pastille grise pour tous les niveaux - non cliquable en mode élève
                                                                 <div
                                                                     style={{
                                                                         display: 'inline-flex',
@@ -2328,13 +2369,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                         borderRadius: '50%',
                                                                         backgroundColor: '#cccccc',
                                                                         border: '2px solid #999',
-                                                                        cursor: 'pointer',
+                                                                        cursor: isStudentMode ? 'default' : 'pointer',
                                                                         fontSize: '12px',
                                                                         fontWeight: 'bold',
                                                                         color: '#666'
                                                                     }}
-                                                                    title="Non évalué - Cliquer pour évaluer"
-                                                                    onClick={(e) => {
+                                                                    title={isStudentMode ? "Non évalué" : "Non évalué - Cliquer pour évaluer"}
+                                                                    onClick={!isStudentMode ? (e) => {
                                                                         e.stopPropagation();
                                                                         setOuvertureModalEnCours(true); // Bloquer les popups
                                                                         setNoteDetail(null); // Fermer toute popup d'info
@@ -2355,63 +2396,61 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                                                                 setTimeout(() => setOuvertureModalEnCours(false), 100);
                                                                             }, 50);
                                                                         }
-                                                                    }}
+                                                                    } : undefined}
                                                                 >+</div>
                                                             )}
                                                         </div>
                                                     </td>
                                                     <td className="cell-positionnement">
                                                         <div style={{ display: 'flex', gap: '5px', alignItems: 'center', justifyContent: 'center' }}>
-                                                            {/* Pastille automatique seulement pour les compétences N2 */}
                                                             {ligne.niveau2?.code && (
-                                                                <div
-                                                                    className="pastille-auto"
-                                                                    style={{
-                                                                        backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris')
-                                                                    }}
-                                                                    title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation(); // Empêcher la propagation d'événement
-                                                                    }}
-                                                                >
-                                                                    A
-                                                                </div>
-                                                            )}
-
-                                                            {/* Pastille enseignant si elle existe ET si c'est une compétence N2 */}
-                                                            {ligne.positionnementEnseignant && ligne.niveau2?.code ? (
-                                                                <div
-                                                                    style={{
-                                                                        display: 'inline-block',
-                                                                        width: '20px',
-                                                                        height: '20px',
-                                                                        borderRadius: '50%',
-                                                                        backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
-                                                                        border: '2px solid #333',
-                                                                        cursor: 'pointer',
-                                                                        fontSize: '10px',
-                                                                        color: 'white',
-                                                                        fontWeight: 'bold',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center'
-                                                                    }}
-                                                                    title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation(); // Empêcher la propagation
-                                                                        // Ne pas ouvrir si on est en train d'ouvrir une modal d'évaluation
-                                                                        if (ouvertureModalEnCours) return;
-                                                                        // Le positionnement enseignant n'est disponible que pour les compétences N2
-                                                                        const codeCompetence = ligne.niveau2?.code
-                                                                        if (codeCompetence) {
-                                                                            handleClickPositionnement(eleve, codeCompetence)
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    E
-                                                                </div>
-                                                            ) : (
-                                                                // En mode filtré, pas de positionnement manuel
-                                                                null
+                                                                <>
+                                                                    {/* Si il y a un positionnement enseignant, afficher uniquement celui-ci */}
+                                                                    {ligne.positionnementEnseignant ? (
+                                                                        <div
+                                                                            style={{
+                                                                                display: 'inline-block',
+                                                                                width: '20px',
+                                                                                height: '20px',
+                                                                                borderRadius: '50%',
+                                                                                backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
+                                                                                border: '2px solid #333',
+                                                                                cursor: isStudentMode ? 'default' : 'pointer',
+                                                                                fontSize: '10px',
+                                                                                color: 'white',
+                                                                                fontWeight: 'bold',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                justifyContent: 'center'
+                                                                            }}
+                                                                            title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                if (isStudentMode || ouvertureModalEnCours) return;
+                                                                                const codeCompetence = ligne.niveau2?.code
+                                                                                if (codeCompetence) {
+                                                                                    handleClickPositionnement(eleve, codeCompetence)
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            {isStudentMode ? 'P' : ''}
+                                                                        </div>
+                                                                    ) : (
+                                                                        /* Sinon, afficher le positionnement automatique */
+                                                                        <div
+                                                                            className="pastille-auto"
+                                                                            style={{
+                                                                                backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris')
+                                                                            }}
+                                                                            title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                            }}
+                                                                        >
+                                                                            {isStudentMode ? 'P' : 'A'}
+                                                                        </div>
+                                                                    )}
+                                                                </>
                                                             )}
                                                         </div>
                                                     </td>
@@ -2468,19 +2507,21 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                         <p><strong>Prof :</strong> ID {noteDetail.prof_id}</p>
                         <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
                             <button onClick={() => setNoteDetail(null)}>Fermer</button>
-                            <button
-                                onClick={() => handleDeleteNote(noteDetail.id)}
-                                style={{
-                                    backgroundColor: '#e53935',
-                                    color: 'white',
-                                    border: 'none',
-                                    padding: '8px 16px',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                Supprimer
-                            </button>
+                            {!isStudentMode && (
+                                <button
+                                    onClick={() => handleDeleteNote(noteDetail.id)}
+                                    style={{
+                                        backgroundColor: '#e53935',
+                                        color: 'white',
+                                        border: 'none',
+                                        padding: '8px 16px',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    Supprimer
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

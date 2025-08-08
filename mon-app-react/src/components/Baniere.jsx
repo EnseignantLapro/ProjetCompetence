@@ -7,7 +7,10 @@ function Baniere({
     onClasseChange, 
     isAdmin, 
     adminVisible, 
-    onToggleAdmin 
+    onToggleAdmin,
+    isStudentMode = false,
+    studentInfo = null,
+    onStudentLogout = null
 }) {
     const getClasseName = () => {
         if (!classeChoisie) return ''
@@ -40,34 +43,48 @@ function Baniere({
             >
                 <div>
                     <h1 className="baniere-titre">
-                        Evaluation au fil de l'eau
+                        {isStudentMode ? 'Mon bilan de compétences' : 'Evaluation au fil de l\'eau'}
                     </h1>
                     
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <label htmlFor="select-classe" style={{ fontWeight: '500' }}>
-                            Classe :
-                        </label>
-                        <select 
-                            id="select-classe" 
-                            value={classeChoisie} 
-                            onChange={onClasseChange}
-                            style={{
-                                padding: '5px 10px',
-                                borderRadius: '4px',
-                                border: '1px solid #ccc'
-                            }}
-                        >
-                            <option value="">-- Choisir une classe --</option>
-                            {classes.map(c => (
-                                <option key={c.id} value={c.id}>{c.nom}</option>
-                            ))}
-                        </select>
-                        
-                       
-                    </div>
+                    {/* Affichage pour le mode élève */}
+                    {isStudentMode && studentInfo && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
+                            <span style={{ fontWeight: '500', color: '#333' }}>
+                                Classe : {getClasseName()}
+                            </span>
+                            <span style={{ color: '#666', fontSize: '14px' }}>
+                                • {studentInfo.prenom} {studentInfo.nom}
+                            </span>
+                        </div>
+                    )}
+                    
+                    {/* Masquer le sélecteur de classe en mode élève */}
+                    {!isStudentMode && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <label htmlFor="select-classe" style={{ fontWeight: '500' }}>
+                                Classe :
+                            </label>
+                            <select 
+                                id="select-classe" 
+                                value={classeChoisie} 
+                                onChange={onClasseChange}
+                                style={{
+                                    padding: '5px 10px',
+                                    borderRadius: '4px',
+                                    border: '1px solid #ccc'
+                                }}
+                            >
+                                <option value="">-- Choisir une classe --</option>
+                                {classes.map(c => (
+                                    <option key={c.id} value={c.id}>{c.nom}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                 </div>
 
-                {isAdmin && (
+                {/* Bouton admin en mode enseignant */}
+                {isAdmin && !isStudentMode && (
                     <div>
                         <button 
                             onClick={onToggleAdmin}
@@ -82,6 +99,26 @@ function Baniere({
                             }}
                         >
                             {adminVisible ? '← Revenir' : '⚙️ Gérer l\'appli'}
+                        </button>
+                    </div>
+                )}
+
+                {/* Bouton de déconnexion en mode élève */}
+                {isStudentMode && studentInfo && onStudentLogout && (
+                    <div>
+                        <button
+                            onClick={onStudentLogout}
+                            style={{
+                                backgroundColor: '#dc3545',
+                                color: 'white',
+                                border: 'none',
+                                padding: '10px 20px',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontWeight: '500'
+                            }}
+                        >
+                            🚪 Déconnexion
                         </button>
                     </div>
                 )}

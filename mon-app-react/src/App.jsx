@@ -8,6 +8,11 @@ import { competencesN1N2, tachesProfessionelles } from './data/competences'
 import './App.css'
 
 function App() {
+  const [isStudentMode, setIsStudentMode] = useState(false)
+  const [studentToken, setStudentToken] = useState(null)
+  const [studentInfo, setStudentInfo] = useState(null)
+  const [appInitialized, setAppInitialized] = useState(false) // Nouveau flag
+  
   const isAdmin = true // À remplacer plus tard par détection Moodle
   const [adminVisible, setAdminVisible] = useState(false)
   const [competenceChoisie, setCompetenceChoisie] = useState(null)
@@ -20,12 +25,99 @@ function App() {
   const [nomNiveau2, setNomNiveau2] = useState('')
   const [nomNiveau3, setNomNiveau3] = useState('')
 
-  useEffect(() => {
-    const saved = localStorage.getItem('choix_competence')
-    if (saved) {
-      setCompetenceChoisie(JSON.parse(saved))
+  // Fonction pour vérifier le token côté serveur
+  const verifyToken = async (token) => {
+    try {
+      const response = await fetch(`http://${window.location.hostname}:3001/auth/verify-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        return data // { valid: true, eleve: {...} }
+      }
+      return { valid: false }
+    } catch (error) {
+      console.error('Erreur lors de la vérification du token:', error)
+      return { valid: false }
     }
-    // Si aucune compétence sauvegardée, on reste en mode "première sélection" (isModifying = false)
+  }
+
+  // Fonction pour nettoyer l'URL et sauvegarder le token
+  const handleTokenFromURL = () => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const token = urlParams.get('token')
+    
+    if (token) {
+      // Sauvegarder le token dans localStorage
+      localStorage.setItem('student_token', token)
+      
+      // Nettoyer l'URL pour cacher le token
+      const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname
+      window.history.replaceState({}, document.title, newUrl)
+      
+      return token
+    }
+    
+    return null
+  }
+
+  // Fonction de déconnexion élève
+  const handleStudentLogout = () => {
+    localStorage.removeItem('student_token')
+    setIsStudentMode(false)
+    setStudentToken(null)
+    setStudentInfo(null)
+    setClasseChoisie('')
+    setCompetenceChoisie(null)
+  }
+
+  // Initialisation au chargement
+  useEffect(() => {
+    const initializeApp = async () => {
+      // 1. Vérifier s'il y a un token dans l'URL
+      const urlToken = handleTokenFromURL()
+      
+      // 2. Si pas de token dans l'URL, vérifier le localStorage
+      const storedToken = urlToken || localStorage.getItem('student_token')
+      
+      let isStudentMode = false
+      let verification = null
+      
+      if (storedToken) {
+        // 3. Vérifier la validité du token côté serveur
+        verification = await verifyToken(storedToken)
+        
+        if (verification.valid) {
+          // Token valide - mode élève
+          isStudentMode = true
+          setIsStudentMode(true)
+          setStudentToken(storedToken)
+          setStudentInfo(verification.eleve)
+          setClasseChoisie(verification.eleve.classe_id.toString())
+          // En mode élève, toujours forcer le bilan (pas de compétence choisie)
+          setCompetenceChoisie(null)
+        } else {
+          // Token invalide - le supprimer
+          localStorage.removeItem('student_token')
+        }
+      }
+      
+      // 4. Si mode enseignant, restaurer la compétence sauvegardée
+      if (!isStudentMode) {
+        const saved = localStorage.getItem('choix_competence')
+        if (saved) {
+          setCompetenceChoisie(JSON.parse(saved))
+        }
+      }
+      
+      // 5. Marquer l'app comme initialisée
+      setAppInitialized(true)
+    }
+    
+    initializeApp()
   }, [])
 
   useEffect(() => {
@@ -76,21 +168,24 @@ function App() {
   }, [competenceChoisie])
 
   useEffect(() => {
-
-
-    const savedClasse = localStorage.getItem('classe_choisie')
-    if (savedClasse) {
-      setClasseChoisie(savedClasse)
+    // En mode élève, ne pas charger la classe depuis localStorage
+    // La classe sera automatiquement définie lors de la vérification du token
+    if (!isStudentMode) {
+      const savedClasse = localStorage.getItem('classe_choisie')
+      if (savedClasse) {
+        setClasseChoisie(savedClasse)
+      }
     }
 
     fetch(`http://${window.location.hostname}:3001/classes`)
       .then(res => res.json())
       .then(setClasses)
-
-
-  }, [])
+  }, [isStudentMode])
 
   const handleClasseChange = (e) => {
+    // Empêcher le changement de classe en mode élève
+    if (isStudentMode) return
+    
     const value = e.target.value
     setClasseChoisie(value)
     localStorage.setItem('classe_choisie', value)
@@ -102,54 +197,88 @@ function App() {
 
   return (
     <>
+      {/* Bouton de déconnexion pour les élèves - maintenant dans la bannière */}
       <Baniere
         classes={classes}
         classeChoisie={classeChoisie}
         onClasseChange={handleClasseChange}
-        isAdmin={isAdmin}
-        adminVisible={adminVisible}
+        isAdmin={isAdmin && !isStudentMode} // Masquer les fonctions admin en mode élève
+        adminVisible={adminVisible && !isStudentMode}
         onToggleAdmin={handleToggleAdmin}
+        isStudentMode={isStudentMode}
+        studentInfo={studentInfo}
+        onStudentLogout={handleStudentLogout}
       />
 
       <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem' }}>
-        {adminVisible ? (
+        {/* Panneau admin - masqué en mode élève */}
+        {(adminVisible && !isStudentMode) ? (
           <div className="card">
             <AdminPanel classeChoisie={classeChoisie} classes={classes} />
           </div>
         ) : (
           <>
-            {(!competenceChoisie && !isModifying) && (
+            {/* Mode de présentation élève ou première visite - masquer le choix de compétence en mode élève */}
+            {(!competenceChoisie && !isModifying && !isStudentMode) && (
               <div className="card">
                 <ChoixCompetence
                   key={choixCompetenceKey}
+                  isStudentMode={isStudentMode}
                   onChoixFinal={(selection) => {
                     setCompetenceChoisie(selection)
                     setIsModifying(false)
                   }}
                 />
                 <div style={{
-                  backgroundColor: '#f0f8ff',
+                  backgroundColor: isStudentMode ? '#f0fff0' : '#f0f8ff',
                   padding: '15px',
                   borderRadius: '8px',
                   marginTop: '20px',
-                  border: '1px solid #cce7ff'
+                  border: `1px solid ${isStudentMode ? '#ccf5cc' : '#cce7ff'}`
                 }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#2c5282' }}>
-                    📊  Bilan de la période pour chaque Bloc de compétence.
+                  <h4 style={{ margin: '0 0 10px 0', color: isStudentMode ? '#2d5a2d' : '#2c5282' }}>
+                    {isStudentMode ? '� Votre bilan personnel par bloc de compétence' : '📊 Bilan de la période pour chaque Bloc de compétence'}
                   </h4>
                   <p style={{ margin: 0, color: '#2d3748' }}>
-                    Vous voyez toutes <strong>les évaluations</strong> pour toutes <strong>les compétences par bloc</strong>.
-                    Vous pouvez Bypasser le Positionnement Automatique d'une compétence secondaire. Pour déterminer la note final sur 20 d'un bloc
-                    <br></br> Les évaluations sont triées par date croissante.
+                    {isStudentMode ? (
+                      <>Consultez vos <strong>évaluations</strong> et votre progression dans <strong>tous les blocs de compétences</strong>. 
+                      Les données sont triées par date croissante pour suivre votre évolution.</>
+                    ) : (
+                      <>Vous voyez toutes <strong>les évaluations</strong> pour toutes <strong>les compétences par bloc</strong>.
+                      Vous pouvez Bypasser le Positionnement Automatique d'une compétence secondaire. Pour déterminer la note final sur 20 d'un bloc
+                      <br></br> Les évaluations sont triées par date croissante.</>
+                    )}
                   </p>
                 </div>
               </div>
             )}
 
+            {/* En mode élève, afficher directement le message de bilan */}
+            {isStudentMode && !competenceChoisie && (
+              <div className="card">
+                <div style={{
+                  backgroundColor: '#f0fff0',
+                  padding: '15px',
+                  borderRadius: '8px',
+                  border: '1px solid #ccf5cc'
+                }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: '#2d5a2d' }}>
+                    🎯 Votre bilan personnel par bloc de compétence
+                  </h4>
+                  <p style={{ margin: 0, color: '#2d3748' }}>
+                    Consultez vos <strong>évaluations</strong> et votre progression dans <strong>tous les blocs de compétences</strong>. 
+                    Les données sont triées par date croissante pour suivre votre évolution.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Modification de compétence */}
             {(!competenceChoisie && isModifying) && (
               <div className="card">
                 <ChoixCompetence
                   key={choixCompetenceKey}
+                  isStudentMode={isStudentMode}
                   onChoixFinal={(selection) => {
                     setCompetenceChoisie(selection)
                     setIsModifying(false)
@@ -158,6 +287,7 @@ function App() {
               </div>
             )}
 
+            {/* Compétence sélectionnée */}
             {competenceChoisie && (
               <div className="card">
                 <div>
@@ -184,13 +314,13 @@ function App() {
                   </button>
                   <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>
                     {!competenceChoisie.niveau3 && !competenceChoisie.niveau2 && (
-                      <em>📝  l'évaluation de la compétence {competenceChoisie.niveau1} sera distillée dans toutes ses compétences secondaires</em>
+                      <em>{isStudentMode ? '📈' : '📝'} {isStudentMode ? 'Consultation' : 'L\'évaluation'} de la compétence {competenceChoisie.niveau1} {isStudentMode ? 'avec toutes ses compétences secondaires' : 'sera distillée dans toutes ses compétences secondaires'}</em>
                     )}
                     {competenceChoisie.niveau2 && !competenceChoisie.niveau3 && (
-                      <em>📝 Vous pouvez évaluer cette compétence secondaire {competenceChoisie.niveau2} et voir toutes les critères d'évaluation déjà évalués</em>
+                      <em>{isStudentMode ? '�' : '�📝'} {isStudentMode ? 'Vous consultez cette compétence secondaire' : 'Vous pouvez évaluer cette compétence secondaire'} {competenceChoisie.niveau2} {isStudentMode ? 'et voyez tous les critères d\'évaluation' : 'et voir toutes les critères d\'évaluation déjà évalués'}</em>
                     )}
                     {competenceChoisie.niveau3 && (
-                      <em>📝  Vous évaluez uniquement : {competenceChoisie.niveau3} qui sera prise en compte dans la compétence secondaire {competenceChoisie.niveau2}</em>
+                      <em>{isStudentMode ? '📈' : '📝'} {isStudentMode ? 'Vous consultez uniquement' : 'Vous évaluez uniquement'} : {competenceChoisie.niveau3} qui {isStudentMode ? 'est pris en compte' : 'sera prise en compte'} dans la compétence secondaire {competenceChoisie.niveau2}</em>
                     )}
                   </div>
                 </div>
@@ -198,7 +328,14 @@ function App() {
             )}
 
             <div className="card">
-              <TableauNotes competenceChoisie={competenceChoisie} classeChoisie={classeChoisie} classes={classes} />
+              <TableauNotes 
+                competenceChoisie={competenceChoisie} 
+                classeChoisie={classeChoisie} 
+                classes={classes}
+                isStudentMode={isStudentMode}
+                studentInfo={studentInfo}
+                appInitialized={appInitialized}
+              />
             </div>
           </>
         )}

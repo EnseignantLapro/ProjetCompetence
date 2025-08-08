@@ -10,6 +10,11 @@ app.use(express.json())
 
 const db = new sqlite3.Database('./competences.db')
 
+// Fonction pour générer un token unique
+function generateToken() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+}
+
 // Création des tables
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS competences (
@@ -27,6 +32,7 @@ db.serialize(() => {
   nom TEXT,
   photo TEXT,
   classe_id INTEGER,
+  token TEXT UNIQUE,
   FOREIGN KEY (classe_id) REFERENCES classes(id)
 )`)
     db.run(`CREATE TABLE IF NOT EXISTS notes (
@@ -169,10 +175,12 @@ app.get('/eleves/with-counts', (req, res) => {
 })
 
 app.post('/eleves', (req, res) => {
-  const { nom, prenom, moodle_id, classe_id, photo } = req.body
+  const { nom, prenom, moodle_id, classe_id, photo, token } = req.body
+  const finalToken = token || generateToken() // Utiliser le token fourni ou en générer un
+  
   db.run(
-    'INSERT INTO eleves (nom, prenom, id_moodle, classe_id, photo) VALUES (?, ?, ?, ?, ?)',
-    [nom, prenom, moodle_id, classe_id, photo || 'default.jpg'],
+    'INSERT INTO eleves (nom, prenom, id_moodle, classe_id, photo, token) VALUES (?, ?, ?, ?, ?, ?)',
+    [nom, prenom, moodle_id, classe_id, photo || 'default.jpg', finalToken],
     function (err) {
       if (err) return res.status(500).json({ error: err.message })
       res.json({ 
@@ -181,7 +189,8 @@ app.post('/eleves', (req, res) => {
         prenom, 
         id_moodle: moodle_id, 
         classe_id,
-        photo: photo || 'default.jpg'
+        photo: photo || 'default.jpg',
+        token: finalToken
       })
     }
   )
@@ -190,11 +199,11 @@ app.post('/eleves', (req, res) => {
 // Modifier un élève
 app.put('/eleves/:id', (req, res) => {
   const { id } = req.params
-  const { nom, prenom, moodle_id, classe_id, photo } = req.body
+  const { nom, prenom, moodle_id, classe_id, photo, token } = req.body
   
   db.run(
-    'UPDATE eleves SET nom = ?, prenom = ?, id_moodle = ?, classe_id = ?, photo = ? WHERE id = ?',
-    [nom, prenom, moodle_id, classe_id, photo || 'default.jpg', id],
+    'UPDATE eleves SET nom = ?, prenom = ?, id_moodle = ?, classe_id = ?, photo = ?, token = ? WHERE id = ?',
+    [nom, prenom, moodle_id, classe_id, photo || 'default.jpg', token, id],
     function (err) {
       if (err) return res.status(500).json({ error: err.message })
       if (this.changes === 0) return res.status(404).json({ error: 'Élève non trouvé' })
@@ -204,7 +213,8 @@ app.put('/eleves/:id', (req, res) => {
         prenom, 
         id_moodle: moodle_id, 
         classe_id,
-        photo: photo || 'default.jpg'
+        photo: photo || 'default.jpg',
+        token
       })
     }
   )
@@ -271,6 +281,59 @@ app.delete('/eleves/:id', (req, res) => {
   })
 })
 
+// Régénérer le token d'un élève
+app.post('/eleves/:id/regenerate-token', (req, res) => {
+  const { id } = req.params
+  const newToken = generateToken()
+  
+  db.run(
+    'UPDATE eleves SET token = ? WHERE id = ?',
+    [newToken, id],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message })
+      if (this.changes === 0) return res.status(404).json({ error: 'Élève non trouvé' })
+      res.json({ id: parseInt(id), token: newToken })
+    }
+  )
+})
+
+// Routes d'authentification pour les élèves
+// Vérifier un token d'élève
+app.post('/auth/verify-token', (req, res) => {
+  const { token } = req.body
+  
+  if (!token) {
+    return res.status(400).json({ error: 'Token manquant' })
+  }
+  
+  db.get(
+    'SELECT id, prenom, nom, id_moodle, classe_id, photo FROM eleves WHERE token = ?',
+    [token],
+    (err, eleve) => {
+      if (err) {
+        console.error('Erreur lors de la vérification du token:', err)
+        return res.status(500).json({ error: err.message })
+      }
+      
+      if (!eleve) {
+        return res.json({ valid: false, message: 'Token invalide' })
+      }
+      
+      res.json({ 
+        valid: true, 
+        eleve: {
+          id: eleve.id,
+          prenom: eleve.prenom,
+          nom: eleve.nom,
+          id_moodle: eleve.id_moodle,
+          classe_id: eleve.classe_id,
+          photo: eleve.photo
+        }
+      })
+    }
+  )
+})
+
 app.post('/notes', (req, res) => {
     const { eleve_id, competence_code, couleur, date, prof_id } = req.body
     db.run(
@@ -314,9 +377,6 @@ app.delete('/notes/:id', (req, res) => {
         res.json({ message: 'Note supprimée', id: parseInt(id) })
     })
 })
-
-// Ajouter un élève
-// (Cette route est en doublon, supprimée)
 
 // Récupérer toutes les classes
 app.get('/classes', (req, res) => {
@@ -602,9 +662,10 @@ app.post('/evaluations/import', (req, res) => {
         processEvaluations(eleveId)
       } else {
         // Créer l'élève
+        const token = generateToken()
         db.run(
-          'INSERT INTO eleves (id_moodle, prenom, nom, classe_id) VALUES (?, ?, ?, ?)',
-          [idMoodleNum, prenom, nom, classeIdNum],
+          'INSERT INTO eleves (id_moodle, prenom, nom, classe_id, token) VALUES (?, ?, ?, ?, ?)',
+          [idMoodleNum, prenom, nom, classeIdNum, token],
           function(err) {
             if (err) {
               console.error('Erreur lors de la création de l\'élève:', err)
