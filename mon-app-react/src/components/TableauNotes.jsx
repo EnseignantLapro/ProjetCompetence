@@ -770,6 +770,19 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
         return classe ? classe.nom : `Classe ${classeId}`
     }
 
+    // Fonction pour gérer correctement les URLs de photos
+    const getPhotoUrl = (photoPath) => {
+        if (!photoPath) return '/default.jpg'
+        
+        // Si c'est déjà une URL complète (http:// ou https://), la retourner telle quelle
+        if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
+            return photoPath
+        }
+        
+        // Sinon, c'est un chemin relatif, ajouter le / devant
+        return `/${photoPath}`
+    }
+
     // Fonction pour obtenir la couleur de fond selon le bloc de la compétence
     const getCouleurFondCompetence = (codeCompetence) => {
         if (!codeCompetence) return 'transparent'
@@ -1311,7 +1324,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
     return (
         <div className="tableau-container">
 
-
+            { eleves.length === 0 && (
+                <div className="aucune-note alert">
+                    <p>Aucun Élève est ajouté à votre classe.</p>
+                </div>
+            )}
             {/* Si mode vue d'ensemble, organiser par élève avec leurs blocs */}
             {!codeCompetence ? (
                 eleves.map(eleve => {
@@ -1330,7 +1347,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                 <div className="eleve-info">
 
                                     <img
-                                        src={`/${eleve.photo}`}
+                                        src={getPhotoUrl(eleve.photo)}
                                         alt={eleve.prenom}
                                         className="photo-eleve"
                                         onError={(e) => {
@@ -1869,7 +1886,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes }) {
                                 <div className="eleve-info">
                                     {eleve && (
                                         <img
-                                            src={`/${eleve.photo}`}
+                                            src={getPhotoUrl(eleve.photo)}
                                             alt={eleve.prenom}
                                             className="photo-eleve"
                                             onError={(e) => {

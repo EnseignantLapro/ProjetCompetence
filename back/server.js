@@ -545,10 +545,13 @@ app.post('/evaluations/import', (req, res) => {
     return res.status(400).json({ error: 'Données manquantes' })
   }
   
-  // D'abord, trouver ou créer l'élève
+  // Convertir id_moodle en nombre pour s'assurer de la compatibilité
+  const idMoodleNum = parseInt(id_moodle)
+  const classeIdNum = parseInt(classe_id)
+  
   db.get(
-    'SELECT id FROM eleves WHERE id_moodle = ? AND classe_id = ?',
-    [id_moodle, classe_id],
+    'SELECT id, id_moodle, prenom, nom FROM eleves WHERE id_moodle = ? AND classe_id = ?',
+    [idMoodleNum, classeIdNum],
     (err, eleve) => {
       if (err) {
         console.error('Erreur lors de la recherche de l\'élève:', err)
@@ -558,45 +561,26 @@ app.post('/evaluations/import', (req, res) => {
       let eleveId = eleve ? eleve.id : null
       
       const processEvaluations = (eleveId) => {
+        
         // Insérer les évaluations
-        const promises = evaluations.map(evaluation => {
+        const promises = evaluations.map((evaluation, index) => {
           return new Promise((resolve, reject) => {
             const { code, couleur } = evaluation
+            
             if (!code || !couleur) {
               resolve() // Ignorer les évaluations vides
               return
             }
             
-            // Vérifier si une évaluation existe déjà pour cette compétence
-            db.get(
-              'SELECT id FROM notes WHERE eleve_id = ? AND competence_code = ?',
-              [eleveId, code],
-              (err, existingNote) => {
+            // Toujours créer une nouvelle évaluation (accumulation)
+            db.run(
+              'INSERT INTO notes (eleve_id, competence_code, couleur, date) VALUES (?, ?, ?, datetime("now"))',
+              [eleveId, code, couleur],
+              function(err) {
                 if (err) {
                   reject(err)
-                  return
-                }
-                
-                if (existingNote) {
-                  // Mettre à jour l'évaluation existante
-                  db.run(
-                    'UPDATE notes SET couleur = ?, date = datetime("now") WHERE id = ?',
-                    [couleur, existingNote.id],
-                    (err) => {
-                      if (err) reject(err)
-                      else resolve()
-                    }
-                  )
                 } else {
-                  // Créer une nouvelle évaluation
-                  db.run(
-                    'INSERT INTO notes (eleve_id, competence_code, couleur, date) VALUES (?, ?, ?, datetime("now"))',
-                    [eleveId, code, couleur],
-                    (err) => {
-                      if (err) reject(err)
-                      else resolve()
-                    }
-                  )
+                  resolve()
                 }
               }
             )
@@ -620,7 +604,7 @@ app.post('/evaluations/import', (req, res) => {
         // Créer l'élève
         db.run(
           'INSERT INTO eleves (id_moodle, prenom, nom, classe_id) VALUES (?, ?, ?, ?)',
-          [id_moodle, prenom, nom, classe_id],
+          [idMoodleNum, prenom, nom, classeIdNum],
           function(err) {
             if (err) {
               console.error('Erreur lors de la création de l\'élève:', err)
@@ -632,6 +616,78 @@ app.post('/evaluations/import', (req, res) => {
       }
     }
   )
+})
+
+// Route pour exporter les évaluations en CSV
+app.get('/evaluations/export/:classeId', (req, res) => {
+  const classeId = req.params.classeId
+
+  // Récupérer tous les élèves de la classe avec leurs évaluations
+  const query = `
+    SELECT 
+      e.id_moodle,
+      e.prenom,
+      e.nom,
+      n.competence_code,
+      n.couleur
+    FROM eleves e
+    LEFT JOIN notes n ON e.id = n.eleve_id
+    WHERE e.classe_id = ?
+    ORDER BY e.nom, e.prenom, n.competence_code
+  `
+
+  db.all(query, [classeId], (err, rows) => {
+    if (err) {
+      console.error('Erreur lors de l\'export des évaluations:', err)
+      return res.status(500).json({ error: 'Erreur lors de l\'export des évaluations' })
+    }
+
+    // Récupérer toutes les compétences distinctes pour créer les colonnes
+    const competencesQuery = `
+      SELECT DISTINCT competence_code as code 
+      FROM notes n
+      JOIN eleves e ON n.eleve_id = e.id
+      WHERE e.classe_id = ?
+      ORDER BY competence_code
+    `
+
+    db.all(competencesQuery, [classeId], (err, competences) => {
+      if (err) {
+        console.error('Erreur lors de la récupération des compétences:', err)
+        return res.status(500).json({ error: 'Erreur lors de la récupération des compétences' })
+      }
+
+      // Organiser les données par élève
+      const elevesMap = new Map()
+      
+      rows.forEach(row => {
+        const key = `${row.id_moodle}_${row.prenom}_${row.nom}`
+        if (!elevesMap.has(key)) {
+          elevesMap.set(key, {
+            id_moodle: row.id_moodle,
+            prenom: row.prenom,
+            nom: row.nom,
+            evaluations: []
+          })
+        }
+        
+        if (row.competence_code && row.couleur) {
+          elevesMap.get(key).evaluations.push({
+            competence_code: row.competence_code,
+            couleur: row.couleur
+          })
+        }
+      })
+
+      // Convertir en tableau
+      const eleves = Array.from(elevesMap.values())
+
+      res.json({
+        eleves,
+        competences
+      })
+    })
+  })
 })
 
 app.listen(PORT, () => {

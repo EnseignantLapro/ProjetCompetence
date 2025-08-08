@@ -10,6 +10,61 @@ function AdminEleve({ classe }) {
     })
     const [eleveEnEdition, setEleveEnEdition] = useState(null)
     const [loading, setLoading] = useState(false)
+    const [csvFile, setCsvFile] = useState(null)
+    
+    // États pour les sections collapsibles
+    const [importSectionVisible, setImportSectionVisible] = useState(false)
+    const [exportSectionVisible, setExportSectionVisible] = useState(false)
+
+    // Composant bouton sandwich
+    const BoutonSandwich = ({ onClick, isOpen }) => (
+        <button
+            onClick={onClick}
+            style={{
+                backgroundColor: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '8px',
+                borderRadius: '4px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '3px',
+                width: '32px',
+                height: '32px',
+                transition: 'background-color 0.2s'
+            }}
+            onMouseEnter={(e) => e.target.style.backgroundColor = '#e9ecef'}
+            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+            title={isOpen ? 'Masquer la section' : 'Afficher la section'}
+        >
+            <div style={{ 
+                width: '20px', 
+                height: '3px', 
+                backgroundColor: '#666', 
+                borderRadius: '1px',
+                transform: isOpen ? 'rotate(45deg) translateY(6px)' : 'none',
+                transition: 'transform 0.2s'
+            }}></div>
+            <div style={{ 
+                width: '20px', 
+                height: '3px', 
+                backgroundColor: '#666', 
+                borderRadius: '1px',
+                opacity: isOpen ? 0 : 1,
+                transition: 'opacity 0.2s'
+            }}></div>
+            <div style={{ 
+                width: '20px', 
+                height: '3px', 
+                backgroundColor: '#666', 
+                borderRadius: '1px',
+                transform: isOpen ? 'rotate(-45deg) translateY(-6px)' : 'none',
+                transition: 'transform 0.2s'
+            }}></div>
+        </button>
+    )
 
     // Charger les élèves de la classe avec les comptes de notes/positionnements
     const chargerEleves = async () => {
@@ -33,6 +88,19 @@ function AdminEleve({ classe }) {
             chargerEleves()
         }
     }, [classe])
+
+    // Fonction pour gérer correctement les URLs de photos
+    const getPhotoUrl = (photoPath) => {
+        if (!photoPath) return '/default.jpg'
+        
+        // Si c'est déjà une URL complète (http:// ou https://), la retourner telle quelle
+        if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
+            return photoPath
+        }
+        
+        // Sinon, c'est un chemin relatif, ajouter le / devant
+        return `/${photoPath}`
+    }
 
     // Ajouter un nouvel élève
     const ajouterEleve = async (e) => {
@@ -166,6 +234,116 @@ function AdminEleve({ classe }) {
         setEleveEnEdition(null)
     }
 
+    // Fonctions pour l'import CSV
+    const handleCSVChange = (e) => {
+        setCsvFile(e.target.files[0])
+    }
+
+    const handleCSVUpload = () => {
+        if (!csvFile) {
+            alert('Sélectionnez un fichier CSV.')
+            return
+        }
+
+        const reader = new FileReader()
+        reader.onload = async (e) => {
+            try {
+                const lines = e.target.result.split('\n').filter(l => l.trim() !== '')
+                let successCount = 0
+                let errorCount = 0
+                
+                // Parcourir les lignes (en sautant l'en-tête ligne 0)
+                for (let i = 1; i < lines.length; i++) {
+                    const [id_moodle, prenom, nom] = lines[i].split(',').map(s => s.trim())
+                    if (!id_moodle || !prenom || !nom) {
+                        console.log(`Ligne ${i+1} ignorée: données manquantes`)
+                        errorCount++
+                        continue
+                    }
+
+                    try {
+                        const response = await fetch(`http://${window.location.hostname}:3001/eleves`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                nom,
+                                prenom,
+                                id_moodle: id_moodle,
+                                classe_id: classe.id
+                            })
+                        })
+                        
+                        if (response.ok) {
+                            successCount++
+                        } else {
+                            console.error(`Erreur ligne ${i+1}:`, await response.text())
+                            errorCount++
+                        }
+                    } catch (error) {
+                        console.error(`Erreur ligne ${i+1}:`, error)
+                        errorCount++
+                    }
+                }
+
+                alert(`Import terminé ! ${successCount} élèves ajoutés, ${errorCount} erreurs.`)
+                // Réinitialiser les champs
+                setCsvFile(null)
+                document.querySelector('input[type="file"]').value = ''
+                // Recharger la liste des élèves
+                chargerEleves()
+            } catch (error) {
+                console.error('Erreur lors de la lecture du fichier:', error)
+                alert('Erreur lors de la lecture du fichier CSV')
+            }
+        }
+        reader.readAsText(csvFile)
+    }
+
+    // Fonction pour exporter les élèves en CSV
+    const exporterElevesCSV = () => {
+        if (!classe || !eleves || eleves.length === 0) {
+            alert('Aucun élève à exporter dans cette classe')
+            return
+        }
+
+        try {
+            // Créer les en-têtes CSV
+            const headers = ['id_moodle', 'prenom', 'nom']
+            
+            // Créer les lignes de données
+            const csvLines = [headers.join(',')]
+            
+            eleves.forEach(eleve => {
+                const ligne = [
+                    eleve.id_moodle || '',
+                    eleve.prenom || '',
+                    eleve.nom || ''
+                ]
+                csvLines.push(ligne.join(','))
+            })
+
+            // Créer et télécharger le fichier
+            const csvContent = csvLines.join('\n')
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+            const link = document.createElement('a')
+            
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob)
+                link.setAttribute('href', url)
+                link.setAttribute('download', `eleves_${classe.nom.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`)
+                link.style.visibility = 'hidden'
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+                
+                alert(`Export terminé ! Fichier téléchargé : eleves_${classe.nom.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`)
+            }
+        } catch (error) {
+            console.error('Erreur lors de l\'export:', error)
+            alert('Erreur lors de l\'export des élèves')
+        }
+    }
+
     if (!classe) {
         return (
             <div style={{ padding: '20px', textAlign: 'center' }}>
@@ -243,6 +421,134 @@ function AdminEleve({ classe }) {
                 </form>
             </div>
 
+            {/* Section Import CSV */}
+            <div style={{ 
+                backgroundColor: '#f8f9fa', 
+                padding: '20px', 
+                borderRadius: '8px', 
+                marginBottom: '20px',
+                border: '1px solid #dee2e6'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: importSectionVisible ? '15px' : '0' }}>
+                    <h3 style={{ margin: 0 }}>Import des élèves par CSV</h3>
+                    <BoutonSandwich 
+                        onClick={() => setImportSectionVisible(!importSectionVisible)}
+                        isOpen={importSectionVisible}
+                    />
+                </div>
+                
+                {importSectionVisible && (
+                    <>
+                        <div style={{ marginBottom: '15px' }}>
+                            <input 
+                                type="file" 
+                                accept=".csv" 
+                                onChange={handleCSVChange} 
+                                style={{ marginBottom: '10px' }}
+                            />
+                            <br />
+                            <button 
+                                onClick={handleCSVUpload} 
+                                disabled={!csvFile}
+                                style={{
+                                    backgroundColor: !csvFile ? '#6c757d' : '#28a745',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: '10px 20px',
+                                    borderRadius: '4px',
+                                    cursor: !csvFile ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                Importer le CSV
+                            </button>
+                        </div>
+                        
+                        <div style={{ 
+                            backgroundColor: '#fff3cd', 
+                            padding: '10px', 
+                            borderRadius: '4px',
+                            border: '1px solid #ffeaa7'
+                        }}>
+                            <h4>Format attendu du fichier CSV :</h4>
+                            <code style={{ 
+                                backgroundColor: '#e9ecef', 
+                                padding: '10px', 
+                                display: 'block', 
+                                borderRadius: '4px',
+                                fontFamily: 'monospace',
+                                fontSize: '12px'
+                            }}>
+                                id_moodle,prenom,nom<br />
+                                12345,Jean,Dupont<br />
+                                67890,Marie,Martin
+                            </code>
+                            <p style={{ marginTop: '10px', fontSize: '14px', color: '#6c757d' }}>
+                                La première ligne doit contenir les en-têtes de colonnes.
+                            </p>
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* Section Export CSV */}
+            <div style={{ 
+                backgroundColor: '#f8f9fa', 
+                padding: '20px', 
+                borderRadius: '8px', 
+                marginBottom: '20px',
+                border: '1px solid #dee2e6'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: exportSectionVisible ? '15px' : '0' }}>
+                    <h3 style={{ margin: 0 }}>Exporter les élèves en CSV</h3>
+                    <BoutonSandwich 
+                        onClick={() => setExportSectionVisible(!exportSectionVisible)}
+                        isOpen={exportSectionVisible}
+                    />
+                </div>
+                
+                {exportSectionVisible && (
+                    <>
+                        <div style={{ marginBottom: '15px' }}>
+                            <p style={{ marginBottom: '10px', color: '#6c757d' }}>
+                                Téléchargez la liste des élèves de la classe au format CSV compatible avec l'import.
+                            </p>
+                            <button 
+                                onClick={exporterElevesCSV} 
+                                disabled={!eleves || eleves.length === 0}
+                                style={{
+                                    backgroundColor: !eleves || eleves.length === 0 ? '#6c757d' : '#007bff',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: '10px 20px',
+                                    borderRadius: '4px',
+                                    cursor: !eleves || eleves.length === 0 ? 'not-allowed' : 'pointer',
+                                    fontSize: '14px',
+                                    fontWeight: 'bold'
+                                }}
+                                title={!eleves || eleves.length === 0 ? 'Aucun élève dans cette classe' : 'Télécharger le fichier CSV'}
+                            >
+                                📥 Exporter les élèves CSV
+                            </button>
+                        </div>
+                        
+                        <div style={{ 
+                            backgroundColor: '#d1ecf1', 
+                            padding: '10px', 
+                            borderRadius: '4px',
+                            border: '1px solid #bee5eb'
+                        }}>
+                            <h4>Fichier généré :</h4>
+                            <p style={{ marginTop: '5px', fontSize: '14px', color: '#0c5460' }}>
+                                📄 <strong>eleves_[NomClasse]_[Date].csv</strong><br />
+                                • Format identique à celui utilisé pour l'import<br />
+                                • Contient tous les élèves de la classe avec leurs informations<br />
+                                • Compatible pour import dans une autre classe
+                            </p>
+                        </div>
+                    </>
+                )}
+            </div>
+
             {/* Liste des élèves */}
             <div>
                 <h3>Liste des élèves ({eleves.length})</h3>
@@ -264,7 +570,7 @@ function AdminEleve({ classe }) {
                                     <form onSubmit={modifierEleve} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                             <img 
-                                                src={`/${eleveEnEdition.photo || 'default.jpg'}`} 
+                                                src={getPhotoUrl(eleveEnEdition.photo)} 
                                                 alt={`${eleveEnEdition.prenom} ${eleveEnEdition.nom}`}
                                                 style={{ 
                                                     width: '40px', 
@@ -345,7 +651,7 @@ function AdminEleve({ classe }) {
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                                             <img 
-                                                src={`/${eleve.photo || 'default.jpg'}`} 
+                                                src={getPhotoUrl(eleve.photo)} 
                                                 alt={`${eleve.prenom} ${eleve.nom}`}
                                                 style={{ 
                                                     width: '50px', 
