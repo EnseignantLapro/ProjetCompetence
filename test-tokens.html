@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Tokens</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .token-group { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .button { 
+            display: inline-block; 
+            padding: 10px 15px; 
+            margin: 5px; 
+            background-color: #007bff; 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 3px; 
+        }
+        .button:hover { background-color: #0056b3; }
+        .student { background-color: #28a745; }
+        .student:hover { background-color: #1e7e34; }
+        .teacher { background-color: #dc3545; }
+        .teacher:hover { background-color: #c82333; }
+        .info { background-color: #f8f9fa; padding: 10px; border-left: 4px solid #007bff; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Test des Tokens d'Authentification</h1>
+    
+    <div class="info">
+        <strong>Instructions :</strong> Cliquez sur les liens ci-dessous pour tester les différents scénarios d'authentification. 
+        Observez comment l'application gère les conflits entre tokens élèves et enseignants.
+    </div>
+
+    <div class="token-group">
+        <h3>🎓 Connexion Élève</h3>
+        <p>Utilisez ces liens pour vous connecter en tant qu'élève :</p>
+        <a href="http://localhost:5173/?token=abc123student" class="button student">Élève avec token abc123student</a>
+        <a href="http://localhost:5173/?token=def456student" class="button student">Élève avec token def456student</a>
+    </div>
+
+    <div class="token-group">
+        <h3>👨‍🏫 Connexion Enseignant</h3>
+        <p>Utilisez ces liens pour vous connecter en tant qu'enseignant :</p>
+        <a href="http://localhost:5173/?teacher_token=85e06dm0q9x02etywwkamyz" class="button teacher">Enseignant avec token 85e06dm0q9x02etywwkamyz</a>
+        <a href="http://localhost:5173/?teacher_token=xyz789teacher" class="button teacher">Enseignant avec token xyz789teacher</a>
+        
+        <h4 style="margin-top: 20px;">👨‍💼 Enseignant Référent (Accès Admin)</h4>
+        <p>Les enseignants référents ont accès au mode admin :</p>
+        <div class="info">
+            <strong>Note :</strong> Utilisez le script <code>test_teacher_token.js</code> pour créer un enseignant référent de test. 
+            Le script créera automatiquement un enseignant avec le statut référent et affichera son token.
+        </div>
+    </div>
+
+    <div class="token-group">
+        <h3>🔄 Test de Conflit</h3>
+        <p>Pour tester le remplacement automatique des tokens :</p>
+        <ol>
+            <li>Connectez-vous d'abord avec un token élève</li>
+            <li>Puis cliquez sur un lien enseignant - le token élève devrait être automatiquement supprimé</li>
+            <li>Et vice-versa</li>
+        </ol>
+    </div>
+
+    <div class="token-group">
+        <h3>🏠 Retour Normal</h3>
+        <p>Pour revenir au mode normal (sans token) :</p>
+        <a href="http://localhost:5173/" class="button">Mode Normal (aucun token)</a>
+    </div>
+
+    <div class="info">
+        <strong>Note :</strong> Assurez-vous que votre application React est démarrée sur http://localhost:5173/ 
+        et que le serveur backend est actif sur le port 3001.
+    </div>
+
+    <div class="token-group">
+        <h3>🔍 Vérification localStorage</h3>
+        <p>Ouvrez les outils de développement (F12) et allez dans l'onglet "Application" > "Local Storage" pour voir les tokens stockés.</p>
+        <p>Vous devriez voir que quand vous passez d'un type de token à l'autre, l'ancien est automatiquement supprimé.</p>
+    </div>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
-function AdminEnseignant() {
+function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teacherInfo = null }) {
   const [enseignants, setEnseignants] = useState([])
   const [classes, setClasses] = useState([])
   const [newEnseignant, setNewEnseignant] = useState({
@@ -8,7 +8,8 @@ function AdminEnseignant() {
     nom: '',
     prenom: '',
     photo: '',
-    etablissement: ''
+    etablissement: isTeacherReferent && teacherInfo ? teacherInfo.etablissement : '',
+    referent: false
   })
   const [editingEnseignantId, setEditingEnseignantId] = useState(null)
   const [editingEnseignant, setEditingEnseignant] = useState({})
@@ -21,6 +22,16 @@ function AdminEnseignant() {
     fetchClasses()
   }, [])
 
+  // Forcer l'établissement pour les enseignants référents
+  useEffect(() => {
+    if (isTeacherReferent && teacherInfo) {
+      setNewEnseignant(prev => ({
+        ...prev,
+        etablissement: teacherInfo.etablissement
+      }))
+    }
+  }, [isTeacherReferent, teacherInfo])
+
   const fetchEnseignants = () => {
     fetch(`http://${window.location.hostname}:3001/enseignants`)
       .then(res => res.json())
@@ -29,10 +40,28 @@ function AdminEnseignant() {
   }
 
   const fetchClasses = () => {
-    fetch(`http://${window.location.hostname}:3001/classes`)
+    
+    let url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo.token}`;
+   
+    //si c'est un super admin, on charge toutes les classes 
+    if (isSuperAdmin) { 
+        url = `http://${window.location.hostname}:3001/classes`;
+    } 
+    
+
+    fetch(url)
       .then(res => res.json())
-      .then(setClasses)
-      .catch(err => console.error('Erreur lors du chargement des classes:', err))
+      .then(data => {
+        if (Array.isArray(data)) {
+          setClasses(data)
+        } else {
+          setClasses([])
+        }
+      })
+      .catch(err => {
+        setClasses([])
+        console.error('Erreur lors du chargement des classes:', err)
+      })
   }
 
   const fetchEnseignantClasses = (enseignantId) => {
@@ -64,7 +93,8 @@ function AdminEnseignant() {
           nom: '',
           prenom: '',
           photo: '',
-          etablissement: ''
+          etablissement: isTeacherReferent && teacherInfo ? teacherInfo.etablissement : '',
+          referent: false
         })
         fetchEnseignants()
       } else {
@@ -207,6 +237,25 @@ function AdminEnseignant() {
     <div>
       <h2>Gestion des enseignants</h2>
       
+      {/* Message informatif pour les enseignants référents */}
+      {isTeacherReferent && !isSuperAdmin && (
+        <div style={{
+          backgroundColor: '#e7f3ff',
+          border: '1px solid #b3d7ff',
+          borderRadius: '8px',
+          padding: '15px',
+          marginBottom: '20px'
+        }}>
+          <h4 style={{ margin: '0 0 10px 0', color: '#0066cc' }}>👨‍💼 Mode Enseignant Référent</h4>
+          <ul style={{ margin: 0, paddingLeft: '20px', color: '#004499' }}>
+            <li>Vous pouvez créer de nouveaux enseignants pour votre établissement</li>
+            <li>L'établissement est automatiquement défini ({teacherInfo?.etablissement})</li>
+            <li>Les nouveaux enseignants ne seront pas référents</li>
+            <li>Vous ne pouvez pas vous supprimer vous-même</li>
+          </ul>
+        </div>
+      )}
+      
       {/* Formulaire d'ajout */}
       <div style={{ 
         backgroundColor: '#f8f9fa', 
@@ -258,15 +307,49 @@ function AdminEnseignant() {
             />
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Établissement</label>
+            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+              Établissement
+              {isTeacherReferent && (
+                <span style={{ fontSize: '12px', color: '#666', fontWeight: 'normal' }}> (automatique)</span>
+              )}
+            </label>
             <input
               type="text"
               value={newEnseignant.etablissement}
-              onChange={e => setNewEnseignant({...newEnseignant, etablissement: e.target.value})}
+              onChange={e => {
+                // Super admin peut toujours éditer
+                if (isSuperAdmin) {
+                  setNewEnseignant({...newEnseignant, etablissement: e.target.value})
+                } else if (!isTeacherReferent) {
+                  setNewEnseignant({...newEnseignant, etablissement: e.target.value})
+                }
+              }}
               placeholder="Établissement"
-              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '100%' }}
+              readOnly={isTeacherReferent && !isSuperAdmin}
+              style={{ 
+                padding: '8px', 
+                borderRadius: '4px', 
+                border: '1px solid #ccc', 
+                width: '100%',
+                backgroundColor: (isTeacherReferent && !isSuperAdmin) ? '#f8f9fa' : 'white',
+                color: (isTeacherReferent && !isSuperAdmin) ? '#6c757d' : 'black'
+              }}
             />
           </div>
+          {/* Case Référent - seulement pour le superAdmin */}
+          {isSuperAdmin && (
+            <div>
+              <label style={{ display: 'flex', alignItems: 'center', marginTop: '10px', fontWeight: 'bold' }}>
+                <input
+                  type="checkbox"
+                  checked={newEnseignant.referent}
+                  onChange={e => setNewEnseignant({...newEnseignant, referent: e.target.checked})}
+                  style={{ marginRight: '8px' }}
+                />
+                Référent (accès mode admin)
+              </label>
+            </div>
+          )}
         </div>
         <button 
           onClick={ajouterEnseignant}
@@ -331,9 +414,34 @@ function AdminEnseignant() {
                       type="text"
                       placeholder="Établissement"
                       value={editingEnseignant.etablissement || ''}
-                      onChange={e => setEditingEnseignant({...editingEnseignant, etablissement: e.target.value})}
-                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                      onChange={e => {
+                        if (isSuperAdmin) {
+                          setEditingEnseignant({...editingEnseignant, etablissement: e.target.value})
+                        } else if (!isTeacherReferent) {
+                          setEditingEnseignant({...editingEnseignant, etablissement: e.target.value})
+                        }
+                      }}
+                      readOnly={isTeacherReferent && !isSuperAdmin}
+                      style={{ 
+                        padding: '8px', 
+                        borderRadius: '4px', 
+                        border: '1px solid #ccc',
+                        backgroundColor: (isTeacherReferent && !isSuperAdmin) ? '#f8f9fa' : 'white',
+                        color: (isTeacherReferent && !isSuperAdmin) ? '#6c757d' : 'black'
+                      }}
                     />
+                    {/* Case Référent - seulement pour le superAdmin */}
+                    {isSuperAdmin && (
+                      <label style={{ display: 'flex', alignItems: 'center', padding: '8px', fontWeight: 'bold' }}>
+                        <input
+                          type="checkbox"
+                          checked={editingEnseignant.referent || false}
+                          onChange={e => setEditingEnseignant({...editingEnseignant, referent: e.target.checked})}
+                          style={{ marginRight: '8px' }}
+                        />
+                        Référent (accès mode admin)
+                      </label>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button 
@@ -380,6 +488,18 @@ function AdminEnseignant() {
                       <div>
                         <h4 style={{ margin: '0 0 5px 0', fontSize: '18px' }}>
                           {enseignant.prenom} {enseignant.nom}
+                          {enseignant.referent && (
+                            <span style={{ 
+                              backgroundColor: '#28a745', 
+                              color: 'white', 
+                              padding: '2px 6px', 
+                              borderRadius: '3px', 
+                              fontSize: '12px',
+                              marginLeft: '8px'
+                            }}>
+                              RÉFÉRENT
+                            </span>
+                          )}
                         </h4>
                         <p style={{ margin: 0, color: '#6c757d', fontSize: '14px' }}>
                           ID Moodle: {enseignant.id_moodle} | {enseignant.etablissement}
@@ -404,19 +524,38 @@ function AdminEnseignant() {
                       >
                         ✏️ Modifier
                       </button>
-                      <button 
-                        onClick={() => supprimerEnseignant(enseignant.id)}
-                        style={{
-                          backgroundColor: '#dc3545',
-                          color: 'white',
-                          border: 'none',
-                          padding: '8px 16px',
-                          borderRadius: '4px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        🗑️ Supprimer
-                      </button>
+                      {/* Bouton de suppression - désactivé si c'est l'enseignant lui-même */}
+                      {!(isTeacherReferent && teacherInfo && enseignant.id === teacherInfo.id) ? (
+                        <button 
+                          onClick={() => supprimerEnseignant(enseignant.id)}
+                          style={{
+                            backgroundColor: '#dc3545',
+                            color: 'white',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          🗑️ Supprimer
+                        </button>
+                      ) : (
+                        <button 
+                          disabled
+                          title="Vous ne pouvez pas vous supprimer vous-même"
+                          style={{
+                            backgroundColor: '#6c757d',
+                            color: 'white',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            cursor: 'not-allowed',
+                            opacity: 0.6
+                          }}
+                        >
+                          🚫 Suppression interdite
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -542,7 +681,12 @@ function AdminEnseignant() {
 
             {/* Ajouter une classe */}
             <div style={{ marginBottom: '20px' }}>
-              <h4>Ajouter une classe :</h4>
+              
+              { classes.length === 0 ? (
+                <p style={{ color: '#6c757d', fontStyle: 'italic' }}>Créer votre classe dans l'onglet classe</p>
+              ) : (
+                <p style={{ color: '#6c757d', fontStyle: 'italic' }}>Sélectionnez une classe pour l'associer à cet enseignant :</p>
+              )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                 {classes
                   .filter(classe => !enseignantClasses.some(ec => ec.id === classe.id))

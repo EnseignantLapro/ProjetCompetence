@@ -13,7 +13,8 @@ function Baniere({
     onStudentLogout = null,
     isTeacherMode = false,
     teacherInfo = null,
-    onTeacherLogout = null
+    onTeacherLogout = null,
+    hasAdminAccess = false
 }) {
     const getClasseName = () => {
         if (!classeChoisie) return ''
@@ -140,23 +141,44 @@ function Baniere({
                     </div>
                 )}
 
-                {/* Bouton de déconnexion en mode enseignant */}
-                {isTeacherMode && teacherInfo && onTeacherLogout && (
-                    <div>
-                        <button
-                            onClick={onTeacherLogout}
-                            style={{
-                                backgroundColor: '#8b2c7a',
-                                color: 'white',
-                                border: 'none',
-                                padding: '10px 20px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontWeight: '500'
-                            }}
-                        >
-                            👨‍🏫 Déconnexion
-                        </button>
+                {/* Boutons en mode enseignant */}
+                {isTeacherMode && teacherInfo && (
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        {/* Bouton Gérer l'appli pour les enseignants référents */}
+                        {teacherInfo.referent && hasAdminAccess && onToggleAdmin && (
+                            <button 
+                                onClick={onToggleAdmin}
+                                style={{
+                                    padding: '10px 20px',
+                                    backgroundColor: adminVisible ? '#dc3545' : '#e2eaf3ff',
+                                    color: '#616161ff',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontWeight: '500'
+                                }}
+                            >
+                                {adminVisible ? '← Revenir' : '⚙️ Gérer l\'appli'}
+                            </button>
+                        )}
+                        
+                        {/* Bouton de déconnexion */}
+                        {onTeacherLogout && (
+                            <button
+                                onClick={onTeacherLogout}
+                                style={{
+                                    backgroundColor: '#8b2c7a',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: '10px 20px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontWeight: '500'
+                                }}
+                            >
+                                👨‍🏫 Déconnexion
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

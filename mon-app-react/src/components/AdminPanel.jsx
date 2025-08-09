@@ -5,7 +5,7 @@ import AdminClasse from './AdminClasse'
 import AdminEvaluation from './AdminEvaluation'
 import AdminEnseignant from './AdminEnseignant'
 
-function AdminPanel({ classeChoisie, classes }) {
+function AdminPanel({ classeChoisie, classes, isSuperAdmin = false, isTeacherReferent = false, teacherInfo = null }) {
   const [activeTab, setActiveTab] = useState('competences') // État pour les onglets
 
   const getClasseName = () => {
@@ -65,7 +65,7 @@ function AdminPanel({ classeChoisie, classes }) {
       )}
 
       {activeTab === 'classes' && (
-        <AdminClasse />
+        <AdminClasse teacherInfo={teacherInfo} isSuperAdmin={isSuperAdmin} isTeacherReferent={isTeacherReferent} />
       )}
 
       {activeTab === 'eleves' && (
@@ -73,7 +73,11 @@ function AdminPanel({ classeChoisie, classes }) {
       )}
 
       {activeTab === 'enseignants' && (
-        <AdminEnseignant />
+        <AdminEnseignant 
+          isSuperAdmin={isSuperAdmin}
+          isTeacherReferent={isTeacherReferent}
+          teacherInfo={teacherInfo}
+        />
       )}
 
       {activeTab === 'evaluations' && (

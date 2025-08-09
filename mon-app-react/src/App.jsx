@@ -12,10 +12,24 @@ function App() {
   const [studentInfo, setStudentInfo] = useState(null)
   const [isTeacherMode, setIsTeacherMode] = useState(false)
   const [teacherToken, setTeacherToken] = useState(null)
+  const [superAdmin, setSuperAdmin] = useState(false)
   const [teacherInfo, setTeacherInfo] = useState(null)
   const [appInitialized, setAppInitialized] = useState(false) // Nouveau flag
   
-  const isAdmin = true // À remplacer plus tard par détection Moodle
+    // À remplacer plus tard par détection Moodle
+  
+  // Vérifier si on a accès aux fonctions admin
+  const hasAdminAccess = () => {
+    
+    
+    // Mode élève : pas d'accès admin
+    if (isStudentMode) return false
+    
+    // Mode enseignant : accès admin seulement si référent
+    if (isTeacherMode && teacherInfo) return teacherInfo.referent
+    
+    return false
+  }
   const [adminVisible, setAdminVisible] = useState(false)
   const [competenceChoisie, setCompetenceChoisie] = useState(null)
   const [classes, setClasses] = useState([])
@@ -167,6 +181,7 @@ function App() {
         
         if (teacherVerification.valid) {
           // Token enseignant valide
+          teacherVerification.enseignant.token = tokenToCheck // Ajouter le token à l'objet de vérification
           setIsTeacherMode(true)
           setTeacherToken(tokenToCheck)
           setTeacherInfo(teacherVerification.enseignant)
@@ -177,6 +192,22 @@ function App() {
         }
       } else {
         // Aucun token valide - mode normal
+
+      //TODO SUPER ADMIN
+      setSuperAdmin(true)
+        tokenToCheck = "wyj4zi9yan5qktoby5alm"
+        const teacherVerification = await verifyTeacherToken(tokenToCheck)
+        
+        if (teacherVerification.valid) {
+          // Token enseignant valide
+          teacherVerification.enseignant.token = tokenToCheck
+          setIsTeacherMode(true)
+          setTeacherToken(tokenToCheck)
+          setTeacherInfo(teacherVerification.enseignant)
+          // Les enseignants gardent leur comportement normal (compétence persistée)
+        }
+
+
         const saved = localStorage.getItem('choix_competence')
         if (saved) {
           setCompetenceChoisie(JSON.parse(saved))
@@ -291,8 +322,8 @@ function App() {
         classes={classes}
         classeChoisie={classeChoisie}
         onClasseChange={handleClasseChange}
-        isAdmin={isAdmin && !isStudentMode && !isTeacherMode} // Masquer les fonctions admin en mode élève/enseignant
-        adminVisible={adminVisible && !isStudentMode && !isTeacherMode}
+        isAdmin={hasAdminAccess()} // Masquer les fonctions admin selon le mode et les permissions
+        adminVisible={adminVisible && hasAdminAccess()}
         onToggleAdmin={handleToggleAdmin}
         isStudentMode={isStudentMode}
         studentInfo={studentInfo}
@@ -300,14 +331,15 @@ function App() {
         isTeacherMode={isTeacherMode}
         teacherInfo={teacherInfo}
         onTeacherLogout={handleTeacherLogout}
+        hasAdminAccess={hasAdminAccess()}
       />
 
       <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem' }}>
         {/* Panneau admin - masqué en mode élève et enseignant */}
-        {(adminVisible && !isStudentMode && !isTeacherMode) ? (
+        {(adminVisible && hasAdminAccess()) ? (
           <div className="card">
-            <AdminPanel classeChoisie={classeChoisie} classes={classes} />
-          </div>
+            <AdminPanel classeChoisie={classeChoisie} classes={classes} isSuperAdmin={superAdmin} teacherInfo={teacherInfo} isTeacherReferent={teacherInfo.referent} />
+          </div>    
         ) : (
           <>
             {/* Mode de présentation normale - masquer le choix de compétence en mode élève */}
