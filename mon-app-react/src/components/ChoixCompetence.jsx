@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import '../App.css'
 
-function ChoixCompetence({ onChoixFinal, isStudentMode = false, isTeacherMode = false }) {
+function ChoixCompetence({ onChoixFinal, isStudentMode = false, isTeacherMode = false, teacherInfo = null }) {
   const [niveau1, setNiveau1] = useState('')
   const [niveau2, setNiveau2] = useState('')
   const [niveau3, setNiveau3] = useState('')
@@ -44,8 +44,21 @@ function ChoixCompetence({ onChoixFinal, isStudentMode = false, isTeacherMode = 
 
 useEffect(() => {
   if (niveau2) {
-    // 1. Charger les compétences N3 de la base de données (créées par les profs)
-    fetch(`http://${window.location.hostname}:3001/competences-n3?parent_code=${niveau2}`)
+    // 1. Charger les compétences N3 de la base de données avec filtrage par mode choice
+    let url = `http://${window.location.hostname}:3001/competences-n3?parent_code=${niveau2}`
+    
+    // Si on a les infos enseignant et qu'on est en mode enseignant, utiliser le mode choice
+    if (isTeacherMode && teacherInfo && teacherInfo.id) {
+      // Pour les super admins (id = 0), ne pas filtrer par enseignant
+      if (teacherInfo.id !== 0) {
+        url += `&mode=choice&enseignant_id=${teacherInfo.id}`
+        if (teacherInfo.etablissement) {
+          url += `&etablissement=${teacherInfo.etablissement}`
+        }
+      }
+    }
+    
+    fetch(url)
       .then(res => res.json())
       .then(competencesN3BDD => {
         
@@ -88,7 +101,7 @@ useEffect(() => {
     setNiveau3EnBase([])
     setNiveau3('')
   }
-}, [niveau2])
+}, [niveau2, isTeacherMode, teacherInfo])
 
   const competence1 = competencesN1N2.find(c => c.code === niveau1)
   const sousCompetences = competence1?.enfants || []
@@ -103,10 +116,17 @@ useEffect(() => {
     if (!nom) return
     const code = genererCodeN3()
 
+    const competenceData = {
+      parent_code: niveau2,
+      code,
+      nom,
+      enseignant_id: teacherInfo?.id || null
+    }
+
     const res = await fetch(`http://${window.location.hostname}:3001/competences-n3`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parent_code: niveau2, code, nom }),
+      body: JSON.stringify(competenceData),
     })
 
     const data = await res.json()

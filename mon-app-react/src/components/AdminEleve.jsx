@@ -380,7 +380,7 @@ function AdminEleve({ classe }) {
 
     return (
         <div style={{ padding: '20px' }}>
-            <h2>Gestion des élèves - {classe.nom}</h2>
+            <h2>Gestion des élèves de la classe {classe.nom}</h2>
             
             {/* Formulaire d'ajout */}
             <div style={{ 

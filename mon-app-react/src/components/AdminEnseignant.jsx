@@ -33,7 +33,15 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
   }, [isTeacherReferent, teacherInfo])
 
   const fetchEnseignants = () => {
-    fetch(`http://${window.location.hostname}:3001/enseignants`)
+    let url = `http://${window.location.hostname}:3001/enseignants`;
+    
+    // Si c'est un enseignant référent (ET PAS super admin), filtrer par établissement
+    if (isTeacherReferent && !isSuperAdmin && teacherInfo && teacherInfo.etablissement) {
+      url = `http://${window.location.hostname}:3001/enseignants?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
+    }
+    // Si c'est un super admin, on ne filtre pas (voir tous les enseignants)
+    
+    fetch(url)
       .then(res => res.json())
       .then(setEnseignants)
       .catch(err => console.error('Erreur lors du chargement des enseignants:', err))
@@ -235,8 +243,8 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
 
   return (
     <div>
-      <h2>Gestion des enseignants</h2>
-      
+      <h2>Gestion des enseignants du lycée {teacherInfo?.etablissement}</h2>
+
       {/* Message informatif pour les enseignants référents */}
       {isTeacherReferent && !isSuperAdmin && (
         <div style={{
@@ -608,7 +616,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
                         cursor: 'pointer'
                       }}
                     >
-                      📚 Gérer les classes
+                      📚 Gérer les classes de  {enseignant.nom} {enseignant.prenom}
                     </button>
                   </div>
                 </>

@@ -5,6 +5,10 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
   const [newClasse, setNewClasse] = useState('')
   const [editingClasseId, setEditingClasseId] = useState(null)
   const [editingClasseNom, setEditingClasseNom] = useState('')
+  const [enseignants, setEnseignants] = useState([])
+  const [assigningTeacher, setAssigningTeacher] = useState(null) // ID de la classe pour laquelle on assigne un prof
+  const [selectedTeacherId, setSelectedTeacherId] = useState('')
+  const [classTeachers, setClassTeachers] = useState({}) // Enseignants assignés par classe
 
   // Chargement des classes avec le nombre d'élèves
   useEffect(() => {
@@ -32,6 +36,44 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
       setClassesWithCounts([])
     }
   }, [isSuperAdmin, isTeacherReferent, teacherInfo])
+
+  // Chargement des enseignants du même établissement
+  useEffect(() => {
+    let url = `http://${window.location.hostname}:3001/enseignants`;
+    
+    // Si c'est un enseignant référent (pas super admin), filtrer par établissement
+    if (isTeacherReferent && !isSuperAdmin && teacherInfo && teacherInfo.etablissement) {
+      url = `http://${window.location.hostname}:3001/enseignants?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
+    }
+    
+    fetch(url)
+      .then(res => res.json())
+      .then(setEnseignants)
+      .catch(err => console.error('Erreur lors du chargement des enseignants:', err))
+  }, [isSuperAdmin, isTeacherReferent, teacherInfo])
+
+  // Charger les enseignants assignés pour chaque classe
+  useEffect(() => {
+    if (classesWithCounts.length > 0) {
+      const teachersPromises = classesWithCounts.map(classe => 
+        fetch(`http://${window.location.hostname}:3001/classes/${classe.id}/enseignants`)
+          .then(res => res.json())
+          .then(teachers => ({ classeId: classe.id, teachers }))
+          .catch(err => {
+            console.error(`Erreur lors du chargement des enseignants pour la classe ${classe.id}:`, err)
+            return { classeId: classe.id, teachers: [] }
+          })
+      )
+
+      Promise.all(teachersPromises).then(results => {
+        const teachersByClass = {}
+        results.forEach(({ classeId, teachers }) => {
+          teachersByClass[classeId] = teachers
+        })
+        setClassTeachers(teachersByClass)
+      })
+    }
+  }, [classesWithCounts])
 
   // Ajout classe
   const ajouterClasse = async () => {
@@ -115,20 +157,20 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     alert('Classe modifiée ! Rechargez la page pour voir les changements dans le menu principal.')
   }
 
-  // Supprimer classe
-  const supprimerClasse = async (id) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette classe ?')) return
-    
+  // Assigner un professeur à une classe
+  const assignerProfesseur = async () => {
+    if (!selectedTeacherId || !assigningTeacher) return
+
     try {
-      // Tentative de suppression normale
-      const res = await fetch(`http://${window.location.hostname}:3001/classes/${id}`, {
-        method: 'DELETE',
+      const res = await fetch(`http://${window.location.hostname}:3001/classes/${assigningTeacher}/assign-teacher`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teacherId: selectedTeacherId }),
       })
-      
+
       if (res.ok) {
-        const data = await res.json()
-        alert(data.message || 'Classe supprimée !')
-        // Rafraîchir la liste des classes avec les comptes
+        alert('Professeur assigné à la classe avec succès !')
+        // Rafraîchir la liste des classes
         let url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo?.token}`;
         if (isSuperAdmin) {
           url = `http://${window.location.hostname}:3001/classes/with-counts`;
@@ -146,18 +188,66 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
             setClassesWithCounts([])
             console.error('Erreur lors du chargement des classes:', err)
           })
-        alert('Classe supprimée ! Rechargez la page pour voir les changements.')
+        
+        setAssigningTeacher(null)
+        setSelectedTeacherId('')
+        
+        // Recharger les enseignants assignés
+        fetch(`http://${window.location.hostname}:3001/classes/${assigningTeacher}/enseignants`)
+          .then(res => res.json())
+          .then(teachers => {
+            setClassTeachers(prev => ({
+              ...prev,
+              [assigningTeacher]: teachers
+            }))
+          })
+      } else {
+        const error = await res.text()
+        alert(`Erreur : ${error}`)
+      }
+    } catch (err) {
+      console.error('Erreur lors de l assignation du professeur:', err)
+      alert('Erreur lors de l assignation du professeur')
+    }
+  }
+
+  // Supprimer classe
+  const supprimerClasse = async (id) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette classe ?')) return
+    
+    try {
+      const res = await fetch(`http://${window.location.hostname}:3001/classes/${id}`, {
+        method: 'DELETE',
+      })
+      
+      if (res.ok) {
+        const data = await res.json()
+        alert(data.message || 'Classe supprimée !')
+        // Rafraîchir la liste
+        let url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo?.token}`;
+        if (isSuperAdmin) {
+          url = `http://${window.location.hostname}:3001/classes/with-counts`;
+        }
+        fetch(url)
+          .then(res => res.json())
+          .then(data => {
+            if (Array.isArray(data)) {
+              setClassesWithCounts(data)
+            } else {
+              setClassesWithCounts([])
+            }
+          })
+          .catch(err => {
+            setClassesWithCounts([])
+            console.error('Erreur lors du chargement des classes:', err)
+          })
       } else if (res.status === 400) {
-        // La classe contient des élèves
         const errorData = await res.json()
         const forceDelete = confirm(
-          `${errorData.message}\n\n` +
-          `⚠️ ATTENTION : Si vous continuez, tous les élèves de cette classe seront également supprimés !\n\n` +
-          `Voulez-vous vraiment supprimer cette classe ET ses ${errorData.studentCount} élève(s) ?`
+          `${errorData.message}\n\nATTENTION : Si vous continuez, tous les élèves de cette classe seront également supprimés !\n\nVoulez-vous vraiment supprimer cette classe ET ses ${errorData.studentCount} élève(s) ?`
         )
         
         if (forceDelete) {
-          // Suppression forcée
           const forceRes = await fetch(`http://${window.location.hostname}:3001/classes/${id}?forceDelete=true`, {
             method: 'DELETE',
           })
@@ -165,7 +255,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
           if (forceRes.ok) {
             const forceData = await forceRes.json()
             alert(`✅ ${forceData.message}`)
-            // Rafraîchir la liste des classes avec les comptes
+            // Rafraîchir la liste
             let url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo?.token}`;
             if (isSuperAdmin) {
               url = `http://${window.location.hostname}:3001/classes/with-counts`;
@@ -183,62 +273,34 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
                 setClassesWithCounts([])
                 console.error('Erreur lors du chargement des classes:', err)
               })
-            alert('Classe et élèves supprimés ! Rechargez la page pour voir les changements.')
           } else {
             alert('Erreur lors de la suppression forcée')
           }
         }
       } else {
-        alert('Erreur lors de la suppression de la classe')
+        alert('Erreur lors de la suppression')
       }
-    } catch (error) {
-      console.error('Erreur:', error)
-      alert('Erreur de connexion lors de la suppression')
+    } catch (err) {
+      console.error('Erreur:', err)
+      alert('Erreur lors de la suppression')
     }
   }
 
   return (
-    <div>
-      <h2>Gestion des classes</h2>
+    <div style={{ padding: '20px' }}>
+      <h2>🏫 Administration des Classes</h2>
       
-      {/* Message informatif pour les enseignants référents */}
-      {isTeacherReferent && !isSuperAdmin && (
-        <div style={{
-          backgroundColor: '#e7f3ff',
-          border: '1px solid #b3d7ff',
-          borderRadius: '8px',
-          padding: '15px',
-          marginBottom: '20px'
-        }}>
-          <h4 style={{ margin: '0 0 10px 0', color: '#0066cc' }}>👨‍💼 Mode Enseignant Référent - Gestion des Classes</h4>
-          <ul style={{ margin: 0, paddingLeft: '20px', color: '#004499' }}>
-            <li>Les classes que vous créez vous seront automatiquement attribuées</li>
-            <li>Vous gérez les élèves et les évaluations de vos classes</li>
-            <li>Les classes créées par d'autres référents ne peuvent pas être modifiées</li>
-          </ul>
-        </div>
-      )}
-      
-      {/* Formulaire d'ajout */}
-      <div style={{ 
-        backgroundColor: '#f8f9fa', 
-        padding: '20px', 
-        borderRadius: '8px', 
-        marginBottom: '20px',
-        border: '1px solid #dee2e6'
-      }}>
-        <h3>Ajouter une nouvelle classe</h3>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'end' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Nom de la classe</label>
-            <input
-              type="text"
-              value={newClasse}
-              onChange={e => setNewClasse(e.target.value)}
-              placeholder="Nom de la nouvelle classe"
-              style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '100%' }}
-            />
-          </div>
+      {/* Ajout de classe */}
+      <div style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ddd', borderRadius: '5px' }}>
+        <h3>Ajouter une classe à votre établissement : {teacherInfo?.etablissement}</h3>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <input
+            type="text"
+            value={newClasse}
+            onChange={(e) => setNewClasse(e.target.value)}
+            placeholder="Nom de la classe"
+            style={{ padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+          />
           <button 
             onClick={ajouterClasse}
             style={{
@@ -247,11 +309,10 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
               border: 'none',
               padding: '8px 16px',
               borderRadius: '4px',
-              cursor: 'pointer',
-              height: 'fit-content'
+              cursor: 'pointer'
             }}
           >
-            Ajouter
+            ➕ Ajouter
           </button>
         </div>
       </div>
@@ -259,24 +320,21 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
       {/* Liste des classes */}
       <div>
         <h3>Classes existantes ({classesWithCounts.length})</h3>
-        <div style={{ display: 'grid', gap: '10px' }}>
-          {classesWithCounts.map(c => (
+        <div style={{ display: 'grid', gap: '15px' }}>
+          {classesWithCounts.map((c) => (
             <div key={c.id} style={{ 
-              padding: '15px', 
-              backgroundColor: '#f8f9fa', 
-              borderRadius: '8px',
-              border: '1px solid #dee2e6',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
+              border: '1px solid #ddd', 
+              borderRadius: '8px', 
+              padding: '15px',
+              backgroundColor: '#f9f9f9'
             }}>
               {editingClasseId === c.id ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                   <input
                     type="text"
                     value={editingClasseNom}
-                    onChange={e => setEditingClasseNom(e.target.value)}
-                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', flex: 1 }}
+                    onChange={(e) => setEditingClasseNom(e.target.value)}
+                    style={{ padding: '8px', border: '1px solid #ccc', borderRadius: '4px', flex: 1 }}
                   />
                   <button 
                     onClick={updateClasse}
@@ -289,7 +347,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
                       cursor: 'pointer'
                     }}
                   >
-                    Valider
+                    ✅ Valider
                   </button>
                   <button 
                     onClick={() => setEditingClasseId(null)}
@@ -302,37 +360,91 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
                       cursor: 'pointer'
                     }}
                   >
-                    Annuler
+                    ❌ Annuler
                   </button>
                 </div>
               ) : (
                 <>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                      <span style={{ fontSize: '16px', fontWeight: '500' }}>{c.nom}</span>
-                      <span style={{ 
-                        backgroundColor: c.student_count > 0 ? '#17a2b8' : '#6c757d', 
-                        color: 'white', 
-                        padding: '4px 8px', 
-                        borderRadius: '12px', 
-                        fontSize: '12px',
-                        fontWeight: 'bold'
-                      }}>
-                        {c.student_count} élève{c.student_count !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    {c.referent_nom && (
-                      <div style={{ 
-                        fontSize: '13px', 
-                        color: '#666',
-                        fontStyle: 'italic'
-                      }}>
-                        Référent : {c.referent_nom}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div>
+                      <strong style={{ fontSize: '18px' }}>{c.nom}</strong>
+                      <div style={{ fontSize: '14px', color: '#666', marginTop: '5px' }}>
+                        👥 {c.student_count || 0} élève(s)
+                        {c.referent_nom && (
+                          <span style={{ marginLeft: '15px' }}>
+                            👨‍🏫 Référent: {c.referent_nom} {c.referent_prenom}
+                          </span>
+                        )}
+                        {classTeachers[c.id] && classTeachers[c.id].length > 0 && (
+                          <div style={{ marginTop: '5px' }}>
+                            👥 Enseignants assignés: {classTeachers[c.id].map(teacher => 
+                              `${teacher.prenom} ${teacher.nom}`
+                            ).join(', ')}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    {(isSuperAdmin) || (teacherInfo && c.idReferent === teacherInfo.id) ? (
+
+                  {/* Section assignation de professeur */}
+                  {assigningTeacher === c.id ? (
+                    <div style={{ 
+                      backgroundColor: '#e3f2fd', 
+                      padding: '10px', 
+                      borderRadius: '4px', 
+                      marginBottom: '10px' 
+                    }}>
+                      <h4>Assigner un professeur à cette classe</h4>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <select
+                          value={selectedTeacherId}
+                          onChange={(e) => setSelectedTeacherId(e.target.value)}
+                          style={{ padding: '8px', border: '1px solid #ccc', borderRadius: '4px', flex: 1 }}
+                        >
+                          <option value="">Sélectionner un enseignant</option>
+                          {enseignants.map(ens => (
+                            <option key={ens.id} value={ens.id}>
+                              {ens.prenom} {ens.nom} ({ens.etablissement})
+                            </option>
+                          ))}
+                        </select>
+                        <button 
+                          onClick={assignerProfesseur}
+                          disabled={!selectedTeacherId}
+                          style={{
+                            backgroundColor: selectedTeacherId ? '#28a745' : '#6c757d',
+                            color: 'white',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            cursor: selectedTeacherId ? 'pointer' : 'not-allowed'
+                          }}
+                        >
+                          ✅ Assigner
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setAssigningTeacher(null)
+                            setSelectedTeacherId('')
+                          }}
+                          style={{
+                            backgroundColor: '#6c757d',
+                            color: 'white',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ❌ Annuler
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    {/* Boutons de gestion pour le référent ou super admin */}
+                    {(isSuperAdmin || (isTeacherReferent && c.idReferent === teacherInfo?.id)) ? (
                       <>
                         <button 
                           onClick={() => {
@@ -349,6 +461,22 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
                           }}
                         >
                           ✏️ Modifier
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setAssigningTeacher(c.id)
+                            setSelectedTeacherId('')
+                          }}
+                          style={{
+                            backgroundColor: '#17a2b8',
+                            color: 'white',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          👨‍🏫 Assigner Prof
                         </button>
                         <button 
                           onClick={() => supprimerClasse(c.id)}

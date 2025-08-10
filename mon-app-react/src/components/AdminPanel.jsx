@@ -20,18 +20,20 @@ function AdminPanel({ classeChoisie, classes, isSuperAdmin = false, isTeacherRef
   }
 
   const renderTabButtons = () => (
-    <div style={{ 
-      display: 'flex', 
-      borderBottom: '2px solid #dee2e6', 
+    <div style={{
+      display: 'flex',
+      borderBottom: '2px solid #dee2e6',
       marginBottom: '20px',
       gap: '0'
     }}>
       {[
-        { key: 'competences', label: 'Compétences' },
-        { key: 'classes', label: 'Classes' },
-        { key: 'eleves', label: 'Élèves' },
-        { key: 'enseignants', label: 'Enseignants' },
-        { key: 'evaluations', label: 'Évaluations' }
+        
+        { key: 'classes', label: '🏫 Classes' },
+         { key: 'enseignants', label: '🧑🏻‍🏫 Enseignants' },
+        { key: 'eleves', label: '👫 Élèves' },
+        { key: 'evaluations', label: '📊 Évaluations' },
+         { key: 'competences', label: '📝 Compétences' }
+
       ].map(tab => (
         <button
           key={tab.key}
@@ -57,33 +59,40 @@ function AdminPanel({ classeChoisie, classes, isSuperAdmin = false, isTeacherRef
   return (
     <div style={{ padding: '20px' }}>
       <h1>Administration</h1>
-      
+
       {renderTabButtons()}
 
-      {activeTab === 'competences' && (
-        <AdminCompetence />
-      )}
+
 
       {activeTab === 'classes' && (
         <AdminClasse teacherInfo={teacherInfo} isSuperAdmin={isSuperAdmin} isTeacherReferent={isTeacherReferent} />
       )}
-
-      {activeTab === 'eleves' && (
-        <AdminEleve classe={getClasseObject()} />
-      )}
-
       {activeTab === 'enseignants' && (
-        <AdminEnseignant 
+        <AdminEnseignant
           isSuperAdmin={isSuperAdmin}
           isTeacherReferent={isTeacherReferent}
           teacherInfo={teacherInfo}
         />
       )}
+      {activeTab === 'eleves' && (
+        <AdminEleve classe={getClasseObject()} />
+      )}
+
+      {activeTab === 'competences' && (
+        <AdminCompetence
+          teacherInfo={teacherInfo}
+          isSuperAdmin={isSuperAdmin}
+          isTeacherReferent={isTeacherReferent}
+        />
+      )}
 
       {activeTab === 'evaluations' && (
-        <AdminEvaluation 
-          classeChoisie={classeChoisie} 
-          getClasseName={getClasseName} 
+        <AdminEvaluation
+          classeChoisie={classeChoisie}
+          getClasseName={getClasseName}
+          isSuperAdmin={isSuperAdmin}
+          isTeacherReferent={isTeacherReferent}
+          teacherInfo={teacherInfo}
         />
       )}
     </div>

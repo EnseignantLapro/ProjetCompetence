@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
-function AdminCompetence() {
+function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent = false }) {
   const [competencesN3, setCompetencesN3] = useState([])
   const [newCompetenceN3, setNewCompetenceN3] = useState({
     parent_code: '',
@@ -14,12 +14,28 @@ function AdminCompetence() {
     nom: ''
   })
 
-  // Chargement initial des compétences N3
+  // Chargement initial des compétences N3 avec filtrage par établissement
   useEffect(() => {
-    fetch(`http://${window.location.hostname}:3001/competences-n3`)
+    let url = `http://${window.location.hostname}:3001/competences-n3`
+    
+    // Si c'est un enseignant référent (pas super admin), filtrer par établissement
+    if (isTeacherReferent && !isSuperAdmin && teacherInfo) {
+      const params = new URLSearchParams()
+      params.append('mode', 'admin') // Mode admin : voir toutes les N3 de l'établissement
+      if (teacherInfo.etablissement) {
+        params.append('etablissement', teacherInfo.etablissement)
+      }
+      if (teacherInfo.id) {
+        params.append('enseignant_id', teacherInfo.id)
+      }
+      url += `?${params.toString()}`
+    }
+    
+    fetch(url)
       .then(res => res.json())
       .then(setCompetencesN3)
-  }, [])
+      .catch(err => console.error('Erreur lors du chargement des compétences:', err))
+  }, [isTeacherReferent, isSuperAdmin, teacherInfo])
 
   // Ajout compétence N3
   const ajouterCompetenceN3 = async () => {
@@ -28,10 +44,16 @@ function AdminCompetence() {
       return
     }
     
+    // Ajouter l'ID de l'enseignant créateur
+    const competenceData = {
+      ...newCompetenceN3,
+      enseignant_id: teacherInfo?.id || null
+    }
+    
     const res = await fetch(`http://${window.location.hostname}:3001/competences-n3`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newCompetenceN3),
+      body: JSON.stringify(competenceData),
     })
     
     if (res.ok) {
@@ -50,10 +72,16 @@ function AdminCompetence() {
       return
     }
     
+    // Conserver l'enseignant créateur original
+    const competenceData = {
+      ...editingCompetence,
+      enseignant_id: editingCompetence.enseignant_id || teacherInfo?.id || null
+    }
+    
     const res = await fetch(`http://${window.location.hostname}:3001/competences-n3/${editingCompetenceId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editingCompetence),
+      body: JSON.stringify(competenceData),
     })
     
     if (res.ok) {
@@ -83,14 +111,15 @@ function AdminCompetence() {
 
   return (
     <div>
-      <h2>Gestion des compétences N3</h2>
+      <h2>Gestion des critères d'évaluations additionnels de votre établissement : {teacherInfo?.etablissement}</h2>
 
       {/* Liste des compétences */}
       <div>
-        <h3>Compétences N3 existantes ({competencesN3.length})</h3>
+        <p>
+      <small>les critères d'évaluation additionnels se créer automatiquement quand vous choisissez des compétences </small></p>
         {competencesN3.length === 0 ? (
           <p style={{ textAlign: 'center', color: '#6c757d', fontStyle: 'italic' }}>
-            Aucune compétence N3 trouvée
+            Aucun critère d'évaluation additionnel n'a été créer lors du choix des compétences.
           </p>
         ) : (
           <div style={{ display: 'grid', gap: '10px' }}>
@@ -152,7 +181,7 @@ function AdminCompetence() {
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '8px' }}>
                         <span style={{ 
                           backgroundColor: '#007bff', 
                           color: 'white', 
@@ -173,7 +202,16 @@ function AdminCompetence() {
                         }}>
                           {c.code}
                         </span>
-                        <span style={{ fontSize: '16px', fontWeight: '500' }}>{c.nom}</span>
+                        <span style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                          {c.nom}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6c757d' }}>
+                        {c.enseignant_prenom && c.enseignant_nom ? (
+                          <>👨‍🏫 Créée par: {c.enseignant_prenom} {c.enseignant_nom} ({c.etablissement})</>
+                        ) : (
+                          <>📚 Compétence du référentiel officiel</>
+                        )}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '10px' }}>

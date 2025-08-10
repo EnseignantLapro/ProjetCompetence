@@ -20,13 +20,16 @@ function App() {
   
   // Vérifier si on a accès aux fonctions admin
   const hasAdminAccess = () => {
-    
+    // Mode normal : pas d'accès admin si aucun token
+    if (!isStudentMode && !isTeacherMode) return false
     
     // Mode élève : pas d'accès admin
     if (isStudentMode) return false
     
-    // Mode enseignant : accès admin seulement si référent
-    if (isTeacherMode && teacherInfo) return teacherInfo.referent
+    // Mode enseignant : accès admin si référent OU super admin
+    if (isTeacherMode && teacherInfo) {
+      return teacherInfo.referent || teacherInfo.superAdmin || superAdmin
+    }
     
     return false
   }
@@ -185,29 +188,21 @@ function App() {
           setIsTeacherMode(true)
           setTeacherToken(tokenToCheck)
           setTeacherInfo(teacherVerification.enseignant)
+          
+          // Vérifier si c'est un super admin
+          if (teacherVerification.isSuperAdmin || teacherVerification.enseignant.superAdmin) {
+            setSuperAdmin(true)
+          } else {
+            setSuperAdmin(false)
+          }
+          
           // Les enseignants gardent leur comportement normal (compétence persistée)
         } else {
           // Token enseignant invalide - le supprimer
           localStorage.removeItem('teacher_token')
         }
       } else {
-        // Aucun token valide - mode normal
-
-      //TODO SUPER ADMIN
-      setSuperAdmin(true)
-        tokenToCheck = "wyj4zi9yan5qktoby5alm"
-        const teacherVerification = await verifyTeacherToken(tokenToCheck)
-        
-        if (teacherVerification.valid) {
-          // Token enseignant valide
-          teacherVerification.enseignant.token = tokenToCheck
-          setIsTeacherMode(true)
-          setTeacherToken(tokenToCheck)
-          setTeacherInfo(teacherVerification.enseignant)
-          // Les enseignants gardent leur comportement normal (compétence persistée)
-        }
-
-
+        // Aucun token valide - afficher la page d'accueil avec lien super admin
         const saved = localStorage.getItem('choix_competence')
         if (saved) {
           setCompetenceChoisie(JSON.parse(saved))
@@ -317,8 +312,48 @@ function App() {
 
   return (
     <>
-      {/* Bannière avec gestion des modes élève et enseignant */}
-      <Baniere
+      {/* Si pas de token, afficher page d'accueil avec lien super admin */}
+      {!isStudentMode && !isTeacherMode && appInitialized && (
+        <div style={{ 
+          height: '100vh', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          justifyContent: 'center', 
+          alignItems: 'center',
+          backgroundColor: '#f5f5f5'
+        }}>
+          <h1 style={{ marginBottom: '2rem', color: '#333' }}>Système de Gestion des Compétences</h1>
+          <div style={{ 
+            backgroundColor: 'white', 
+            padding: '2rem', 
+            borderRadius: '8px', 
+            boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+            textAlign: 'center'
+          }}>
+            <h3 style={{ marginBottom: '1rem' }}>Accès Super Administrateur</h3>
+            <a 
+              href={`${window.location.origin}${window.location.pathname}?teacher_token=wyj4zi9yan5qktoby5alm`}
+              style={{
+                display: 'inline-block',
+                padding: '12px 24px',
+                backgroundColor: '#007bff',
+                color: 'white',
+                textDecoration: 'none',
+                borderRadius: '4px',
+                fontWeight: 'bold'
+              }}
+            >
+              Connexion Super Admin
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Interface normale quand un token est présent */}
+      {(isStudentMode || isTeacherMode) && (
+        <>
+          {/* Bannière avec gestion des modes élève et enseignant */}
+          <Baniere
         classes={classes}
         classeChoisie={classeChoisie}
         onClasseChange={handleClasseChange}
@@ -338,7 +373,7 @@ function App() {
         {/* Panneau admin - masqué en mode élève et enseignant */}
         {(adminVisible && hasAdminAccess()) ? (
           <div className="card">
-            <AdminPanel classeChoisie={classeChoisie} classes={classes} isSuperAdmin={superAdmin} teacherInfo={teacherInfo} isTeacherReferent={teacherInfo.referent} />
+            <AdminPanel classeChoisie={classeChoisie} classes={classes} isSuperAdmin={superAdmin} teacherInfo={teacherInfo} isTeacherReferent={teacherInfo && teacherInfo.referent} />
           </div>    
         ) : (
           <>
@@ -349,6 +384,7 @@ function App() {
                   key={choixCompetenceKey}
                   isStudentMode={isStudentMode}
                   isTeacherMode={isTeacherMode}
+                  teacherInfo={teacherInfo}
                   onChoixFinal={(selection) => {
                     setCompetenceChoisie(selection)
                     setIsModifying(false)
@@ -404,6 +440,8 @@ function App() {
                 <ChoixCompetence
                   key={choixCompetenceKey}
                   isStudentMode={isStudentMode}
+                  isTeacherMode={isTeacherMode}
+                  teacherInfo={teacherInfo}
                   onChoixFinal={(selection) => {
                     setCompetenceChoisie(selection)
                     setIsModifying(false)
@@ -466,7 +504,9 @@ function App() {
             </div>
           </>
         )}
-      </div>
+        </div>
+        </>
+      )}
     </>
   )
 

@@ -69,6 +69,19 @@ function Baniere({
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
                             <span style={{ fontWeight: '500', color: '#333' }}>
                                 {teacherInfo.prenom} {teacherInfo.nom}
+                                {teacherInfo.superAdmin && (
+                                    <span style={{ 
+                                        marginLeft: '8px', 
+                                        background: 'linear-gradient(45deg, #ff6b6b, #4ecdc4)', 
+                                        color: 'white', 
+                                        padding: '2px 8px', 
+                                        borderRadius: '12px', 
+                                        fontSize: '12px',
+                                        fontWeight: 'bold'
+                                    }}>
+                                        🔧 SUPER ADMIN
+                                    </span>
+                                )}
                             </span>
                             <span style={{ color: '#666', fontSize: '14px' }}>
                                 • {teacherInfo.etablissement} • {teacherInfo.classes?.length || 0} classe(s)
@@ -144,8 +157,8 @@ function Baniere({
                 {/* Boutons en mode enseignant */}
                 {isTeacherMode && teacherInfo && (
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        {/* Bouton Gérer l'appli pour les enseignants référents */}
-                        {teacherInfo.referent && hasAdminAccess && onToggleAdmin && (
+                        {/* Bouton Gérer l'appli pour les enseignants référents et super admins */}
+                        {(teacherInfo.referent || teacherInfo.superAdmin) && hasAdminAccess && onToggleAdmin && (
                             <button 
                                 onClick={onToggleAdmin}
                                 style={{
@@ -158,7 +171,7 @@ function Baniere({
                                     fontWeight: '500'
                                 }}
                             >
-                                {adminVisible ? '← Revenir' : '⚙️ Gérer l\'appli'}
+                                {adminVisible ? '← Revenir' : (teacherInfo.superAdmin ? '🔧 Super Admin' : '⚙️ Gérer l\'appli')}
                             </button>
                         )}
                         

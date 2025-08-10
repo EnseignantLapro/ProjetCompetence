@@ -51,8 +51,18 @@ db.serialize(() => {
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   parent_code TEXT NOT NULL,
   code TEXT NOT NULL,
-  nom TEXT NOT NULL
+  nom TEXT NOT NULL,
+  enseignant_id INTEGER,
+  FOREIGN KEY (enseignant_id) REFERENCES enseignants(id)
 )`)
+
+    // Ajouter la colonne enseignant_id aux compétences existantes si elle n'existe pas
+    db.run(`ALTER TABLE competences_n3 ADD COLUMN enseignant_id INTEGER`, (err) => {
+        // Cette erreur est normale si la colonne existe déjà
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('Erreur lors de l\'ajout de la colonne enseignant_id:', err)
+        }
+    })
 
     // Table pour les positionnements manuels des enseignants
     db.run(`CREATE TABLE IF NOT EXISTS positionnements_enseignant (
@@ -73,6 +83,16 @@ db.run(`CREATE TABLE IF NOT EXISTS enseignants (
   etablissement TEXT,
   token TEXT UNIQUE,
   referent INTEGER DEFAULT 0
+)`)
+
+// Table de liaison enseignant-classe
+db.run(`CREATE TABLE IF NOT EXISTS enseignant_classes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  enseignant_id INTEGER,
+  classe_id INTEGER,
+  FOREIGN KEY (enseignant_id) REFERENCES enseignants(id),
+  FOREIGN KEY (classe_id) REFERENCES classes(id),
+  UNIQUE(enseignant_id, classe_id)
 )`)
 
 });
@@ -104,16 +124,50 @@ app.get('/classes/by-token/:token', (req, res) => {
 
 // GET : liste des niveau 3 par parent ou toutes si pas de parent_code
 app.get('/competences-n3', (req, res) => {
-    const { parent_code } = req.query
-    let query = 'SELECT * FROM competences_n3'
+    const { parent_code, etablissement, enseignant_id, mode } = req.query
+    let query = `
+        SELECT c.*, e.prenom as enseignant_prenom, e.nom as enseignant_nom, e.etablissement 
+        FROM competences_n3 c
+        LEFT JOIN enseignants e ON c.enseignant_id = e.id
+        WHERE 1=1
+    `
     let params = []
 
     if (parent_code) {
-        query += ' WHERE parent_code = ?'
+        query += ' AND c.parent_code = ?'
         params.push(parent_code)
     }
 
-    query += ' ORDER BY code'
+    // Trois modes de filtrage selon le cas d'usage
+    if (etablissement) {
+        if (mode === 'admin') {
+            // Mode administration : TOUTES les compétences de l'établissement (pour gestion)
+            query += ' AND (c.enseignant_id IS NULL OR e.etablissement = ?)'
+            params.push(etablissement)
+        } else if (mode === 'choice') {
+            // Mode choix : seulement compétences officielles + ses propres compétences
+            query += ' AND (c.enseignant_id IS NULL'
+            if (enseignant_id) {
+                query += ' OR c.enseignant_id = ?'
+                params.push(enseignant_id)
+            }
+            query += ')'
+        } else {
+            // Mode utilisation par défaut (bilan) : compétences officielles + toutes les compétences de l'établissement
+            query += ' AND (c.enseignant_id IS NULL OR e.etablissement = ?'
+            params.push(etablissement)
+            
+            // Si un enseignant spécifique est fourni, inclure aussi ses compétences personnelles
+            if (enseignant_id) {
+                query += ' OR c.enseignant_id = ?'
+                params.push(enseignant_id)
+            }
+            
+            query += ')'
+        }
+    }
+
+    query += ' ORDER BY c.code'
 
     db.all(query, params, (err, rows) => {
         if (err) return res.status(500).json({ error: err.message })
@@ -122,13 +176,13 @@ app.get('/competences-n3', (req, res) => {
 })
 
 app.post('/competences-n3', (req, res) => {
-    const { parent_code, code, nom } = req.body
+    const { parent_code, code, nom, enseignant_id } = req.body
     db.run(
-        'INSERT INTO competences_n3 (parent_code, code, nom) VALUES (?, ?, ?)',
-        [parent_code, code, nom],
+        'INSERT INTO competences_n3 (parent_code, code, nom, enseignant_id) VALUES (?, ?, ?, ?)',
+        [parent_code, code, nom, enseignant_id || null],
         function (err) {
             if (err) return res.status(500).json({ error: err.message })
-            res.json({ id: this.lastID, parent_code, code, nom })
+            res.json({ id: this.lastID, parent_code, code, nom, enseignant_id: enseignant_id || null })
         }
     )
 })
@@ -136,15 +190,15 @@ app.post('/competences-n3', (req, res) => {
 // Modifier une compétence N3
 app.put('/competences-n3/:id', (req, res) => {
     const { id } = req.params
-    const { parent_code, code, nom } = req.body
+    const { parent_code, code, nom, enseignant_id } = req.body
 
     db.run(
-        'UPDATE competences_n3 SET parent_code = ?, code = ?, nom = ? WHERE id = ?',
-        [parent_code, code, nom, id],
+        'UPDATE competences_n3 SET parent_code = ?, code = ?, nom = ?, enseignant_id = ? WHERE id = ?',
+        [parent_code, code, nom, enseignant_id || null, id],
         function (err) {
             if (err) return res.status(500).json({ error: err.message })
             if (this.changes === 0) return res.status(404).json({ error: 'Compétence non trouvée' })
-            res.json({ id: parseInt(id), parent_code, code, nom })
+            res.json({ id: parseInt(id), parent_code, code, nom, enseignant_id: enseignant_id || null })
         }
     )
 })
@@ -369,9 +423,21 @@ app.post('/auth/verify-token', (req, res) => {
 })
 
 // Routes pour les enseignants
-// Récupérer tous les enseignants
+// Récupérer tous les enseignants (avec filtrage optionnel par établissement)
 app.get('/enseignants', (req, res) => {
-    db.all('SELECT * FROM enseignants ORDER BY nom, prenom', [], (err, rows) => {
+    const { etablissement } = req.query
+    
+    let query = 'SELECT * FROM enseignants'
+    let params = []
+    
+    if (etablissement) {
+        query += ' WHERE etablissement = ?'
+        params.push(etablissement)
+    }
+    
+    query += ' ORDER BY nom, prenom'
+    
+    db.all(query, params, (err, rows) => {
         if (err) return res.status(500).json({ error: err.message })
         res.json(rows)
     })
@@ -546,6 +612,59 @@ app.post('/auth/verify-teacher-token', (req, res) => {
         return res.status(400).json({ error: 'Token manquant' })
     }
 
+    // Vérifier si c'est le token super admin
+    const SUPER_ADMIN_TOKEN = 'wyj4zi9yan5qktoby5alm'
+    if (token === SUPER_ADMIN_TOKEN) {
+        // Récupérer les données de l'enseignant ID 1 pour le super admin
+        db.get(
+            'SELECT id, prenom, nom, id_moodle, photo, etablissement, referent FROM enseignants WHERE id = 1',
+            [],
+            (err, enseignant) => {
+                if (err) {
+                    console.error('Erreur lors de la récupération du super admin:', err)
+                    return res.status(500).json({ error: err.message })
+                }
+
+                if (!enseignant) {
+                    return res.status(404).json({ error: 'Enseignant super admin (ID 1) non trouvé dans la base' })
+                }
+
+                // Récupérer les classes de l'enseignant ID 1
+                const query = `
+                    SELECT c.* 
+                    FROM classes c
+                    JOIN enseignant_classes ec ON c.id = ec.classe_id
+                    WHERE ec.enseignant_id = 1
+                    ORDER BY c.nom
+                `
+
+                db.all(query, [], (err, classes) => {
+                    if (err) {
+                        console.error('Erreur lors de la récupération des classes du super admin:', err)
+                        return res.status(500).json({ error: err.message })
+                    }
+
+                    return res.json({
+                        valid: true,
+                        isSuperAdmin: true,
+                        enseignant: {
+                            id: enseignant.id,
+                            prenom: enseignant.prenom,
+                            nom: enseignant.nom,
+                            id_moodle: enseignant.id_moodle,
+                            photo: enseignant.photo,
+                            etablissement: enseignant.etablissement,
+                            referent: enseignant.referent ? true : false,
+                            superAdmin: true,
+                            classes: classes
+                        }
+                    })
+                })
+            }
+        )
+        return // Important : sortir de la fonction pour éviter d'exécuter le reste
+    }
+
     // Récupérer l'enseignant et ses classes
     db.get(
         'SELECT id, prenom, nom, id_moodle, photo, etablissement, referent FROM enseignants WHERE token = ?',
@@ -577,6 +696,7 @@ app.post('/auth/verify-teacher-token', (req, res) => {
 
                 res.json({
                     valid: true,
+                    isSuperAdmin: false,
                     enseignant: {
                         id: enseignant.id,
                         prenom: enseignant.prenom,
@@ -585,6 +705,7 @@ app.post('/auth/verify-teacher-token', (req, res) => {
                         photo: enseignant.photo,
                         etablissement: enseignant.etablissement,
                         referent: enseignant.referent ? true : false,
+                        superAdmin: false,
                         classes: classes
                     }
                 })
@@ -703,6 +824,50 @@ app.put('/classes/:id', (req, res) => {
             res.json({ id: parseInt(req.params.id), nom, idReferent: idReferent || null })
         }
     )
+})
+
+// Assigner un professeur à une classe
+app.put('/classes/:id/assign-teacher', (req, res) => {
+    const { id } = req.params
+    const { teacherId } = req.body
+
+    if (!teacherId) {
+        return res.status(400).json({ error: 'teacherId est requis' })
+    }
+
+    // Vérifier que l'enseignant existe
+    db.get('SELECT id, nom, prenom FROM enseignants WHERE id = ?', [teacherId], (err, teacher) => {
+        if (err) return res.status(500).json({ error: err.message })
+        if (!teacher) return res.status(404).json({ error: 'Enseignant non trouvé' })
+
+        // Vérifier que la classe existe
+        db.get('SELECT id, nom FROM classes WHERE id = ?', [id], (err, classe) => {
+            if (err) return res.status(500).json({ error: err.message })
+            if (!classe) return res.status(404).json({ error: 'Classe non trouvée' })
+
+            // Vérifier si l'enseignant est déjà assigné à cette classe
+            db.get('SELECT * FROM enseignant_classes WHERE enseignant_id = ? AND classe_id = ?', 
+                [teacherId, id], (err, existing) => {
+                if (err) return res.status(500).json({ error: err.message })
+                
+                if (existing) {
+                    return res.status(400).json({ error: 'Cet enseignant est déjà assigné à cette classe' })
+                }
+
+                // Assigner l'enseignant à la classe
+                db.run('INSERT INTO enseignant_classes (enseignant_id, classe_id) VALUES (?, ?)', 
+                    [teacherId, id], function (err) {
+                    if (err) return res.status(500).json({ error: err.message })
+                    
+                    res.json({ 
+                        message: `${teacher.prenom} ${teacher.nom} a été assigné(e) à la classe ${classe.nom}`,
+                        enseignant_id: teacherId,
+                        classe_id: id
+                    })
+                })
+            })
+        })
+    })
 })
 
 // Supprimer une classe
@@ -836,26 +1001,55 @@ app.delete('/positionnements/:id', (req, res) => {
 // Route pour récupérer les élèves d'une classe avec leurs statistiques d'évaluations
 app.get('/eleves/with-evaluations/:classeId', (req, res) => {
     const classeId = req.params.classeId
+    const { etablissement } = req.query
 
-    const query = `
-    SELECT 
-      e.id,
-      e.prenom,
-      e.nom,
-      e.id_moodle,
-      e.photo,
-      e.classe_id,
-      COUNT(DISTINCT n.id) as evaluations_count,
-      COUNT(DISTINCT p.id) as positionnements_count
-    FROM eleves e
-    LEFT JOIN notes n ON e.id = n.eleve_id
-    LEFT JOIN positionnements_enseignant p ON e.id = p.eleve_id
-    WHERE e.classe_id = ?
-    GROUP BY e.id, e.prenom, e.nom, e.id_moodle, e.photo, e.classe_id
-    ORDER BY e.nom, e.prenom
-  `
+    let query, params
 
-    db.all(query, [classeId], (err, rows) => {
+    if (etablissement) {
+        // Avec filtrage par établissement : ne compter que les évaluations/positionnements du bon établissement
+        query = `
+            SELECT 
+              e.id,
+              e.prenom,
+              e.nom,
+              e.id_moodle,
+              e.photo,
+              e.classe_id,
+              COUNT(DISTINCT n.id) as evaluations_count,
+              COUNT(DISTINCT p.id) as positionnements_count
+            FROM eleves e
+            LEFT JOIN notes n ON e.id = n.eleve_id 
+              AND (n.prof_id IS NULL OR n.prof_id IN (SELECT id FROM enseignants WHERE etablissement = ?))
+            LEFT JOIN positionnements_enseignant p ON e.id = p.eleve_id 
+              AND (p.prof_id IS NULL OR p.prof_id IN (SELECT id FROM enseignants WHERE etablissement = ?))
+            WHERE e.classe_id = ?
+            GROUP BY e.id, e.prenom, e.nom, e.id_moodle, e.photo, e.classe_id
+            ORDER BY e.nom, e.prenom
+        `
+        params = [etablissement, etablissement, classeId]
+    } else {
+        // Sans filtrage : compter toutes les évaluations/positionnements
+        query = `
+            SELECT 
+              e.id,
+              e.prenom,
+              e.nom,
+              e.id_moodle,
+              e.photo,
+              e.classe_id,
+              COUNT(DISTINCT n.id) as evaluations_count,
+              COUNT(DISTINCT p.id) as positionnements_count
+            FROM eleves e
+            LEFT JOIN notes n ON e.id = n.eleve_id
+            LEFT JOIN positionnements_enseignant p ON e.id = p.eleve_id
+            WHERE e.classe_id = ?
+            GROUP BY e.id, e.prenom, e.nom, e.id_moodle, e.photo, e.classe_id
+            ORDER BY e.nom, e.prenom
+        `
+        params = [classeId]
+    }
+
+    db.all(query, params, (err, rows) => {
         if (err) {
             console.error('Erreur lors de la récupération des élèves avec évaluations:', err)
             return res.status(500).json({ error: err.message })

@@ -269,7 +269,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                     competence_code: competenceCode,
                     couleur: couleur,
                     date: new Date().toISOString().split('T')[0],
-                    prof_id: 1 // À adapter selon votre système d'authentification
+                    prof_id: teacherInfo?.id || null
                 }
 
                 const response = await fetch(`http://${window.location.hostname}:3001/notes`, {
@@ -348,7 +348,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                     eleve_id: elevePositionnement.id,
                     competence_code: competencePositionnement,
                     couleur: couleur,
-                    prof_id: 1 // À adapter selon l'utilisateur connecté
+                    prof_id: teacherInfo?.id || null
                 })
             })
 
@@ -2479,6 +2479,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                     }}
                     onSave={handleSaveNote}
                     ajouterNote={(note) => setNotes(prev => [...prev, note])}
+                    teacherInfo={teacherInfo}
                 />
             )}
 

@@ -7,14 +7,14 @@ const couleurs = [
   { code: 'vert', label: 'Maîtrisé', hex: '#2ecc71' },
 ]
 
-function ColorPickerModal({ eleve, competenceCode, onClose, ajouterNote }) {
+function ColorPickerModal({ eleve, competenceCode, onClose, ajouterNote, teacherInfo }) {
   const handleChoixCouleur = async (couleur) => {
   const note = {
     eleve_id: eleve.id,
     competence_code: competenceCode,
     couleur,
     date: new Date().toISOString(),
-    prof_id: 1
+    prof_id: teacherInfo?.id || null
   }
 
   const res = await fetch(`http://${window.location.hostname}:3001/notes`, {

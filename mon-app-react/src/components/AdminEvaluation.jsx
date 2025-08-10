@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
-function AdminEvaluation({ classeChoisie, getClasseName }) {
+function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, isTeacherReferent = false, teacherInfo = null }) {
   const [elevesWithEvaluations, setElevesWithEvaluations] = useState([])
   const [csvEvaluationFile, setCsvEvaluationFile] = useState(null)
   
@@ -73,8 +73,19 @@ function AdminEvaluation({ classeChoisie, getClasseName }) {
 
   // Chargement des élèves avec leurs évaluations
   useEffect(() => {
-    if (classeChoisie) {
-      fetch(`http://${window.location.hostname}:3001/eleves/with-evaluations/${classeChoisie}`)
+    // Vérifier si la classe sélectionnée est valide
+    const classeName = getClasseName()
+    const isValidClass = classeChoisie && classeChoisie !== '' && classeChoisie !== '0' && classeName !== 'Classe introuvable'
+    
+    if (isValidClass) {
+      let url = `http://${window.location.hostname}:3001/eleves/with-evaluations/${classeChoisie}`;
+      
+      // Si c'est un enseignant référent (pas super admin), filtrer par établissement
+      if (isTeacherReferent && !isSuperAdmin && teacherInfo && teacherInfo.etablissement) {
+        url += `?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
+      }
+      
+      fetch(url)
         .then(res => res.json())
         .then(data => {
           // S'assurer que c'est toujours un tableau
@@ -84,8 +95,11 @@ function AdminEvaluation({ classeChoisie, getClasseName }) {
           console.error('Erreur lors du chargement des évaluations:', err)
           setElevesWithEvaluations([])
         })
+    } else {
+      // Aucune classe valide sélectionnée, vider la liste
+      setElevesWithEvaluations([])
     }
-  }, [classeChoisie])
+  }, [classeChoisie, isSuperAdmin, isTeacherReferent, teacherInfo, getClasseName])
 
   // Fonctions pour gérer les évaluations
   const supprimerToutesEvaluations = async (eleveId) => {
@@ -100,7 +114,14 @@ function AdminEvaluation({ classeChoisie, getClasseName }) {
         alert('Toutes les évaluations ont été supprimées !')
         // Recharger les données
         if (classeChoisie) {
-          fetch(`http://${window.location.hostname}:3001/eleves/with-evaluations/${classeChoisie}`)
+          let url = `http://${window.location.hostname}:3001/eleves/with-evaluations/${classeChoisie}`;
+          
+          // Si c'est un enseignant référent (pas super admin), filtrer par établissement
+          if (isTeacherReferent && !isSuperAdmin && teacherInfo && teacherInfo.etablissement) {
+            url += `?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
+          }
+          
+          fetch(url)
             .then(res => res.json())
             .then(data => {
               setElevesWithEvaluations(Array.isArray(data) ? data : [])
@@ -209,7 +230,14 @@ function AdminEvaluation({ classeChoisie, getClasseName }) {
         setCsvEvaluationFile(null)
         document.querySelector('#csv-evaluation-input').value = ''
         if (classeChoisie) {
-          fetch(`http://${window.location.hostname}:3001/eleves/with-evaluations/${classeChoisie}`)
+          let url = `http://${window.location.hostname}:3001/eleves/with-evaluations/${classeChoisie}`;
+          
+          // Si c'est un enseignant référent (pas super admin), filtrer par établissement
+          if (isTeacherReferent && !isSuperAdmin && teacherInfo && teacherInfo.etablissement) {
+            url += `?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
+          }
+          
+          fetch(url)
             .then(res => res.json())
             .then(data => {
               setElevesWithEvaluations(Array.isArray(data) ? data : [])
@@ -295,25 +323,19 @@ function AdminEvaluation({ classeChoisie, getClasseName }) {
 
   return (
     <div>
-      <h2>Gestion des évaluations</h2>
+      <h2>Gestion des évaluations de la classe {getClasseName()}</h2>
+
       
-      <div style={{ 
-        backgroundColor: '#e7f3ff', 
-        padding: '15px', 
-        borderRadius: '8px', 
-        marginBottom: '20px',
-        border: '1px solid #b8daff'
-      }}>
-        <p><strong>Classe sélectionnée :</strong> {getClasseName()}</p>
         
-        {!classeChoisie && (
+        
+        {(!classeChoisie || getClasseName() === 'Classe introuvable') && (
           <p style={{ color: '#856404', backgroundColor: '#fff3cd', padding: '10px', borderRadius: '4px' }}>
-            ⚠️ Sélectionnez d'abord une classe dans le menu principal pour voir les évaluations.
+            ⚠️ Sélectionnez d'abord une classe valide dans le menu principal pour voir les évaluations.
           </p>
         )}
-      </div>
+     
 
-      {classeChoisie && (
+      {classeChoisie && classeChoisie !== '' && classeChoisie !== '0' && getClasseName() !== 'Classe introuvable' ? (
         <>
           {/* Import CSV des évaluations */}
           <div style={{ 
@@ -533,6 +555,16 @@ function AdminEvaluation({ classeChoisie, getClasseName }) {
             )}
           </div>
         </>
+      ) : (
+        <div style={{ 
+          textAlign: 'center', 
+          padding: '40px', 
+          color: '#6c757d', 
+          fontStyle: 'italic',
+          fontSize: '18px'
+        }}>
+          <p>Sélectionnez une classe pour voir et gérer les évaluations</p>
+        </div>
       )}
     </div>
   )
