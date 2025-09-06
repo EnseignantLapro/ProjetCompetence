@@ -353,6 +353,34 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         return derniereEvaluation?.commentaire || ''
     }
 
+    // Fonction pour calculer la note de progression basée sur le nombre d'évaluations
+    const calculerNoteProgression = (eleveId, codeCompetenceN1) => {
+        // Compter les notes de l'élève pour ce bloc
+        const notesEleve = notes.filter(note => 
+            note.eleve_id === eleveId && 
+            note.competence_code && 
+            note.competence_code.startsWith(codeCompetenceN1)
+        ).length
+
+        // Compter les notes de tous les élèves pour ce bloc pour trouver le maximum
+        const notesParEleve = {}
+        notes.forEach(note => {
+            if (note.competence_code && note.competence_code.startsWith(codeCompetenceN1)) {
+                if (!notesParEleve[note.eleve_id]) {
+                    notesParEleve[note.eleve_id] = 0
+                }
+                notesParEleve[note.eleve_id]++
+            }
+        })
+
+        const nombreMaxNotes = Math.max(...Object.values(notesParEleve), 0)
+        
+        if (nombreMaxNotes === 0) return 0
+        
+        // Calculer la note de progression sur 20
+        return Math.round((notesEleve / nombreMaxNotes) * 20)
+    }
+
     // Fonction pour obtenir la couleur de la dernière évaluation directe
     const getDerniereCouleurDirecte = (eleveId, competenceCode) => {
         const cleEleveCompetence = `${eleveId}-${competenceCode}`
@@ -1964,9 +1992,16 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                             paddingTop: '6px'
                                                         }}
 
-                                                        title={`Positionnement bloc: ${bilanBloc.couleur} (${(bilanBloc.moyenne * 20 / 3).toFixed(1)}/20)`}
+                                                        title={`Positionnement bloc: ${bilanBloc.couleur} (${(bilanBloc.moyenne * 20 / 3).toFixed(1)}/20) - Progression: ${calculerNoteProgression(eleve.id, competenceN1.code)}/20`}
                                                     >
                                                         {(bilanBloc.moyenne * 20 / 3).toFixed(1)}
+                                                        <span style={{ 
+                                                            fontSize: '12px', 
+                                                            marginLeft: '4px',
+                                                            opacity: 0.9 
+                                                        }}>
+                                                            P{calculerNoteProgression(eleve.id, competenceN1.code)}
+                                                        </span>
                                                     </div>
                                                 </div>
                                             )
