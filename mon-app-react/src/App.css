@@ -1,8 +1,20 @@
+/* Styles globaux pour empêcher le débordement horizontal */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 #root {
-  max-width: 1280px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 1rem;
   text-align: center;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .logo {
@@ -35,6 +47,9 @@
 
 .card {
   padding: 2em;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .read-the-docs {
@@ -52,15 +67,17 @@
   border-bottom: 1px solid #dee2e6;
   margin-bottom: 0; /* Supprimé la marge bottom */
   position: relative;
-  width: 100vw; /* Prend toute la largeur de l'écran */
-  margin-left: calc(-50vw + 50%); /* Centre la bannière */
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* Contenu centré de la bannière */
 .baniere-content {
-  max-width: 1280px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 0 2rem;
+  padding: 0 1rem;
+  box-sizing: border-box;
 }
 
 /* Styles pour les listes déroulantes de compétences */
@@ -137,14 +154,31 @@
 
 /* Styles responsives pour mobile */
 @media (max-width: 768px) {
-  /* Réduction du padding root sur mobile */
+  /* Suppression complète du padding root sur mobile */
   #root {
-    padding: 0.5rem;
+    padding: 0 !important;
+    margin: 0;
   }
   
   .baniere-container {
     padding: 8px 5px; /* Réduction des marges sur mobile */
     margin-bottom: 10px;
+  }
+
+  /* Réduction du padding du contenu de bannière */
+  .baniere-content {
+    padding: 0 5px !important;
+  }
+
+  /* Réduction du padding des cartes sur mobile */
+  .card {
+    padding: 0.5rem !important;
+    margin: 0;
+  }
+
+  /* Réduction du padding du conteneur de choix de compétence */
+  .choix-competence-container {
+    padding: 10px !important;
   }
   
   .baniere-titre {
@@ -173,9 +207,27 @@
 }
 
 @media (max-width: 480px) {
-  /* Padding encore plus réduit pour petits écrans */
+  /* Suppression complète du padding pour petits écrans */
   #root {
-    padding: 0.2rem;
+    padding: 0 !important;
+    margin: 0;
+    max-width: 100%;
+  }
+
+  /* Réduction maximale du padding des cartes sur petits écrans */
+  .card {
+    padding: 0.25rem !important;
+    margin: 0;
+  }
+
+  /* Réduction maximale du padding du conteneur de choix de compétence */
+  .choix-competence-container {
+    padding: 5px !important;
+  }
+
+  /* Suppression complète du padding du contenu de bannière */
+  .baniere-content {
+    padding: 0 2px !important;
   }
   
   .baniere-titre {
@@ -183,12 +235,13 @@
   }
   
   .baniere-container {
-    padding: 5px 3px; /* Marges encore plus réduites pour petits écrans */
+    padding: 10px 0;
     margin-bottom: 8px;
   }
   
   .baniere-content {
     gap: 8px !important;
+    padding: 0 0.5rem;
   }
 }
 
@@ -266,6 +319,33 @@
     max-width: 90vw; /* Plus d'espace sur mobile */
     font-size: 13px;
   }
+  
+  .card {
+    padding: 0.5rem !important; /* Padding réduit sur mobile */
+    margin: 0 !important; /* Suppression des marges */
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  
+  /* Styles spécifiques pour les sections de bilan sur mobile */
+  .card div[style*="backgroundColor"] {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    word-wrap: break-word !important;
+  }
+  
+  .card h4 {
+    font-size: 1rem !important;
+    line-height: 1.3 !important;
+    margin: 0 0 8px 0 !important;
+  }
+  
+  .card p {
+    font-size: 0.9rem !important;
+    line-height: 1.4 !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
 }
 
 @media (max-width: 480px) {
@@ -274,6 +354,34 @@
     max-width: 95vw;
     font-size: 12px;
     padding: 6px 10px;
+  }
+  
+  .card {
+    padding: 0.25rem !important; /* Padding minimal */
+    margin: 0 !important; /* Suppression des marges */
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  
+  /* Styles encore plus compacts pour les très petits écrans */
+  .card div[style*="backgroundColor"] {
+    padding: 10px !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    word-wrap: break-word !important;
+  }
+  
+  .card h4 {
+    font-size: 0.9rem !important;
+    line-height: 1.2 !important;
+    margin: 0 0 6px 0 !important;
+  }
+  
+  .card p {
+    font-size: 0.8rem !important;
+    line-height: 1.3 !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
   }
 }
 
@@ -284,4 +392,92 @@
   margin-bottom: 10px;
   border: 1px solid #007bff;
   padding: 20px;
+}
+
+/* Classes pour les sections de bilan */
+.bilan-section {
+  padding: 15px;
+  border-radius: 8px;
+  margin-top: 20px;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.bilan-section.student-mode {
+  background-color: #f0fff0;
+  border: 1px solid #ccf5cc;
+}
+
+.bilan-section.teacher-mode {
+  background-color: #fff0f5;
+  border: 1px solid #f5ccf5;
+}
+
+.bilan-section.normal-mode {
+  background-color: #f0f8ff;
+  border: 1px solid #cce7ff;
+}
+
+.bilan-title {
+  margin: 0 0 10px 0;
+  font-size: 1.1rem;
+  line-height: 1.3;
+  word-wrap: break-word;
+}
+
+.bilan-title.student-mode {
+  color: #2d5a2d;
+}
+
+.bilan-title.teacher-mode {
+  color: #8b2c7a;
+}
+
+.bilan-title.normal-mode {
+  color: #2c5282;
+}
+
+.bilan-content {
+  margin: 0;
+  color: #2d3748;
+  line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Responsive pour les sections de bilan */
+@media (max-width: 768px) {
+  .bilan-section {
+    padding: 12px;
+    margin-top: 15px;
+  }
+  
+  .bilan-title {
+    font-size: 1rem;
+    line-height: 1.2;
+  }
+  
+  .bilan-content {
+    font-size: 0.9rem;
+    line-height: 1.3;
+  }
+}
+
+@media (max-width: 480px) {
+  .bilan-section {
+    padding: 10px;
+    margin-top: 10px;
+  }
+  
+  .bilan-title {
+    font-size: 0.9rem;
+    line-height: 1.1;
+    margin-bottom: 8px;
+  }
+  
+  .bilan-content {
+    font-size: 0.8rem;
+    line-height: 1.2;
+  }
 }

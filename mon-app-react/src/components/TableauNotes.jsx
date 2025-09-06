@@ -4,6 +4,7 @@ import ColorPickerModal from './ColorPickerModal'
 import PositionnementModal from './PositionnementModal'
 import NotePastille from './NotePastille'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
+import { getApiUrl } from '../utils/api'
 
 function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false }) {
     const [eleves, setEleves] = useState([])
@@ -38,6 +39,9 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
 
     const [competencesN3, setCompetencesN3] = useState([])
     const [positionnementsEnseignant, setPositionnementsEnseignant] = useState([])
+    const [enseignants, setEnseignants] = useState([])
+    const [competenceModalCode, setCompetenceModalCode] = useState(null)
+    const [commentairesEleves, setCommentairesEleves] = useState({}) // Format: {eleveId-competenceCode: commentaire}
 
     useEffect(() => {
         // Ne pas charger tant que l'app n'est pas initialisée
@@ -49,7 +53,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         if (isStudentMode && studentInfo) {
             setEleves([studentInfo])
             // Charger les notes de cet élève seulement
-            fetch(`http://${window.location.hostname}:3001/notes`)
+            fetch(getApiUrl(`/notes`))
                 .then(res => res.json())
                 .then(allNotes => {
                     // Filtrer les notes pour cet élève uniquement
@@ -58,7 +62,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                 })
             
             // Charger les positionnements de cet élève seulement
-            fetch(`http://${window.location.hostname}:3001/positionnements?eleve_id=${studentInfo.id}`)
+            fetch(getApiUrl(`/positionnements?eleve_id=${studentInfo.id}`))
                 .then(res => res.json())
                 .then(setPositionnementsEnseignant)
         } else if (isStudentMode && !studentInfo) {
@@ -69,21 +73,21 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         } else {
             // Mode normal (enseignant)
             if (!idClasse) {
-                fetch(`http://${window.location.hostname}:3001/eleves`)
+                fetch(getApiUrl(`/eleves`))
                     .then(res => res.json())
                     .then(setEleves)
                 return
             }
 
-            fetch(`http://${window.location.hostname}:3001/eleves?classe_id=${idClasse}`)
+            fetch(getApiUrl(`/eleves?classe_id=${idClasse}`))
                 .then(res => res.json())
                 .then(setEleves)
-            fetch(`http://${window.location.hostname}:3001/notes`).then(res => res.json()).then(setNotes)
-            fetch(`http://${window.location.hostname}:3001/positionnements`).then(res => res.json()).then(setPositionnementsEnseignant)
+            fetch(getApiUrl(`/notes`)).then(res => res.json()).then(setNotes)
+            fetch(getApiUrl(`/positionnements`)).then(res => res.json()).then(setPositionnementsEnseignant)
         }
         
         // Charger les competences N3 de la BDD + les tâches professionnelles (commun aux deux modes)
-        fetch(`http://${window.location.hostname}:3001/competences-n3`)
+        fetch(getApiUrl(`/competences-n3`))
             .then(res => res.json())
             .then(competencesBDD => {
                 // Ajouter toutes les tâches professionnelles comme compétences N3
@@ -119,7 +123,42 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                 
                 setCompetencesN3(toutesCompetencesN3)
             })
+        
+        // Charger les enseignants (nécessaire dans tous les modes pour afficher les noms dans les détails de note)
+        fetch(getApiUrl(`/enseignants`))
+            .then(res => {
+                console.log('Réponse enseignants status:', res.status)
+                if (!res.ok) {
+                    throw new Error(`HTTP error! status: ${res.status}`)
+                }
+                return res.json()
+            })
+            .then(data => {
+                console.log('Enseignants chargés avec succès:', data)
+                setEnseignants(data)
+            })
+            .catch(error => {
+                console.error('Erreur lors du chargement des enseignants:', error)
+                setEnseignants([]) // Assurer qu'on a un tableau vide en cas d'erreur
+            })
     }, [classeChoisie, isStudentMode, studentInfo, appInitialized])
+
+    // Initialiser les commentaires des élèves avec les valeurs existantes
+    useEffect(() => {
+        if (eleves.length > 0 && dernieresEvaluationsDirectes.size > 0) {
+            const nouveauxCommentaires = {}
+            eleves.forEach(eleve => {
+                const cleEleveCompetence = `${eleve.id}-${codeCompetence}`
+                const commentaireExistant = getCommentaireDerniereEvaluation(eleve.id, codeCompetence)
+                if (commentaireExistant && !commentairesEleves[cleEleveCompetence]) {
+                    nouveauxCommentaires[cleEleveCompetence] = commentaireExistant
+                }
+            })
+            if (Object.keys(nouveauxCommentaires).length > 0) {
+                setCommentairesEleves(prev => ({...prev, ...nouveauxCommentaires}))
+            }
+        }
+    }, [eleves, dernieresEvaluationsDirectes, codeCompetence])
 
     // Réinitialiser l'affichage du tableau quand la compétence change
     useEffect(() => {
@@ -237,30 +276,36 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
             const modeEvaluation = localStorage.getItem('mode_evaluation') || 'nouvelle'
             const cleEleveCompetence = `${eleve.id}-${competenceCode}`
             const derniereEvaluationDirecte = dernieresEvaluationsDirectes.get(cleEleveCompetence)
+            
+            // Récupérer le commentaire pour cette combinaison élève + compétence
+            const commentaire = commentairesEleves[cleEleveCompetence] || ''
 
             // En mode "edition" : modifier l'évaluation existante s'il y en a une
             // En mode "nouvelle" : toujours créer une nouvelle évaluation
             if (modeEvaluation === 'edition' && derniereEvaluationDirecte) {
                 // Modifier la dernière évaluation directe existante
-                const response = await fetch(`http://${window.location.hostname}:3001/notes/${derniereEvaluationDirecte.id}`, {
+                const response = await fetch(getApiUrl(`/notes/${derniereEvaluationDirecte.id}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         ...derniereEvaluationDirecte,
                         couleur: couleur,
-                        date: new Date().toISOString().split('T')[0]
+                        date: new Date().toISOString().split('T')[0],
+                        commentaire: commentaire.trim() || null
                     })
                 })
 
                 if (response.ok) {
                     // Mettre à jour l'état local
-                    const evaluationModifiee = { ...derniereEvaluationDirecte, couleur }
+                    const evaluationModifiee = { ...derniereEvaluationDirecte, couleur, commentaire }
                     setDernieresEvaluationsDirectes(prev => new Map(prev.set(cleEleveCompetence, evaluationModifiee)))
 
                     // Recharger toutes les notes depuis la base
-                    const notesResponse = await fetch(`http://${window.location.hostname}:3001/notes`)
+                    const notesResponse = await fetch(getApiUrl(`/notes`))
                     const toutesLesNotes = await notesResponse.json()
                     setNotes(toutesLesNotes)
+                    
+                    // Ne pas vider le commentaire en mode édition, le laisser pour modification
                 }
             } else {
                 // Créer une nouvelle évaluation (mode "nouvelle" ou aucune évaluation existante)
@@ -269,10 +314,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                     competence_code: competenceCode,
                     couleur: couleur,
                     date: new Date().toISOString().split('T')[0],
-                    prof_id: teacherInfo?.id || null
+                    prof_id: teacherInfo?.id || null,
+                    commentaire: commentaire.trim() || null
                 }
 
-                const response = await fetch(`http://${window.location.hostname}:3001/notes`, {
+                const response = await fetch(getApiUrl(`/notes`), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(nouvelleNote)
@@ -284,17 +330,27 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                     setDernieresEvaluationsDirectes(prev => new Map(prev.set(cleEleveCompetence, noteAjoutee)))
 
                     // Recharger toutes les notes depuis la base
-                    const notesResponse = await fetch(`http://${window.location.hostname}:3001/notes`)
+                    const notesResponse = await fetch(getApiUrl(`/notes`))
                     const toutesLesNotes = await notesResponse.json()
                     setNotes(toutesLesNotes)
                     
                     // Après la première évaluation, passer en mode édition
                     localStorage.setItem('mode_evaluation', 'edition')
+                    
+                    // Ne pas vider le commentaire, le laisser visible pour montrer qu'il a été sauvegardé
+                    // L'utilisateur peut voir que son commentaire est pris en compte
                 }
             }
         } catch (error) {
             console.error('Erreur lors de l\'ajout/modification de la note:', error)
         }
+    }
+
+    // Fonction pour obtenir le commentaire de la dernière évaluation directe
+    const getCommentaireDerniereEvaluation = (eleveId, competenceCode) => {
+        const cleEleveCompetence = `${eleveId}-${competenceCode}`
+        const derniereEvaluation = dernieresEvaluationsDirectes.get(cleEleveCompetence)
+        return derniereEvaluation?.commentaire || ''
     }
 
     // Fonction pour obtenir la couleur de la dernière évaluation directe
@@ -310,7 +366,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         }
 
         try {
-            const res = await fetch(`http://${window.location.hostname}:3001/notes/${noteId}`, {
+            const res = await fetch(getApiUrl(`/notes/${noteId}`), {
                 method: 'DELETE'
             })
 
@@ -339,7 +395,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         if (!elevePositionnement || !competencePositionnement) return
 
         try {
-            const response = await fetch(`http://${window.location.hostname}:3001/positionnements`, {
+            const response = await fetch(getApiUrl(`/positionnements`), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -354,7 +410,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
 
             if (response.ok) {
                 // Recharger les positionnements enseignant
-                const positionnementsResponse = await fetch(`http://${window.location.hostname}:3001/positionnements`)
+                const positionnementsResponse = await fetch(getApiUrl(`/positionnements`))
                 if (positionnementsResponse.ok) {
                     const nouveauxPositionnements = await positionnementsResponse.json()
                     setPositionnementsEnseignant(nouveauxPositionnements)
@@ -378,6 +434,21 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
             p.eleve_id === eleveId && p.competence_code === competenceCode
         )
         return positionnement ? positionnement.couleur : null
+    }
+
+    const getNomEnseignant = (profId) => {
+        if (!profId) return 'Non défini'
+        
+        // Si les enseignants ne sont pas encore chargés, retourner un placeholder
+        if (!enseignants || enseignants.length === 0) {
+            return 'Chargement...'
+        }
+        
+        // Convertir profId en nombre pour la comparaison (au cas où ce serait une chaîne)
+        const profIdNum = parseInt(profId)
+        const enseignant = enseignants.find(e => e.id === profIdNum || e.id === profId)
+        
+        return enseignant ? `${enseignant.prenom} ${enseignant.nom}` : `Enseignant ID ${profId}`
     }
 
     function getNomCompetence(code) {
@@ -1793,38 +1864,9 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                                 <div style={{ display: 'flex', gap: '5px', alignItems: 'center', justifyContent: 'center' }}>
                                                                     {ligne.niveau2?.code && (
                                                                         <>
-                                                                            {/* Si il y a un positionnement enseignant, afficher uniquement celui-ci */}
-                                                                            {ligne.positionnementEnseignant ? (
-                                                                                <div
-                                                                                    style={{
-                                                                                        display: 'inline-block',
-                                                                                        width: '20px',
-                                                                                        height: '20px',
-                                                                                        borderRadius: '50%',
-                                                                                        backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
-                                                                                        border: '2px solid #333',
-                                                                                        cursor: isStudentMode ? 'default' : 'pointer',
-                                                                                        fontSize: '10px',
-                                                                                        color: 'white',
-                                                                                        fontWeight: 'bold',
-                                                                                        display: 'flex',
-                                                                                        alignItems: 'center',
-                                                                                        justifyContent: 'center'
-                                                                                    }}
-                                                                                    title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        if (isStudentMode || ouvertureModalEnCours) return;
-                                                                                        const codeCompetence = ligne.niveau2?.code
-                                                                                        if (codeCompetence) {
-                                                                                            handleClickPositionnement(eleve, codeCompetence)
-                                                                                        }
-                                                                                    }}
-                                                                                >
-                                                                                    {isStudentMode ? 'P' : ''}
-                                                                                </div>
-                                                                            ) : (
-                                                                                /* Sinon, afficher le positionnement automatique */
+                                                                            {/* En mode enseignant, toujours afficher d'abord le positionnement automatique */}
+                                                                            {/* En mode élève, l'afficher seulement s'il n'y a pas de positionnement enseignant */}
+                                                                            {((!ligne.positionnementEnseignant && isStudentMode) || (!isStudentMode)) && (
                                                                                 <div
                                                                                     className="pastille-auto"
                                                                                     style={{
@@ -1836,6 +1878,38 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                                                     }}
                                                                                 >
                                                                                     {isStudentMode ? 'P' : 'A'}
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* Afficher ensuite le positionnement enseignant s'il existe */}
+                                                                            {ligne.positionnementEnseignant && (
+                                                                                <div
+                                                                                    style={{
+                                                                                        width: '20px',
+                                                                                        height: '20px',
+                                                                                        borderRadius: '50%',
+                                                                                        backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
+                                                                                        border: '2px solid #333',
+                                                                                        cursor: isStudentMode ? 'default' : 'pointer',
+                                                                                        fontSize: '10px',
+                                                                                        color: 'white',
+                                                                                        fontWeight: 'bold',
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center',
+                                                                                        justifyContent: 'center',
+                                                                                        marginLeft: !isStudentMode && ligne.positionnementAuto ? '5px' : '0'
+                                                                                    }}
+                                                                                    title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        if (isStudentMode || ouvertureModalEnCours) return;
+                                                                                        const codeCompetence = ligne.niveau2?.code
+                                                                                        if (codeCompetence) {
+                                                                                            handleClickPositionnement(eleve, codeCompetence)
+                                                                                        }
+                                                                                    }}
+                                                                                >
+                                                                                    {isStudentMode ? 'P' : 'E'}
                                                                                 </div>
                                                                             )}
 
@@ -1878,8 +1952,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                     <div
                                                         style={{
                                                             display: 'inline-block',
-                                                            width: '30px',
-                                                            height: '30px',
+                                                            
                                                             padding: '2px',
                                                             borderRadius: '50%',
                                                             backgroundColor: getCouleurCss(bilanBloc.couleur),
@@ -1935,7 +2008,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                         />
                                     )}
                                     <div>
-                                        <h3>{eleve.prenom} {eleve.nom}</h3>
+                                        <h3> <span>{eleve.nom} {eleve.prenom}</span></h3>
                                         <p>Classe: {getNomClasse(eleve.classe_id)}</p>
                                     </div>
                                 </div>
@@ -2024,6 +2097,40 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                             </>
                                         )
                                     })()}
+                                    
+                                    {/* Champ de commentaire pour les évaluations directes */}
+                                    {!isStudentMode && (
+                                        <div style={{ width: '100%', marginTop: '10px' }}>
+                                            <textarea
+                                                placeholder="Commentaire / Remédiation (facultatif)..."
+                                                value={(() => {
+                                                    const cleEleveCompetence = `${eleve.id}-${codeCompetence}`
+                                                    return commentairesEleves[cleEleveCompetence] !== undefined 
+                                                        ? commentairesEleves[cleEleveCompetence] 
+                                                        : getCommentaireDerniereEvaluation(eleve.id, codeCompetence)
+                                                })()}
+                                                onChange={(e) => {
+                                                    const cleEleveCompetence = `${eleve.id}-${codeCompetence}`
+                                                    setCommentairesEleves(prev => ({
+                                                        ...prev,
+                                                        [cleEleveCompetence]: e.target.value
+                                                    }))
+                                                }}
+                                                style={{
+                                                    width: '100%',
+                                                    minHeight: '40px',
+                                                    padding: '8px',
+                                                    borderRadius: '4px',
+                                                    border: '1px solid #ccc',
+                                                    fontSize: '12px',
+                                                    fontFamily: 'inherit',
+                                                    resize: 'vertical',
+                                                    boxSizing: 'border-box'
+                                                }}
+                                                rows="2"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -2405,11 +2512,27 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                         <div style={{ display: 'flex', gap: '5px', alignItems: 'center', justifyContent: 'center' }}>
                                                             {ligne.niveau2?.code && (
                                                                 <>
-                                                                    {/* Si il y a un positionnement enseignant, afficher uniquement celui-ci */}
-                                                                    {ligne.positionnementEnseignant ? (
+                                                                    {/* En mode enseignant, toujours afficher d'abord le positionnement automatique */}
+                                                                    {/* En mode élève, l'afficher seulement s'il n'y a pas de positionnement enseignant */}
+                                                                    {((!ligne.positionnementEnseignant && isStudentMode) || (!isStudentMode)) && (
+                                                                        <div
+                                                                            className="pastille-auto"
+                                                                            style={{
+                                                                                backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris')
+                                                                            }}
+                                                                            title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                            }}
+                                                                        >
+                                                                            {isStudentMode ? 'P' : 'A'}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Afficher ensuite le positionnement enseignant s'il existe */}
+                                                                    {ligne.positionnementEnseignant && (
                                                                         <div
                                                                             style={{
-                                                                                display: 'inline-block',
                                                                                 width: '20px',
                                                                                 height: '20px',
                                                                                 borderRadius: '50%',
@@ -2433,21 +2556,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                                                 }
                                                                             }}
                                                                         >
-                                                                            {isStudentMode ? 'P' : ''}
-                                                                        </div>
-                                                                    ) : (
-                                                                        /* Sinon, afficher le positionnement automatique */
-                                                                        <div
-                                                                            className="pastille-auto"
-                                                                            style={{
-                                                                                backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris')
-                                                                            }}
-                                                                            title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                            }}
-                                                                        >
-                                                                            {isStudentMode ? 'P' : 'A'}
+                                                                            {isStudentMode ? 'P' : 'E'}
                                                                         </div>
                                                                     )}
                                                                 </>
@@ -2469,9 +2578,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
             {modalOuvert && eleveActuel && (
                 <ColorPickerModal
                     eleve={eleveActuel}
-                    competenceCode={noteDetail?.competence_code || codeCompetence}
+                    competenceCode={competenceModalCode || noteDetail?.competence_code || codeCompetence}
                     onClose={() => {
                         setModalOuvert(false)
+                        setCompetenceModalCode(null)
                         // Nettoyer noteDetail quand on ferme la modal
                         if (noteDetail?.competence_code !== codeCompetence) {
                             setNoteDetail(null)
@@ -2505,7 +2615,21 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                         <p><strong>Compétence :</strong> {getNomCompetence(noteDetail.competence_code)}</p>
                         <p><strong>Couleur :</strong> {noteDetail.couleur}</p>
                         <p><strong>Date :</strong> {noteDetail.date}</p>
-                        <p><strong>Prof :</strong> ID {noteDetail.prof_id}</p>
+                        <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
+                        {noteDetail.commentaire && (
+                            <div style={{ marginTop: '10px' }}>
+                                <p><strong>Commentaire/Remédiation :</strong></p>
+                                <div style={{ 
+                                    backgroundColor: '#f8f9fa', 
+                                    padding: '10px', 
+                                    borderRadius: '4px',
+                                    border: '1px solid #dee2e6',
+                                    fontStyle: 'italic'
+                                }}>
+                                    {noteDetail.commentaire}
+                                </div>
+                            </div>
+                        )}
                         <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
                             <button onClick={() => setNoteDetail(null)}>Fermer</button>
                             {!isStudentMode && (

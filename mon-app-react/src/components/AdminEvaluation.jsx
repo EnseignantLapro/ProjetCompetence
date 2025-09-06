@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { getApiUrl } from '../utils/api'
 
 function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, isTeacherReferent = false, teacherInfo = null }) {
   const [elevesWithEvaluations, setElevesWithEvaluations] = useState([])
@@ -78,14 +79,14 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
     const isValidClass = classeChoisie && classeChoisie !== '' && classeChoisie !== '0' && classeName !== 'Classe introuvable'
     
     if (isValidClass) {
-      let url = `http://${window.location.hostname}:3001/eleves/with-evaluations/${classeChoisie}`;
+      let url = `/eleves/with-evaluations/${classeChoisie}`;
       
       // Si c'est un enseignant référent (pas super admin), filtrer par établissement
       if (isTeacherReferent && !isSuperAdmin && teacherInfo && teacherInfo.etablissement) {
         url += `?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
       }
-      
-      fetch(url)
+
+      fetch(getApiUrl(url))
         .then(res => res.json())
         .then(data => {
           // S'assurer que c'est toujours un tableau
@@ -106,7 +107,7 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
     if (!confirm('Êtes-vous sûr de vouloir supprimer TOUTES les évaluations de cet élève ?')) return
     
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/eleves/${eleveId}/evaluations`, {
+      const res = await fetch(getApiUrl(`/eleves/${eleveId}/evaluations`), {
         method: 'DELETE',
       })
       
@@ -114,14 +115,14 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
         alert('Toutes les évaluations ont été supprimées !')
         // Recharger les données
         if (classeChoisie) {
-          let url = `http://${window.location.hostname}:3001/eleves/with-evaluations/${classeChoisie}`;
+          let url = `/eleves/with-evaluations/${classeChoisie}`;
           
           // Si c'est un enseignant référent (pas super admin), filtrer par établissement
           if (isTeacherReferent && !isSuperAdmin && teacherInfo && teacherInfo.etablissement) {
             url += `?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
           }
-          
-          fetch(url)
+
+          fetch(getApiUrl(url))
             .then(res => res.json())
             .then(data => {
               setElevesWithEvaluations(Array.isArray(data) ? data : [])
@@ -196,8 +197,8 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
               classeChoisie_raw: classeChoisie,
               classeChoisie_type: typeof classeChoisie
             })
-            
-            const response = await fetch(`http://${window.location.hostname}:3001/evaluations/import`, {
+
+            const response = await fetch(getApiUrl(`/evaluations/import`), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -230,14 +231,14 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
         setCsvEvaluationFile(null)
         document.querySelector('#csv-evaluation-input').value = ''
         if (classeChoisie) {
-          let url = `http://${window.location.hostname}:3001/eleves/with-evaluations/${classeChoisie}`;
+          let url = `/eleves/with-evaluations/${classeChoisie}`;
           
           // Si c'est un enseignant référent (pas super admin), filtrer par établissement
           if (isTeacherReferent && !isSuperAdmin && teacherInfo && teacherInfo.etablissement) {
             url += `?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
           }
           
-          fetch(url)
+          getApiUrl(url)
             .then(res => res.json())
             .then(data => {
               setElevesWithEvaluations(Array.isArray(data) ? data : [])
@@ -264,7 +265,7 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
 
     try {
       // Récupérer les données d'évaluations détaillées
-      const response = await fetch(`http://${window.location.hostname}:3001/evaluations/export/${classeChoisie}`)
+      const response = await fetch(getApiUrl(`/evaluations/export/${classeChoisie}`))
       if (!response.ok) {
         throw new Error('Erreur lors de la récupération des données')
       }

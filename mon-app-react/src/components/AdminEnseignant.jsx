@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { getApiUrl } from '../utils/api'
 
 function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teacherInfo = null }) {
   const [enseignants, setEnseignants] = useState([])
@@ -33,15 +34,15 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
   }, [isTeacherReferent, teacherInfo])
 
   const fetchEnseignants = () => {
-    let url = `http://${window.location.hostname}:3001/enseignants`;
+    let url = `/enseignants`;
     
     // Si c'est un enseignant référent (ET PAS super admin), filtrer par établissement
     if (isTeacherReferent && !isSuperAdmin && teacherInfo && teacherInfo.etablissement) {
-      url = `http://${window.location.hostname}:3001/enseignants?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
+      url = `/enseignants?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
     }
     // Si c'est un super admin, on ne filtre pas (voir tous les enseignants)
-    
-    fetch(url)
+
+    fetch(getApiUrl(url))
       .then(res => res.json())
       .then(setEnseignants)
       .catch(err => console.error('Erreur lors du chargement des enseignants:', err))
@@ -49,15 +50,15 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
 
   const fetchClasses = () => {
     
-    let url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo.token}`;
+    let url = `/classes/by-token/${teacherInfo.token}`;
    
     //si c'est un super admin, on charge toutes les classes 
     if (isSuperAdmin) { 
-        url = `http://${window.location.hostname}:3001/classes`;
+        url = `/classes`;
     } 
     
 
-    fetch(url)
+    fetch(getApiUrl(url))
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -73,7 +74,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
   }
 
   const fetchEnseignantClasses = (enseignantId) => {
-    fetch(`http://${window.location.hostname}:3001/enseignants/${enseignantId}/classes`)
+    fetch(getApiUrl(`/enseignants/${enseignantId}/classes`))
       .then(res => res.json())
       .then(setEnseignantClasses)
       .catch(err => console.error('Erreur lors du chargement des classes de l\'enseignant:', err))
@@ -87,7 +88,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     }
 
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/enseignants`, {
+      const res = await fetch(getApiUrl(`/enseignants`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newEnseignant),
@@ -122,7 +123,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     }
 
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/enseignants/${editingEnseignantId}`, {
+      const res = await fetch(getApiUrl(`/enseignants/${editingEnseignantId}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingEnseignant),
@@ -147,7 +148,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     if (!confirm('Êtes-vous sûr de vouloir supprimer cet enseignant ? Cela supprimera aussi ses associations avec les classes.')) return
     
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/enseignants/${id}`, {
+      const res = await fetch(getApiUrl(`/enseignants/${id}`), {
         method: 'DELETE',
       })
       
@@ -166,7 +167,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
   // Régénérer le token
   const regenererToken = async (id) => {
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/enseignants/${id}/regenerate-token`, {
+      const res = await fetch(getApiUrl(`/enseignants/${id}/regenerate-token`), {
         method: 'POST'
       })
       
@@ -188,7 +189,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     if (!selectedEnseignant) return
 
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/enseignant-classes`, {
+      const res = await fetch(getApiUrl(`/enseignant-classes`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -215,7 +216,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     if (!selectedEnseignant) return
 
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/enseignant-classes/${selectedEnseignant.id}/${classeId}`, {
+      const res = await fetch(getApiUrl(`/enseignant-classes/${selectedEnseignant.id}/${classeId}`), {
         method: 'DELETE'
       })
       
@@ -496,7 +497,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
                       <div>
                         <h4 style={{ margin: '0 0 5px 0', fontSize: '18px' }}>
                           {enseignant.prenom} {enseignant.nom}
-                          {enseignant.referent && (
+                          {enseignant.referent === 1 && (
                             <span style={{ 
                               backgroundColor: '#28a745', 
                               color: 'white', 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { getApiUrl } from '../utils/api'
 
 function AdminEleve({ classe }) {
     const [eleves, setEleves] = useState([])
@@ -12,6 +13,12 @@ function AdminEleve({ classe }) {
     const [eleveEnEdition, setEleveEnEdition] = useState(null)
     const [loading, setLoading] = useState(false)
     const [csvFile, setCsvFile] = useState(null)
+
+    // Fonction pour construire l'URL complète de l'élève
+    const construireUrlEleve = (token) => {
+        const baseUrl = window.location.origin
+        return `${baseUrl}/?token=${token}`
+    }
     
     // États pour les sections collapsibles
     const [importSectionVisible, setImportSectionVisible] = useState(false)
@@ -71,7 +78,7 @@ function AdminEleve({ classe }) {
     const chargerEleves = async () => {
         try {
             setLoading(true)
-            const response = await fetch(`http://${window.location.hostname}:3001/eleves/with-counts?classe_id=${classe.id}`)
+            const response = await fetch(getApiUrl(`/eleves/with-counts?classe_id=${classe.id}`))
             if (response.ok) {
                 const data = await response.json()
                 setEleves(data)
@@ -112,7 +119,7 @@ function AdminEleve({ classe }) {
         }
 
         try {
-            const response = await fetch(`http://${window.location.hostname}:3001/eleves`, {
+            const response = await fetch(getApiUrl(`/eleves`), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -147,7 +154,7 @@ function AdminEleve({ classe }) {
         }
 
         try {
-            const response = await fetch(`http://${window.location.hostname}:3001/eleves/${eleveEnEdition.id}`, {
+            const response = await fetch(getApiUrl(`/eleves/${eleveEnEdition.id}`), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -180,7 +187,7 @@ function AdminEleve({ classe }) {
 
         try {
             // Tentative de suppression normale
-            const response = await fetch(`http://${window.location.hostname}:3001/eleves/${eleve.id}`, {
+            const response = await fetch(getApiUrl(`/eleves/${eleve.id}`), {
                 method: 'DELETE'
             })
 
@@ -202,7 +209,7 @@ function AdminEleve({ classe }) {
                 
                 if (forceDelete) {
                     // Suppression forcée
-                    const forceResponse = await fetch(`http://${window.location.hostname}:3001/eleves/${eleve.id}?forceDelete=true`, {
+                    const forceResponse = await fetch(getApiUrl(`/eleves/${eleve.id}?forceDelete=true`), {
                         method: 'DELETE'
                     })
                     
@@ -243,14 +250,16 @@ function AdminEleve({ classe }) {
         }
 
         try {
-            const response = await fetch(`http://${window.location.hostname}:3001/eleves/${eleve.id}/regenerate-token`, {
+            const response = await fetch(getApiUrl(`/eleves/${eleve.id}/regenerate-token`), {
                 method: 'POST'
             })
 
             if (response.ok) {
                 const data = await response.json()
                 chargerEleves() // Recharger la liste pour afficher le nouveau token
-                alert(`Token régénéré avec succès !\nNouveau token : ${data.token}`)
+                const nouveauLien = construireUrlEleve(data.token)
+                alert(`Token régénéré avec succès !\n\nNouveau lien élève :\n${nouveauLien}\n\n(Le lien a été copié dans le presse-papiers)`)
+                navigator.clipboard.writeText(nouveauLien)
             } else {
                 alert('Erreur lors de la régénération du token')
             }
@@ -288,7 +297,7 @@ function AdminEleve({ classe }) {
                     }
 
                     try {
-                        const response = await fetch(`http://${window.location.hostname}:3001/eleves`, {
+                        const response = await fetch(getApiUrl(`/eleves`), {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -716,7 +725,23 @@ function AdminEleve({ classe }) {
                                                 <div style={{ fontSize: '14px', color: '#666', marginTop: '4px' }}>
                                                     {eleve.id_moodle && <span>ID Moodle: {eleve.id_moodle} • </span>}
                                                     <span>Photo: {eleve.photo || 'default.jpg'}</span>
-                                                    {eleve.token && <span> • Token: {eleve.token}</span>}
+                                                    {eleve.token && (
+                                                        <div style={{ marginTop: '8px' }}>
+                                                            <strong>Lien élève:</strong>
+                                                            <div style={{ 
+                                                                marginTop: '4px',
+                                                                padding: '6px',
+                                                                backgroundColor: '#f8f9fa',
+                                                                borderRadius: '4px',
+                                                                border: '1px solid #dee2e6',
+                                                                fontSize: '12px',
+                                                                color: '#495057',
+                                                                wordBreak: 'break-all'
+                                                            }}>
+                                                                {construireUrlEleve(eleve.token)}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                                                     <span style={{ 

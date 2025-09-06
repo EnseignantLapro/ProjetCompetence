@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { getApiUrl } from '../utils/api'
 
 function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent = false }) {
   const [competencesN3, setCompetencesN3] = useState([])
@@ -16,7 +17,7 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
 
   // Chargement initial des compétences N3 avec filtrage par établissement
   useEffect(() => {
-    let url = `http://${window.location.hostname}:3001/competences-n3`
+    let url = `/competences-n3`
     
     // Si c'est un enseignant référent (pas super admin), filtrer par établissement
     if (isTeacherReferent && !isSuperAdmin && teacherInfo) {
@@ -30,8 +31,8 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
       }
       url += `?${params.toString()}`
     }
-    
-    fetch(url)
+
+    fetch(getApiUrl(url))
       .then(res => res.json())
       .then(setCompetencesN3)
       .catch(err => console.error('Erreur lors du chargement des compétences:', err))
@@ -49,8 +50,8 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
       ...newCompetenceN3,
       enseignant_id: teacherInfo?.id || null
     }
-    
-    const res = await fetch(`http://${window.location.hostname}:3001/competences-n3`, {
+
+    const res = await fetch(getApiUrl(`/competences-n3`) , {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(competenceData),
@@ -77,8 +78,8 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
       ...editingCompetence,
       enseignant_id: editingCompetence.enseignant_id || teacherInfo?.id || null
     }
-    
-    const res = await fetch(`http://${window.location.hostname}:3001/competences-n3/${editingCompetenceId}`, {
+
+    const res = await fetch(getApiUrl(`/competences-n3/${editingCompetenceId}`), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(competenceData),
@@ -97,8 +98,8 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
   // Supprimer compétence N3
   const supprimerCompetenceN3 = async (id) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette compétence ?')) return
-    
-    const res = await fetch(`http://${window.location.hostname}:3001/competences-n3/${id}`, {
+
+    const res = await fetch(getApiUrl(`/competences-n3/${id}`), {
       method: 'DELETE',
     })
     

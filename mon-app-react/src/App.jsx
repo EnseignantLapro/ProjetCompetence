@@ -4,6 +4,7 @@ import TableauNotes from './components/TableauNotes'
 import ChoixCompetence from './components/ChoixCompetence'
 import Baniere from './components/Baniere'
 import { competencesN1N2, tachesProfessionelles } from './data/competences'
+import { getApiUrl } from './utils/api'
 import './App.css'
 
 function App() {
@@ -16,7 +17,7 @@ function App() {
   const [teacherInfo, setTeacherInfo] = useState(null)
   const [appInitialized, setAppInitialized] = useState(false) // Nouveau flag
   
-    // À remplacer plus tard par détection Moodle
+  // À remplacer plus tard par détection Moodle
   
   // Vérifier si on a accès aux fonctions admin
   const hasAdminAccess = () => {
@@ -37,8 +38,8 @@ function App() {
   const [competenceChoisie, setCompetenceChoisie] = useState(null)
   const [classes, setClasses] = useState([])
   const [classeChoisie, setClasseChoisie] = useState('')
-  const [choixCompetenceKey, setChoixCompetenceKey] = useState(0) // Pour forcer le rechargement du composant
   const [isModifying, setIsModifying] = useState(false) // Pour distinguer modification vs première sélection
+  const [modificationKey, setModificationKey] = useState(0) // Pour forcer le rechargement uniquement en mode modification
 
   const [nomNiveau1, setNomNiveau1] = useState('')
   const [nomNiveau2, setNomNiveau2] = useState('')
@@ -47,7 +48,7 @@ function App() {
   // Fonction pour vérifier le token élève côté serveur
   const verifyStudentToken = async (token) => {
     try {
-      const response = await fetch(`http://${window.location.hostname}:3001/auth/verify-token`, {
+      const response = await fetch(getApiUrl(`/auth/verify-token`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })
@@ -67,7 +68,7 @@ function App() {
   // Fonction pour vérifier le token enseignant côté serveur
   const verifyTeacherToken = async (token) => {
     try {
-      const response = await fetch(`http://${window.location.hostname}:3001/auth/verify-teacher-token`, {
+      const response = await fetch(getApiUrl(`/auth/verify-teacher-token`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })
@@ -251,7 +252,7 @@ function App() {
         }
       } else {
         // Code BDD traditionnel
-        fetch(`http://${window.location.hostname}:3001/competences-n3?parent_code=${niveau2}`)
+        fetch(getApiUrl(`/competences-n3?parent_code=${niveau2}`))
           .then(res => res.json())
           .then(data => {
             const found = data.find(sc => sc.code === niveau3)
@@ -280,7 +281,7 @@ function App() {
     }
 
     // Charger toutes les classes pour l'affichage
-    fetch(`http://${window.location.hostname}:3001/classes`)
+    fetch(getApiUrl(`/classes`))
       .then(res => res.json())
       .then(allClasses => {
         if (isTeacherMode && teacherInfo && teacherInfo.classes) {
@@ -322,7 +323,17 @@ function App() {
           alignItems: 'center',
           backgroundColor: '#f5f5f5'
         }}>
-          <h1 style={{ marginBottom: '2rem', color: '#333' }}>Système de Gestion des Compétences</h1>
+          <h1 style={{ marginBottom: '2rem', color: '#333' }}>
+  <span style={{ color: '#f1ed0fff', fontWeight: 'bold' }}>E</span>.
+  <span style={{ color: '#3498db', fontWeight: 'bold' }}>F</span>.
+  <span style={{ color: '#05cf60ff', fontWeight: 'bold' }}>E</span>
+  <br />
+  <span>
+    <span style={{ color: '#f1ed0fff' }}>E</span>valuations  au<br />
+    <span style={{ color: '#3498db' }}> F</span>il de l'<br />
+    <span style={{ color: '#2ecc71' }}>E</span>au
+  </span>
+</h1>
           <div style={{ 
             backgroundColor: 'white', 
             padding: '2rem', 
@@ -330,9 +341,11 @@ function App() {
             boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
             textAlign: 'center'
           }}>
-            <h3 style={{ marginBottom: '1rem' }}>Accès Super Administrateur</h3>
+            <h3 style={{ marginBottom: '1rem' }}>Accès Via Token Uniquement</h3>
             <a 
-              href={`${window.location.origin}${window.location.pathname}?teacher_token=wyj4zi9yan5qktoby5alm`}
+              /*href={`${window.location.origin}${window.location.pathname}?teacher_token=`}*/
+
+              href={`mailto:julienlanglace@gmail.com`}
               style={{
                 display: 'inline-block',
                 padding: '12px 24px',
@@ -343,7 +356,7 @@ function App() {
                 fontWeight: 'bold'
               }}
             >
-              Connexion Super Admin
+            Faire une demande auprés de votre enseignant référent
             </a>
           </div>
         </div>
@@ -369,11 +382,18 @@ function App() {
         hasAdminAccess={hasAdminAccess()}
       />
 
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '2rem' }}>
+      <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
         {/* Panneau admin - masqué en mode élève et enseignant */}
         {(adminVisible && hasAdminAccess()) ? (
           <div className="card">
-            <AdminPanel classeChoisie={classeChoisie} classes={classes} isSuperAdmin={superAdmin} teacherInfo={teacherInfo} isTeacherReferent={teacherInfo && teacherInfo.referent} />
+            <AdminPanel 
+              key={teacherInfo ? teacherInfo.token || JSON.stringify(teacherInfo) : 'no-teacher'}
+              classeChoisie={classeChoisie}
+              classes={classes}
+              isSuperAdmin={superAdmin}
+              teacherInfo={teacherInfo}
+              isTeacherReferent={teacherInfo && teacherInfo.referent}
+            />
           </div>    
         ) : (
           <>
@@ -381,7 +401,6 @@ function App() {
             {(!competenceChoisie && !isModifying && !isStudentMode) && (
               <div className="card">
                 <ChoixCompetence
-                  key={choixCompetenceKey}
                   isStudentMode={isStudentMode}
                   isTeacherMode={isTeacherMode}
                   teacherInfo={teacherInfo}
@@ -390,17 +409,11 @@ function App() {
                     setIsModifying(false)
                   }}
                 />
-                <div style={{
-                  backgroundColor: isStudentMode ? '#f0fff0' : isTeacherMode ? '#fff0f5' : '#f0f8ff',
-                  padding: '15px',
-                  borderRadius: '8px',
-                  marginTop: '20px',
-                  border: `1px solid ${isStudentMode ? '#ccf5cc' : isTeacherMode ? '#f5ccf5' : '#cce7ff'}`
-                }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: isStudentMode ? '#2d5a2d' : isTeacherMode ? '#8b2c7a' : '#2c5282' }}>
-                    {isStudentMode ? '� Votre bilan personnel par bloc de compétence' : '📊 Bilan de la période pour chaque Bloc de compétence'}
+                <div className={`bilan-section ${isStudentMode ? 'student-mode' : isTeacherMode ? 'teacher-mode' : 'normal-mode'}`}>
+                  <h4 className={`bilan-title ${isStudentMode ? 'student-mode' : isTeacherMode ? 'teacher-mode' : 'normal-mode'}`}>
+                    {isStudentMode ? '📊 Votre bilan personnel par bloc de compétence' : '📊 Bilan de la période pour chaque Bloc de compétence'}
                   </h4>
-                  <p style={{ margin: 0, color: '#2d3748' }}>
+                  <p className="bilan-content">
                     {isStudentMode ? (
                       <>Consultez vos <strong>évaluations</strong> et votre progression dans <strong>tous les blocs de compétences</strong>. 
                       Les données sont triées par date croissante pour suivre votre évolution.</>
@@ -417,16 +430,11 @@ function App() {
             {/* En mode élève, afficher directement le message de bilan */}
             {isStudentMode && !competenceChoisie && (
               <div className="card">
-                <div style={{
-                  backgroundColor: '#f0fff0',
-                  padding: '15px',
-                  borderRadius: '8px',
-                  border: '1px solid #ccf5cc'
-                }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#2d5a2d' }}>
+                <div className="bilan-section student-mode">
+                  <h4 className="bilan-title student-mode">
                     🎯 Votre bilan personnel par bloc de compétence
                   </h4>
-                  <p style={{ margin: 0, color: '#2d3748' }}>
+                  <p className="bilan-content">
                     Consultez vos <strong>évaluations</strong> et votre progression dans <strong>tous les blocs de compétences</strong>. 
                     Les données sont triées par date croissante pour suivre votre évolution.
                   </p>
@@ -438,10 +446,11 @@ function App() {
             {(!competenceChoisie && isModifying) && (
               <div className="card">
                 <ChoixCompetence
-                  key={choixCompetenceKey}
+                  key={`modification-${modificationKey}`}
                   isStudentMode={isStudentMode}
                   isTeacherMode={isTeacherMode}
                   teacherInfo={teacherInfo}
+                  isModifying={true}
                   onChoixFinal={(selection) => {
                     setCompetenceChoisie(selection)
                     setIsModifying(false)
@@ -459,9 +468,8 @@ function App() {
                   <button className="competence-active" onClick={() => {
                     setIsModifying(true)
                     setCompetenceChoisie(null)
-                    // Les valeurs restent en localStorage pour que ChoixCompetence les récupère
-                    // Forcer le rechargement du composant ChoixCompetence
-                    setChoixCompetenceKey(prev => prev + 1)
+                    // Forcer le rechargement pour la modification avec les données localStorage
+                    setModificationKey(prev => prev + 1)
                   }}>
                     {/* Afficher seulement le niveau le plus spécifique */}
                     <span >

@@ -1,14 +1,38 @@
 // back/server.js
+const path = require('path');
+const compression = require('compression');
+const helmet = require('helmet');
 const express = require('express')
 const sqlite3 = require('sqlite3').verbose()
 const cors = require('cors')
 const app = express()
-const PORT = 3001
+const PORT = 3000
 
+app.set('trust proxy', true); // derrière Apache/Nginx
 app.use(cors())
 app.use(express.json())
+app.use(compression())
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store'); 
+  next();
+});
 
-const db = new sqlite3.Database('./competences.db')
+// si DB_PATH est défini → on l'utilise
+// sinon :
+//   - en local (Mac) : ./competences.db dans le dossier du back
+//   - en prod (VM)   : /opt/efe-app/data/competences.db
+const DEFAULT_LOCAL = path.join(__dirname, 'competences.db');
+const DEFAULT_PROD = '/opt/efe-app/data/competences.db';
+
+const DB_PATH = process.env.DB_PATH || (process.env.NODE_ENV === 'production' ? DEFAULT_PROD : DEFAULT_LOCAL);
+
+console.log('Using SQLite DB at:', DB_PATH);
+
+const db = new sqlite3.Database(DB_PATH);
 
 // Fonction pour générer un token unique
 function generateToken() {
@@ -44,8 +68,16 @@ db.serialize(() => {
   competence_code TEXT,
   couleur TEXT,
   date TEXT,
-  prof_id INTEGER
+  prof_id INTEGER,
+  commentaire TEXT
 )`)
+
+    // Ajouter la colonne commentaire si elle n'existe pas (pour les bases existantes)
+    db.run(`ALTER TABLE notes ADD COLUMN commentaire TEXT`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('Erreur lors de l\'ajout de la colonne commentaire:', err.message)
+        }
+    })
 
     db.run(`CREATE TABLE IF NOT EXISTS competences_n3 (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,6 +153,8 @@ app.get('/classes/by-token/:token', (req, res) => {
         });
     });
 });
+
+
 
 // GET : liste des niveau 3 par parent ou toutes si pas de parent_code
 app.get('/competences-n3', (req, res) => {
@@ -224,6 +258,8 @@ app.get('/eleves', (req, res) => {
         query += ' WHERE classe_id = ?'
         params.push(classe_id)
     }
+
+    query += ' ORDER BY nom, prenom'
 
     db.all(query, params, (err, rows) => {
         if (err) return res.status(500).json({ error: err.message })
@@ -715,13 +751,13 @@ app.post('/auth/verify-teacher-token', (req, res) => {
 })
 
 app.post('/notes', (req, res) => {
-    const { eleve_id, competence_code, couleur, date, prof_id } = req.body
+    const { eleve_id, competence_code, couleur, date, prof_id, commentaire } = req.body
     db.run(
-        'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id) VALUES (?, ?, ?, ?, ?)',
-        [eleve_id, competence_code, couleur, date, prof_id],
+        'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire) VALUES (?, ?, ?, ?, ?, ?)',
+        [eleve_id, competence_code, couleur, date, prof_id, commentaire || null],
         function (err) {
             if (err) return res.status(500).json({ error: err.message })
-            res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id })
+            res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire })
         }
     )
 })
@@ -736,15 +772,15 @@ app.get('/notes', (req, res) => {
 // Modifier une note existante
 app.put('/notes/:id', (req, res) => {
     const { id } = req.params
-    const { eleve_id, competence_code, couleur, date, prof_id } = req.body
+    const { eleve_id, competence_code, couleur, date, prof_id, commentaire } = req.body
 
     db.run(
-        'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ? WHERE id = ?',
-        [eleve_id, competence_code, couleur, date, prof_id, id],
+        'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ? WHERE id = ?',
+        [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, id],
         function (err) {
             if (err) return res.status(500).json({ error: err.message })
             if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
-            res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id })
+            res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire })
         }
     )
 })
@@ -1228,8 +1264,53 @@ app.get('/evaluations/export/:classeId', (req, res) => {
     })
 })
 
-app.listen(PORT, () => {
+app.get('/debug/db', (req, res) => res.json({ dbPath: DB_PATH }));
+
+//PARTIE REACT
+const staticDir = path.join(__dirname, 'frontend-dist')
+
+// Headers spéciaux pour index.html (jamais de cache)
+app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  res.setHeader('ETag', Date.now().toString()); // ETag unique
+  res.sendFile(path.join(staticDir, 'index.html'))
+})
+
+// Fichiers statiques (cache court pour éviter les problèmes de proxy)
+app.use(express.static(staticDir, {
+  maxAge: '1h', // Réduit de 30d à 1h
+  index: false,
+  setHeaders: (res, path) => {
+    // Pour les fichiers JS/CSS avec hash, on peut garder un cache plus long
+    if (path.match(/\.(js|css)$/) && path.includes('.')) {
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 jour
+    } else {
+      // Pour tous les autres fichiers, cache minimal
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      res.setHeader('ETag', Date.now().toString());
+    }
+  }
+}))
+
+// SPA fallback : toutes les routes non-API renvoient index.html avec headers anti-cache
+app.get(/^(?!\/api\/).*/, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  res.setHeader('ETag', Date.now().toString());
+  res.sendFile(path.join(staticDir, 'index.html'))
+})
+
+
+
+
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Serveur API disponible sur http://localhost:${PORT}`)
+    console.log(`Serveur API également accessible sur http://192.168.1.109:${PORT}`)
     console.log('En attente de requêtes...')
 })
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { getApiUrl } from '../utils/api'
 
 function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherReferent = false }) {
   const [classesWithCounts, setClassesWithCounts] = useState([])
@@ -14,12 +15,12 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
   useEffect(() => {
     let url = null;
     if (isSuperAdmin) {
-      url = `http://${window.location.hostname}:3001/classes/with-counts`;
+      url = `/classes/with-counts`;
     } else if (isTeacherReferent && teacherInfo && teacherInfo.token) {
-      url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo.token}`;
+      url = `/classes/by-token/${teacherInfo.token}`;
     }
     if (url) {
-      fetch(url)
+  fetch(getApiUrl(url))
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) {
@@ -39,14 +40,14 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
 
   // Chargement des enseignants du même établissement
   useEffect(() => {
-    let url = `http://${window.location.hostname}:3001/enseignants`;
+    let url = `/enseignants`;
     
     // Si c'est un enseignant référent (pas super admin), filtrer par établissement
     if (isTeacherReferent && !isSuperAdmin && teacherInfo && teacherInfo.etablissement) {
-      url = `http://${window.location.hostname}:3001/enseignants?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
+      url = `/enseignants?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
     }
     
-    fetch(url)
+  fetch(getApiUrl(url))
       .then(res => res.json())
       .then(setEnseignants)
       .catch(err => console.error('Erreur lors du chargement des enseignants:', err))
@@ -56,7 +57,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
   useEffect(() => {
     if (classesWithCounts.length > 0) {
       const teachersPromises = classesWithCounts.map(classe => 
-        fetch(`http://${window.location.hostname}:3001/classes/${classe.id}/enseignants`)
+        fetch(getApiUrl(`/classes/${classe.id}/enseignants`))
           .then(res => res.json())
           .then(teachers => ({ classeId: classe.id, teachers }))
           .catch(err => {
@@ -92,16 +93,16 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
         return
       }
     }
-    const res = await fetch(`http://${window.location.hostname}:3001/classes`, {
+    const res = await fetch(getApiUrl(`/classes`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nom: newClasse, idReferent, creatorTeacherId }),
     })
     const data = await res.json()
     // Rafraîchir la liste des classes avec les comptes
-    let url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo?.token}`;
+    let url = `getApiUrl(/classes/by-token/${teacherInfo?.token})`;
     if (isSuperAdmin) {
-      url = `http://${window.location.hostname}:3001/classes/with-counts`;
+      url = `getApiUrl(/classes/with-counts)`;
     }
     fetch(url)
       .then(res => res.json())
@@ -128,16 +129,16 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     const currentClasse = classesWithCounts.find(c => c.id === editingClasseId)
     const idReferent = currentClasse ? currentClasse.idReferent : null
     
-    const res = await fetch(`http://${window.location.hostname}:3001/classes/${editingClasseId}`, {
+    const res = await fetch(getApiUrl(`/classes/${editingClasseId}`), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nom: editingClasseNom, idReferent }),
     })
     const updated = await res.json()
     // Rafraîchir la liste des classes avec les comptes
-    let url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo?.token}`;
+    let url = `/classes/by-token/${teacherInfo?.token}`;
     if (isSuperAdmin) {
-      url = `http://${window.location.hostname}:3001/classes/with-counts`;
+      url = `/classes/with-counts`;
     }
     fetch(url)
       .then(res => res.json())
@@ -162,7 +163,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     if (!selectedTeacherId || !assigningTeacher) return
 
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/classes/${assigningTeacher}/assign-teacher`, {
+      const res = await fetch(getApiUrl(`/classes/${assigningTeacher}/assign-teacher`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teacherId: selectedTeacherId }),
@@ -171,9 +172,9 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
       if (res.ok) {
         alert('Professeur assigné à la classe avec succès !')
         // Rafraîchir la liste des classes
-        let url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo?.token}`;
+        let url = `/classes/by-token/${teacherInfo?.token}`;
         if (isSuperAdmin) {
-          url = `http://${window.location.hostname}:3001/classes/with-counts`;
+          url = `/classes/with-counts`;
         }
         fetch(url)
           .then(res => res.json())
@@ -193,7 +194,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
         setSelectedTeacherId('')
         
         // Recharger les enseignants assignés
-        fetch(`http://${window.location.hostname}:3001/classes/${assigningTeacher}/enseignants`)
+        fetch(getApiUrl(`/classes/${assigningTeacher}/enseignants`))
           .then(res => res.json())
           .then(teachers => {
             setClassTeachers(prev => ({
@@ -216,7 +217,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette classe ?')) return
     
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/classes/${id}`, {
+      const res = await fetch(getApiUrl(`/classes/${id}`), {
         method: 'DELETE',
       })
       
@@ -224,9 +225,9 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
         const data = await res.json()
         alert(data.message || 'Classe supprimée !')
         // Rafraîchir la liste
-        let url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo?.token}`;
+        let url = `/classes/by-token/${teacherInfo?.token}`;
         if (isSuperAdmin) {
-          url = `http://${window.location.hostname}:3001/classes/with-counts`;
+          url = `/classes/with-counts`;
         }
         fetch(url)
           .then(res => res.json())
@@ -248,7 +249,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
         )
         
         if (forceDelete) {
-          const forceRes = await fetch(`http://${window.location.hostname}:3001/classes/${id}?forceDelete=true`, {
+          const forceRes = await fetch(getApiUrl(`/classes/${id}?forceDelete=true`), {
             method: 'DELETE',
           })
           
@@ -256,11 +257,11 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
             const forceData = await forceRes.json()
             alert(`✅ ${forceData.message}`)
             // Rafraîchir la liste
-            let url = `http://${window.location.hostname}:3001/classes/by-token/${teacherInfo?.token}`;
+            let url = `/classes/by-token/${teacherInfo?.token}`;
             if (isSuperAdmin) {
-              url = `http://${window.location.hostname}:3001/classes/with-counts`;
+              url = `/classes/with-counts`;
             }
-            fetch(url)
+            fetch(getApiUrl(url))
               .then(res => res.json())
               .then(data => {
                 if (Array.isArray(data)) {

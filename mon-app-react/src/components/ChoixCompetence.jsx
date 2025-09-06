@@ -1,11 +1,23 @@
 import { useState, useEffect } from 'react'
+import { getApiUrl } from '../utils/api'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import '../App.css'
 
-function ChoixCompetence({ onChoixFinal, isStudentMode = false, isTeacherMode = false, teacherInfo = null }) {
-  const [niveau1, setNiveau1] = useState('')
-  const [niveau2, setNiveau2] = useState('')
-  const [niveau3, setNiveau3] = useState('')
+function ChoixCompetence({ onChoixFinal, isStudentMode = false, isTeacherMode = false, teacherInfo = null, isModifying = false }) {
+  // Initialiser directement avec les données localStorage pour éviter le passage par le bilan
+  const getInitialValue = (key) => {
+    if (isStudentMode) return ''
+    const saved = localStorage.getItem('choix_competence')
+    if (saved) {
+      const data = JSON.parse(saved)
+      return data[key] || ''
+    }
+    return ''
+  }
+
+  const [niveau1, setNiveau1] = useState(() => getInitialValue('niveau1'))
+  const [niveau2, setNiveau2] = useState(() => getInitialValue('niveau2'))
+  const [niveau3, setNiveau3] = useState(() => getInitialValue('niveau3'))
   const [niveau3Texte, setNiveau3Texte] = useState('')
   const [niveau3EnBase, setNiveau3EnBase] = useState([])
   const [showModal, setShowModal] = useState(false)
@@ -13,39 +25,21 @@ function ChoixCompetence({ onChoixFinal, isStudentMode = false, isTeacherMode = 
   const OPTION_AJOUTER = '__ajouter__'
 
   useEffect(() => {
-    // En mode élève, ne pas charger les données du localStorage
-    if (!isStudentMode && !isTeacherMode) {
-      const saved = localStorage.getItem('choix_competence')
-      if (saved) {
-        const { niveau1, niveau2, niveau3 } = JSON.parse(saved)
-        setNiveau1(niveau1)
-        setNiveau2(niveau2 || '')
-        setNiveau3(niveau3 || '')
-      } else {
-        // Si aucune sauvegarde, réinitialiser complètement
-        setNiveau1('')
-        setNiveau2('')
-        setNiveau3('')
-        setNiveau3Texte('')
-        setNiveau3EnBase([])
-      }
-      
-      // Marquer qu'on vient de charger la page (nouvelle évaluation)
+    console.log('ChoixCompetence useEffect - isModifying:', isModifying, 'isStudentMode:', isStudentMode, 'isTeacherMode:', isTeacherMode)
+    
+    // En mode modification, les données sont déjà chargées via l'initialisation
+    // Ne pas marquer comme nouvelle évaluation en mode modification
+    if (!isModifying && !isStudentMode) {
       localStorage.setItem('mode_evaluation', 'nouvelle')
-    } else {
-      // En mode élève ou enseignant, réinitialiser complètement
-      setNiveau1('')
-      setNiveau2('')
-      setNiveau3('')
-      setNiveau3Texte('')
-      setNiveau3EnBase([])
     }
-  }, [isStudentMode, isTeacherMode])
+    
+    console.log('États actuels après initialisation:', { niveau1, niveau2, niveau3 })
+  }, [isStudentMode, isTeacherMode, isModifying, niveau1, niveau2, niveau3])
 
 useEffect(() => {
   if (niveau2) {
     // 1. Charger les compétences N3 de la base de données avec filtrage par mode choice
-    let url = `http://${window.location.hostname}:3001/competences-n3?parent_code=${niveau2}`
+    let url = `/competences-n3?parent_code=${niveau2}`
     
     // Si on a les infos enseignant et qu'on est en mode enseignant, utiliser le mode choice
     if (isTeacherMode && teacherInfo && teacherInfo.id) {
@@ -58,7 +52,7 @@ useEffect(() => {
       }
     }
     
-    fetch(url)
+    fetch(getApiUrl(url))
       .then(res => res.json())
       .then(competencesN3BDD => {
         
@@ -123,7 +117,7 @@ useEffect(() => {
       enseignant_id: teacherInfo?.id || null
     }
 
-    const res = await fetch(`http://${window.location.hostname}:3001/competences-n3`, {
+    const res = await fetch(getApiUrl(`/competences-n3`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(competenceData),
@@ -154,8 +148,8 @@ useEffect(() => {
     // Si aucun niveau1 n'est sélectionné, passer en mode vue d'ensemble
     if (!niveau1) {
       const selection = null
-      // Ne sauvegarder que si on n'est pas en mode élève ou enseignant
-      if (!isStudentMode && !isTeacherMode) {
+      // Sauvegarder sauf en mode élève
+      if (!isStudentMode) {
         localStorage.setItem('choix_competence', JSON.stringify({ niveau1: '', niveau2: '', niveau3: '' }))
         localStorage.setItem('mode_evaluation', 'nouvelle')
       }
@@ -179,8 +173,8 @@ useEffect(() => {
     // Définir le mode selon le changement
     const mode = competenceAChange ? 'nouvelle' : 'edition'
     
-    // Ne sauvegarder que si on n'est pas en mode élève ou enseignant
-    if (!isStudentMode && !isTeacherMode) {
+    // Sauvegarder sauf en mode élève (les enseignants peuvent sauvegarder)
+    if (!isStudentMode) {
       localStorage.setItem('choix_competence', JSON.stringify(nouvelleSelection))
       localStorage.setItem('mode_evaluation', mode)
     }

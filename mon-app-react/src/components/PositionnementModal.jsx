@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { getApiUrl } from '../utils/api'
 import './PositionnementModal.css'
 
 const PositionnementModal = ({ 
