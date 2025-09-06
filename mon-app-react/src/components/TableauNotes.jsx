@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import './TableauNotes.css'
 import ColorPickerModal from './ColorPickerModal'
 import PositionnementModal from './PositionnementModal'
@@ -127,14 +127,12 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         // Charger les enseignants (nécessaire dans tous les modes pour afficher les noms dans les détails de note)
         fetch(getApiUrl(`/enseignants`))
             .then(res => {
-                console.log('Réponse enseignants status:', res.status)
                 if (!res.ok) {
                     throw new Error(`HTTP error! status: ${res.status}`)
                 }
                 return res.json()
             })
             .then(data => {
-                console.log('Enseignants chargés avec succès:', data)
                 setEnseignants(data)
             })
             .catch(error => {
@@ -353,32 +351,62 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         return derniereEvaluation?.commentaire || ''
     }
 
-    // Fonction pour calculer la note de progression basée sur le nombre d'évaluations
-    const calculerNoteProgression = (eleveId, codeCompetenceN1) => {
-        // Compter les notes de l'élève pour ce bloc
-        const notesEleve = notes.filter(note => 
-            note.eleve_id === eleveId && 
-            note.competence_code && 
-            note.competence_code.startsWith(codeCompetenceN1)
-        ).length
+    // Fonction pour calculer la note de progression basée sur le nombre de pastilles
+    const calculerNoteProgression = (eleveId, numeroBloc) => {
+        // Obtenir les compétences du bloc
+        const competencesBloc = competencesParBloc[numeroBloc] || []
+        const codesCompetencesBloc = competencesBloc.map(comp => comp.code)
 
-        // Compter les notes de tous les élèves pour ce bloc pour trouver le maximum
-        const notesParEleve = {}
+        // Obtenir toutes les notes de cet élève pour ce bloc
+        const notesEleveBloc = notes.filter(note => {
+            if (note.eleve_id !== eleveId) return false
+            if (!note.competence_code) return false
+            
+            // Vérifier si cette évaluation appartient à CE bloc
+            // Bidirectionnel : C04 appartient au bloc C04.1, et C04.1 appartient au bloc C04
+            return codesCompetencesBloc.some(code => 
+                note.competence_code.startsWith(code) || code.startsWith(note.competence_code)
+            )
+        })
+
+        // Compter simplement le nombre d'évaluations individuelles (chaque évaluation = 1 pastille)
+        const pastillesEleve = notesEleveBloc.length
+
+
+
+        // Créer une liste des IDs des élèves de cette classe seulement
+        const elevesClasseIds = eleves.map(eleve => eleve.id)
+        
+        // Compter les pastilles SEULEMENT des élèves de cette classe POUR CE BLOC SEULEMENT
+        const pastillesParEleveCeBloc = {}
         notes.forEach(note => {
-            if (note.competence_code && note.competence_code.startsWith(codeCompetenceN1)) {
-                if (!notesParEleve[note.eleve_id]) {
-                    notesParEleve[note.eleve_id] = 0
+            if (!note.competence_code) return
+            
+            // CRUCIAL: Vérifier que cet élève appartient à la classe actuelle
+            if (!elevesClasseIds.includes(note.eleve_id)) return
+            
+            // Vérifier si cette note appartient à CE bloc
+            // Bidirectionnel : C04 appartient au bloc C04.1, et C04.1 appartient au bloc C04
+            const matchCeBloc = codesCompetencesBloc.some(code => 
+                note.competence_code.startsWith(code) || code.startsWith(note.competence_code)
+            )
+            if (matchCeBloc) {
+                if (!pastillesParEleveCeBloc[note.eleve_id]) {
+                    pastillesParEleveCeBloc[note.eleve_id] = 0
                 }
-                notesParEleve[note.eleve_id]++
+                pastillesParEleveCeBloc[note.eleve_id]++
             }
         })
 
-        const nombreMaxNotes = Math.max(...Object.values(notesParEleve), 0)
+        // Trouver le maximum pour CE bloc seulement
+        const nombreMaxPastillesCeBloc = Math.max(...Object.values(pastillesParEleveCeBloc), 1)
+
         
-        if (nombreMaxNotes === 0) return 0
+        // Calculer la note de progression sur 20 par rapport au meilleur DE CE BLOC
+        const note = (pastillesEleve / nombreMaxPastillesCeBloc) * 20
+        const noteFinale = Math.round(note * 10) / 10
         
-        // Calculer la note de progression sur 20
-        return Math.round((notesEleve / nombreMaxNotes) * 20)
+        return noteFinale
     }
 
     // Fonction pour obtenir la couleur de la dernière évaluation directe
@@ -1371,6 +1399,9 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         return parBloc
     }
 
+    // Organisation des compétences par bloc pour utilisation globale
+    const competencesParBloc = useMemo(() => organiserParBloc(competencesN1N2), [])
+
     // Fonction pour obtenir le nom du bloc
     const getNomBloc = (numeroBloc) => {
         switch (numeroBloc) {
@@ -1977,31 +2008,52 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                         <span>🏆 BILAN {getNomBloc(parseInt(numeroBloc))}</span>
 
                                                     </div>
-                                                    <div
-                                                        style={{
-                                                            display: 'inline-block',
-                                                            
-                                                            padding: '2px',
-                                                            borderRadius: '50%',
-                                                            backgroundColor: getCouleurCss(bilanBloc.couleur),
-                                                            border: `3px solid white`,
-                                                            cursor: 'pointer',
-                                                            color: 'white',
-                                                            fontSize: '14px',
-                                                            fontWeight: 'bold',
-                                                            paddingTop: '6px'
-                                                        }}
-
-                                                        title={`Positionnement bloc: ${bilanBloc.couleur} (${(bilanBloc.moyenne * 20 / 3).toFixed(1)}/20) - Progression: ${calculerNoteProgression(eleve.id, competenceN1.code)}/20`}
-                                                    >
-                                                        {(bilanBloc.moyenne * 20 / 3).toFixed(1)}
-                                                        <span style={{ 
-                                                            fontSize: '12px', 
-                                                            marginLeft: '4px',
-                                                            opacity: 0.9 
-                                                        }}>
-                                                            P{calculerNoteProgression(eleve.id, competenceN1.code)}
-                                                        </span>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        {/* Pastille note principale */}
+                                                        <div
+                                                            style={{
+                                                                display: 'inline-block',
+                                                                width: '35px',
+                                                                height: '35px',
+                                                                padding: '2px',
+                                                                borderRadius: '50%',
+                                                                backgroundColor: getCouleurCss(bilanBloc.couleur),
+                                                                border: `3px solid white`,
+                                                                cursor: 'pointer',
+                                                                color: 'white',
+                                                                fontSize: '13px',
+                                                                fontWeight: 'bold',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center'
+                                                            }}
+                                                            title={`Positionnement bloc: ${bilanBloc.couleur} (${(bilanBloc.moyenne * 20 / 3).toFixed(1)}/20)`}
+                                                        >
+                                                            {(bilanBloc.moyenne * 20 / 3).toFixed(1)}
+                                                        </div>
+                                                        
+                                                        {/* Pastille note de progression */}
+                                                        <div
+                                                            style={{
+                                                                display: 'inline-block',
+                                                                width: '35px',
+                                                                height: '35px',
+                                                                padding: '2px',
+                                                                borderRadius: '50%',
+                                                                backgroundColor: '#6c757d',
+                                                                border: `3px solid white`,
+                                                                cursor: 'pointer',
+                                                                color: 'white',
+                                                                fontSize: '13px',
+                                                                fontWeight: 'bold',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center'
+                                                            }}
+                                                            title={`Note de progression: ${calculerNoteProgression(eleve.id, numeroBloc)}/20 (basée sur les pastilles par rapport au meilleur)`}
+                                                        >
+                                                            {calculerNoteProgression(eleve.id, numeroBloc)}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             )

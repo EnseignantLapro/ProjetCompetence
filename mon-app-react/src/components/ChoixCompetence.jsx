@@ -25,7 +25,7 @@ function ChoixCompetence({ onChoixFinal, isStudentMode = false, isTeacherMode = 
   const OPTION_AJOUTER = '__ajouter__'
 
   useEffect(() => {
-    console.log('ChoixCompetence useEffect - isModifying:', isModifying, 'isStudentMode:', isStudentMode, 'isTeacherMode:', isTeacherMode)
+   // console.log('ChoixCompetence useEffect - isModifying:', isModifying, 'isStudentMode:', isStudentMode, 'isTeacherMode:', isTeacherMode)
     
     // En mode modification, les données sont déjà chargées via l'initialisation
     // Ne pas marquer comme nouvelle évaluation en mode modification
@@ -33,7 +33,7 @@ function ChoixCompetence({ onChoixFinal, isStudentMode = false, isTeacherMode = 
       localStorage.setItem('mode_evaluation', 'nouvelle')
     }
     
-    console.log('États actuels après initialisation:', { niveau1, niveau2, niveau3 })
+   // console.log('États actuels après initialisation:', { niveau1, niveau2, niveau3 })
   }, [isStudentMode, isTeacherMode, isModifying, niveau1, niveau2, niveau3])
 
 useEffect(() => {
