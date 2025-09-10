@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { getApiUrl } from '../utils/api'
+import { apiFetch } from '../utils/api'
 
 function AdminImport({ classeChoisie, getClasseName }) {
   const [csvFile, setCsvFile] = useState(null)
@@ -31,7 +31,7 @@ function AdminImport({ classeChoisie, getClasseName }) {
           }
 
           try {
-            const response = await fetch(getApiUrl(`/eleves`), {
+            const response = await apiFetch(`/eleves`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({

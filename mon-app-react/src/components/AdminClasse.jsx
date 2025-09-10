@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { getApiUrl } from '../utils/api'
+import { getApiUrl, apiFetch } from '../utils/api'
 
 function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherReferent = false }) {
   const [classesWithCounts, setClassesWithCounts] = useState([])
@@ -20,7 +20,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
       url = `/classes/by-token/${teacherInfo.token}`;
     }
     if (url) {
-  fetch(getApiUrl(url))
+  apiFetch(url)
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) {
@@ -36,7 +36,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     } else {
       setClassesWithCounts([])
     }
-  }, [isSuperAdmin, isTeacherReferent, teacherInfo])
+  }, [isSuperAdmin, isTeacherReferent, teacherInfo?.token, teacherInfo?.id]) // ✅ Propriétés spécifiques
 
   // Chargement des enseignants du même établissement
   useEffect(() => {
@@ -47,17 +47,17 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
       url = `/enseignants?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
     }
     
-  fetch(getApiUrl(url))
+  apiFetch(url)
       .then(res => res.json())
       .then(setEnseignants)
       .catch(err => console.error('Erreur lors du chargement des enseignants:', err))
-  }, [isSuperAdmin, isTeacherReferent, teacherInfo])
+  }, [isSuperAdmin, isTeacherReferent, teacherInfo?.etablissement]) // ✅ Propriété spécifique
 
   // Charger les enseignants assignés pour chaque classe
   useEffect(() => {
     if (classesWithCounts.length > 0) {
       const teachersPromises = classesWithCounts.map(classe => 
-        fetch(getApiUrl(`/classes/${classe.id}/enseignants`))
+        apiFetch(`/classes/${classe.id}/enseignants`)
           .then(res => res.json())
           .then(teachers => ({ classeId: classe.id, teachers }))
           .catch(err => {
@@ -74,7 +74,28 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
         setClassTeachers(teachersByClass)
       })
     }
-  }, [classesWithCounts])
+  }, [])
+
+  // Fonction pour recharger les classes
+  const rechargerClasses = () => {
+    let url = `/classes/by-token/${teacherInfo?.token}`;
+    if (isSuperAdmin) {
+      url = `/classes/with-counts`;
+    }
+    apiFetch(url)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setClassesWithCounts(data)
+        } else {
+          setClassesWithCounts([])
+        }
+      })
+      .catch(err => {
+        setClassesWithCounts([])
+        console.error('Erreur lors du chargement des classes:', err)
+      })
+  }
 
   // Ajout classe
   const ajouterClasse = async () => {
@@ -93,30 +114,14 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
         return
       }
     }
-    const res = await fetch(getApiUrl(`/classes`), {
+    const res = await apiFetch(`/classes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nom: newClasse, idReferent, creatorTeacherId }),
     })
     const data = await res.json()
     // Rafraîchir la liste des classes avec les comptes
-    let url = `getApiUrl(/classes/by-token/${teacherInfo?.token})`;
-    if (isSuperAdmin) {
-      url = `getApiUrl(/classes/with-counts)`;
-    }
-    fetch(url)
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setClassesWithCounts(data)
-        } else {
-          setClassesWithCounts([])
-        }
-      })
-      .catch(err => {
-        setClassesWithCounts([])
-        console.error('Erreur lors du chargement des classes:', err)
-      })
+    rechargerClasses()
     setNewClasse('')
     alert('Classe ajoutée ! Rechargez la page pour voir les changements dans le menu principal.')
   }
@@ -129,30 +134,14 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     const currentClasse = classesWithCounts.find(c => c.id === editingClasseId)
     const idReferent = currentClasse ? currentClasse.idReferent : null
     
-    const res = await fetch(getApiUrl(`/classes/${editingClasseId}`), {
+    const res = await apiFetch(`/classes/${editingClasseId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nom: editingClasseNom, idReferent }),
     })
     const updated = await res.json()
     // Rafraîchir la liste des classes avec les comptes
-    let url = `/classes/by-token/${teacherInfo?.token}`;
-    if (isSuperAdmin) {
-      url = `/classes/with-counts`;
-    }
-    fetch(url)
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setClassesWithCounts(data)
-        } else {
-          setClassesWithCounts([])
-        }
-      })
-      .catch(err => {
-        setClassesWithCounts([])
-        console.error('Erreur lors du chargement des classes:', err)
-      })
+    rechargerClasses()
     setEditingClasseId(null)
     setEditingClasseNom('')
     alert('Classe modifiée ! Rechargez la page pour voir les changements dans le menu principal.')
@@ -163,7 +152,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     if (!selectedTeacherId || !assigningTeacher) return
 
     try {
-      const res = await fetch(getApiUrl(`/classes/${assigningTeacher}/assign-teacher`), {
+      const res = await apiFetch(`/classes/${assigningTeacher}/assign-teacher`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teacherId: selectedTeacherId }),
@@ -172,29 +161,13 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
       if (res.ok) {
         alert('Professeur assigné à la classe avec succès !')
         // Rafraîchir la liste des classes
-        let url = `/classes/by-token/${teacherInfo?.token}`;
-        if (isSuperAdmin) {
-          url = `/classes/with-counts`;
-        }
-        fetch(url)
-          .then(res => res.json())
-          .then(data => {
-            if (Array.isArray(data)) {
-              setClassesWithCounts(data)
-            } else {
-              setClassesWithCounts([])
-            }
-          })
-          .catch(err => {
-            setClassesWithCounts([])
-            console.error('Erreur lors du chargement des classes:', err)
-          })
+        rechargerClasses()
         
         setAssigningTeacher(null)
         setSelectedTeacherId('')
         
         // Recharger les enseignants assignés
-        fetch(getApiUrl(`/classes/${assigningTeacher}/enseignants`))
+        apiFetch(`/classes/${assigningTeacher}/enseignants`)
           .then(res => res.json())
           .then(teachers => {
             setClassTeachers(prev => ({
@@ -217,7 +190,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette classe ?')) return
     
     try {
-      const res = await fetch(getApiUrl(`/classes/${id}`), {
+      const res = await apiFetch(`/classes/${id}`, {
         method: 'DELETE',
       })
       
@@ -225,19 +198,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
         const data = await res.json()
         alert(data.message || 'Classe supprimée !')
         // Rafraîchir la liste
-        let url = `/classes/by-token/${teacherInfo?.token}`;
-        if (isSuperAdmin) {
-          url = `/classes/with-counts`;
-        }
-        fetch(url)
-          .then(res => res.json())
-          .then(data => {
-            if (Array.isArray(data)) {
-              setClassesWithCounts(data)
-            } else {
-              setClassesWithCounts([])
-            }
-          })
+        rechargerClasses()
           .catch(err => {
             setClassesWithCounts([])
             console.error('Erreur lors du chargement des classes:', err)
@@ -249,7 +210,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
         )
         
         if (forceDelete) {
-          const forceRes = await fetch(getApiUrl(`/classes/${id}?forceDelete=true`), {
+          const forceRes = await apiFetch(`/classes/${id}?forceDelete=true`, {
             method: 'DELETE',
           })
           
@@ -257,23 +218,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
             const forceData = await forceRes.json()
             alert(`✅ ${forceData.message}`)
             // Rafraîchir la liste
-            let url = `/classes/by-token/${teacherInfo?.token}`;
-            if (isSuperAdmin) {
-              url = `/classes/with-counts`;
-            }
-            fetch(getApiUrl(url))
-              .then(res => res.json())
-              .then(data => {
-                if (Array.isArray(data)) {
-                  setClassesWithCounts(data)
-                } else {
-                  setClassesWithCounts([])
-                }
-              })
-              .catch(err => {
-                setClassesWithCounts([])
-                console.error('Erreur lors du chargement des classes:', err)
-              })
+            rechargerClasses()
           } else {
             alert('Erreur lors de la suppression forcée')
           }

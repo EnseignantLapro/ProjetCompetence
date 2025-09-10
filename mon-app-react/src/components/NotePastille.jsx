@@ -6,21 +6,23 @@ const couleurMap = {
   vert: '#43a047',     // Maîtrisé
 }
 
-function NotePastille({ note, onClick }) {
+function NotePastille({ note, onClick, tooltip, size = 'normal' }) {
+  
+  const dimensions = size === 'small' ? { width: '12px', height: '12px' } : { width: '20px', height: '20px' }
   
   const style = {
     backgroundColor: couleurMap[note.couleur],
     borderRadius: '50%',
-    width: '20px',
-    height: '20px',
+    ...dimensions,
     display: 'inline-block',
     margin: '2px',
     cursor: 'pointer',
+    border: '1px solid #333',
   }
   
   return <div 
     style={style} 
-    title={note.competence_code} 
+    title={tooltip || note.competence_code} 
     onClick={() => onClick(note)}
   />
 }

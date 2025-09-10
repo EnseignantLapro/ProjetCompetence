@@ -1,5 +1,5 @@
 import './ColorPickerModal.css'
-import { getApiUrl } from '../utils/api'
+import { apiFetch } from '../utils/api'
 import { useState } from 'react'
 
 const couleurs = [
@@ -22,7 +22,7 @@ function ColorPickerModal({ eleve, competenceCode, onClose, ajouterNote, teacher
     commentaire: commentaire.trim() || null
   }
 
-  const res = await fetch(getApiUrl(`/notes`), {
+  const res = await apiFetch(`/notes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(note)

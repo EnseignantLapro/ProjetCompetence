@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { getApiUrl } from '../utils/api'
+import { apiFetch } from '../utils/api'
 import AdminEleve from './AdminEleve'
 import AdminCompetence from './AdminCompetence'
 import AdminClasse from './AdminClasse'

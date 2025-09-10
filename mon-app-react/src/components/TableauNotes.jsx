@@ -4,7 +4,7 @@ import ColorPickerModal from './ColorPickerModal'
 import PositionnementModal from './PositionnementModal'
 import NotePastille from './NotePastille'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
-import { getApiUrl } from '../utils/api'
+import { apiFetch } from '../utils/api'
 
 function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false }) {
     const [eleves, setEleves] = useState([])
@@ -21,7 +21,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
     const [competencePositionnement, setCompetencePositionnement] = useState(null)
 
     // État pour gérer les blocs fermés/ouverts (par défaut fermés en mode enseignant normal, ouverts en mode élève et enseignant connecté)
-    const [blocsFermes, setBlocsFermes] = useState((isStudentMode || isTeacherMode) ? new Set() : new Set([1, 2, 3]))
+    const [blocsFermes, setBlocsFermes] = useState(isStudentMode ? new Set() : new Set([1, 2, 3]))
 
     // État pour gérer l'affichage du tableau en mode filtré (visible par défaut en mode élève et enseignant connecté)
     const [tableauVisible, setTableauVisible] = useState(isStudentMode || isTeacherMode)
@@ -42,6 +42,9 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
     const [enseignants, setEnseignants] = useState([])
     const [competenceModalCode, setCompetenceModalCode] = useState(null)
     const [commentairesEleves, setCommentairesEleves] = useState({}) // Format: {eleveId-competenceCode: commentaire}
+    const [isEditingNote, setIsEditingNote] = useState(false)
+    const [editingNoteData, setEditingNoteData] = useState({ couleur: '', commentaire: '' })
+    const [editError, setEditError] = useState('')
 
     useEffect(() => {
         // Ne pas charger tant que l'app n'est pas initialisée
@@ -49,20 +52,30 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         
         const idClasse = classeChoisie
         
-        // En mode élève, charger seulement l'élève connecté
+        // En mode élève, charger tous les élèves de la classe pour la comparaison des notes de progression
+        // mais on n'affichera que l'élève connecté
         if (isStudentMode && studentInfo) {
-            setEleves([studentInfo])
-            // Charger les notes de cet élève seulement
-            fetch(getApiUrl(`/notes`))
+            // Charger tous les élèves de la classe de l'étudiant connecté
+            apiFetch(`/eleves?classe_id=${studentInfo.classe_id}`)
+                .then(res => res.json())
+                .then(allStudents => {
+                    // Garder tous les élèves pour les calculs de comparaison
+                    setEleves(allStudents)
+                })
+            
+            // Charger toutes les notes de la classe pour permettre la comparaison
+            apiFetch(`/notes`)
                 .then(res => res.json())
                 .then(allNotes => {
-                    // Filtrer les notes pour cet élève uniquement
-                    const studentNotes = allNotes.filter(note => note.eleve_id === studentInfo.id)
-                    setNotes(studentNotes)
+                    // Filtrer les notes pour tous les élèves de cette classe
+                    const classNotes = allNotes.filter(note => 
+                        allNotes.some(n => n.eleve_id === studentInfo.id) // Au moins une note de l'élève connecté
+                    )
+                    setNotes(allNotes) // Garder toutes les notes pour les calculs
                 })
             
             // Charger les positionnements de cet élève seulement
-            fetch(getApiUrl(`/positionnements?eleve_id=${studentInfo.id}`))
+            apiFetch(`/positionnements?eleve_id=${studentInfo.id}`)
                 .then(res => res.json())
                 .then(setPositionnementsEnseignant)
         } else if (isStudentMode && !studentInfo) {
@@ -73,59 +86,70 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         } else {
             // Mode normal (enseignant)
             if (!idClasse) {
-                fetch(getApiUrl(`/eleves`))
+                apiFetch(`/eleves`)
                     .then(res => res.json())
                     .then(setEleves)
                 return
             }
 
-            fetch(getApiUrl(`/eleves?classe_id=${idClasse}`))
+            apiFetch(`/eleves?classe_id=${idClasse}`)
                 .then(res => res.json())
                 .then(setEleves)
-            fetch(getApiUrl(`/notes`)).then(res => res.json()).then(setNotes)
-            fetch(getApiUrl(`/positionnements`)).then(res => res.json()).then(setPositionnementsEnseignant)
+            apiFetch(`/notes`).then(res => res.json()).then(setNotes)
+            apiFetch(`/positionnements`).then(res => res.json()).then(setPositionnementsEnseignant)
         }
         
         // Charger les competences N3 de la BDD + les tâches professionnelles (commun aux deux modes)
-        fetch(getApiUrl(`/competences-n3`))
+        // En mode vue d'ensemble : charger toutes les compétences N3
+        // En mode compétence spécifique : charger seulement celles du parent sélectionné
+        const competenceN3Url = competenceChoisie?.niveau2 
+            ? `/competences-n3?parent_code=${competenceChoisie.niveau2}`
+            : `/competences-n3` // Charger toutes les compétences N3 en mode vue d'ensemble
+            
+        apiFetch(competenceN3Url)
             .then(res => res.json())
             .then(competencesBDD => {
-                // Ajouter toutes les tâches professionnelles comme compétences N3
-                const tachesN3 = []
-                
-                // Pour chaque compétence N2, ajouter les tâches compatibles
-                competencesN1N2.forEach(compN1 => {
-                    compN1.enfants.forEach(compN2 => {
-                        // Filtrer les tâches professionnelles compatibles avec cette N1
-                        const tachesCompatibles = tachesProfessionelles.filter(tache => 
-                            tache.competences.includes(compN1.code)
-                        )
-                        
-                        // Ajouter chaque tâche associée
-                        tachesCompatibles.forEach(tacheProf => {
-                            tacheProf.TacheAssociees.forEach(tache => {
-                                tachesN3.push({
-                                    code: `${compN2.code}.${tacheProf.code}.${tache.code}`,
-                                    nom: `${tacheProf.nom} — ${tache.nom}`,
-                                    parent_code: compN2.code,
-                                    source: 'fichier'
+                console.log(`📚 Compétences N3 chargées:`, {
+                    mode: competenceChoisie?.niveau2 ? 'spécifique' : 'vue d\'ensemble',
+                    parent_code: competenceChoisie?.niveau2,
+                    nombre: competencesBDD.length
+                });
+                    // Ajouter toutes les tâches professionnelles comme compétences N3
+                    const tachesN3 = []
+                    
+                    // Pour chaque compétence N2, ajouter les tâches compatibles
+                    competencesN1N2.forEach(compN1 => {
+                        compN1.enfants.forEach(compN2 => {
+                            // Filtrer les tâches professionnelles compatibles avec cette N1
+                            const tachesCompatibles = tachesProfessionelles.filter(tache => 
+                                tache.competences.includes(compN1.code)
+                            )
+                            
+                            // Ajouter chaque tâche associée
+                            tachesCompatibles.forEach(tacheProf => {
+                                tacheProf.TacheAssociees.forEach(tache => {
+                                    tachesN3.push({
+                                        code: `${compN2.code}.${tacheProf.code}.${tache.code}`,
+                                        nom: `${tacheProf.nom} — ${tache.nom}`,
+                                        parent_code: compN2.code,
+                                        source: 'fichier'
+                                    })
                                 })
                             })
                         })
                     })
+                    
+                    // Combiner BDD + tâches professionnelles
+                    const toutesCompetencesN3 = [
+                        ...competencesBDD.map(comp => ({ ...comp, source: 'bdd' })),
+                        ...tachesN3
+                    ]
+                    
+                    setCompetencesN3(toutesCompetencesN3)
                 })
-                
-                // Combiner BDD + tâches professionnelles
-                const toutesCompetencesN3 = [
-                    ...competencesBDD.map(comp => ({ ...comp, source: 'bdd' })),
-                    ...tachesN3
-                ]
-                
-                setCompetencesN3(toutesCompetencesN3)
-            })
         
         // Charger les enseignants (nécessaire dans tous les modes pour afficher les noms dans les détails de note)
-        fetch(getApiUrl(`/enseignants`))
+        apiFetch(`/enseignants`)
             .then(res => {
                 if (!res.ok) {
                     throw new Error(`HTTP error! status: ${res.status}`)
@@ -139,7 +163,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                 console.error('Erreur lors du chargement des enseignants:', error)
                 setEnseignants([]) // Assurer qu'on a un tableau vide en cas d'erreur
             })
-    }, [classeChoisie, isStudentMode, studentInfo, appInitialized])
+    }, [classeChoisie, isStudentMode, studentInfo, appInitialized, competenceChoisie])
 
     // Initialiser les commentaires des élèves avec les valeurs existantes
     useEffect(() => {
@@ -198,18 +222,31 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
     // Fonction pour vérifier si une compétence fait partie de la hiérarchie sélectionnée
     const isCompetenceInHierarchy = (competenceCode) => {
         // Si aucune compétence n'est sélectionnée, on affiche tout
-        if (!codeCompetence) return true
+        if (!codeCompetence) {
+            console.log(`✅ isCompetenceInHierarchy(${competenceCode}): true (aucune compétence sélectionnée)`);
+            return true;
+        }
 
-        if (!competenceCode) return false
+        if (!competenceCode) {
+            console.log(`❌ isCompetenceInHierarchy(${competenceCode}): false (pas de code compétence)`);
+            return false;
+        }
 
         // Si c'est exactement la même compétence
-        if (competenceCode === codeCompetence) return true
+        if (competenceCode === codeCompetence) {
+            console.log(`✅ isCompetenceInHierarchy(${competenceCode}): true (même compétence que ${codeCompetence})`);
+            return true;
+        }
 
         // Si la compétence sélectionnée est un parent de cette compétence
         // Par exemple : sélection "C01" et compétence "C01.1" ou "C01.1.2"
-        if (competenceCode.startsWith(codeCompetence + '.')) return true
+        if (competenceCode.startsWith(codeCompetence + '.')) {
+            console.log(`✅ isCompetenceInHierarchy(${competenceCode}): true (enfant de ${codeCompetence})`);
+            return true;
+        }
 
-        return false
+        console.log(`❌ isCompetenceInHierarchy(${competenceCode}): false (ne correspond pas à ${codeCompetence})`);
+        return false;
     }
 
     // Fonction pour vérifier si le code sélectionné est une compétence N1
@@ -221,11 +258,20 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
 
     // Fonction pour obtenir toutes les notes visibles pour un élève
     const getNotesVisibles = (eleveId) => {
-        return notes.filter(n =>
-            n.eleve_id === eleveId &&
-            n.competence_code &&
-            isCompetenceInHierarchy(n.competence_code)
-        )
+        const notesTotales = notes.filter(n => n.eleve_id === eleveId)
+        const notesAvecCode = notesTotales.filter(n => n.competence_code)
+        const notesFiltrees = notesAvecCode.filter(n => isCompetenceInHierarchy(n.competence_code))
+        
+        console.log(`🔍 getNotesVisibles pour élève ${eleveId}:`, {
+            'notes totales pour cet élève': notesTotales.length,
+            'notes avec code compétence': notesAvecCode.length,
+            'notes après filtre hiérarchie': notesFiltrees.length,
+            'codeCompetence actuel': codeCompetence,
+            'codes des notes': notesAvecCode.map(n => n.competence_code),
+            'exemples de notes': notesTotales.slice(0, 2)
+        });
+        
+        return notesFiltrees
     }
 
     const handleClickEleve = (eleve, competenceCodeSpecifique = null) => {
@@ -282,7 +328,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
             // En mode "nouvelle" : toujours créer une nouvelle évaluation
             if (modeEvaluation === 'edition' && derniereEvaluationDirecte) {
                 // Modifier la dernière évaluation directe existante
-                const response = await fetch(getApiUrl(`/notes/${derniereEvaluationDirecte.id}`), {
+                const response = await apiFetch(`/notes/${derniereEvaluationDirecte.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -299,7 +345,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                     setDernieresEvaluationsDirectes(prev => new Map(prev.set(cleEleveCompetence, evaluationModifiee)))
 
                     // Recharger toutes les notes depuis la base
-                    const notesResponse = await fetch(getApiUrl(`/notes`))
+                    const notesResponse = await apiFetch(`/notes`)
                     const toutesLesNotes = await notesResponse.json()
                     setNotes(toutesLesNotes)
                     
@@ -316,7 +362,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                     commentaire: commentaire.trim() || null
                 }
 
-                const response = await fetch(getApiUrl(`/notes`), {
+                const response = await apiFetch(`/notes`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(nouvelleNote)
@@ -328,7 +374,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                     setDernieresEvaluationsDirectes(prev => new Map(prev.set(cleEleveCompetence, noteAjoutee)))
 
                     // Recharger toutes les notes depuis la base
-                    const notesResponse = await fetch(getApiUrl(`/notes`))
+                    const notesResponse = await apiFetch(`/notes`)
                     const toutesLesNotes = await notesResponse.json()
                     setNotes(toutesLesNotes)
                     
@@ -400,7 +446,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
 
         // Trouver le maximum pour CE bloc seulement
         const nombreMaxPastillesCeBloc = Math.max(...Object.values(pastillesParEleveCeBloc), 1)
-
+        
+    
         
         // Calculer la note de progression sur 20 par rapport au meilleur DE CE BLOC
         const note = (pastillesEleve / nombreMaxPastillesCeBloc) * 20
@@ -416,13 +463,38 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         return derniereEvaluation ? derniereEvaluation.couleur : null
     }
 
+    // Fonction pour créer un tooltip enrichi pour les pastilles
+    const creerTooltipEnrichi = (note) => {
+        // Obtenir les initiales du professeur
+        const prof = enseignants.find(e => e.id === note.prof_id)
+        const initialesProf = prof ? `${prof.prenom?.[0] || ''}${prof.nom?.[0] || ''}` : 'XX'
+        
+        // Obtenir le code de compétence (gérer les deux propriétés possibles)
+        const codeCompetence = note.competence_code || note.competenceCode
+        
+        // Obtenir le libellé de la compétence de plus bas niveau
+        const labelleCompetence = getNomCompetence(codeCompetence)
+        
+        // Construire le tooltip
+        let tooltip = ``
+        if (note.commentaire && note.commentaire.trim()) {
+            tooltip += `Commentaire: ${note.commentaire}\n`
+        }
+        const dateObj = new Date(note.date)
+        const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}/${(dateObj.getMonth()+1).toString().padStart(2, '0')}`
+        tooltip += `Date: ${dateStr} - `
+        tooltip += `Prof: ${initialesProf}\n`
+        tooltip += `Compétence: ${labelleCompetence}\n`
+        return tooltip
+    }
+
     const handleDeleteNote = async (noteId) => {
         if (!confirm('Êtes-vous sûr de vouloir supprimer cette note ?')) {
             return
         }
 
         try {
-            const res = await fetch(getApiUrl(`/notes/${noteId}`), {
+            const res = await apiFetch(`/notes/${noteId}`, {
                 method: 'DELETE'
             })
 
@@ -440,6 +512,63 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         }
     }
 
+    const handleEditNote = () => {
+        setEditingNoteData({
+            couleur: noteDetail.couleur,
+            commentaire: noteDetail.commentaire || ''
+        })
+        setEditError('') // Réinitialiser l'erreur
+        setIsEditingNote(true)
+    }
+
+    const handleCancelEdit = () => {
+        setIsEditingNote(false)
+        setEditingNoteData({ couleur: '', commentaire: '' })
+        setEditError('') // Réinitialiser l'erreur
+        setNoteDetail(null) // Fermer la popup
+    }
+
+    const handleSaveEditedNote = async () => {
+        setEditError('') // Réinitialiser l'erreur avant la tentative
+        
+        try {
+            const res = await apiFetch(`/notes/${noteDetail.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    eleve_id: noteDetail.eleve_id,
+                    competence_code: noteDetail.competence_code,
+                    couleur: editingNoteData.couleur,
+                    date: noteDetail.date,
+                    prof_id: noteDetail.prof_id,
+                    commentaire: editingNoteData.commentaire
+                })
+            })
+
+            if (res.ok) {
+                // Met à jour la note dans l'état local
+                setNotes(prev => prev.map(n => 
+                    n.id === noteDetail.id 
+                        ? { ...n, couleur: editingNoteData.couleur, commentaire: editingNoteData.commentaire }
+                        : n
+                ))
+                
+                // Fermer la popup après sauvegarde réussie
+                setIsEditingNote(false)
+                setEditingNoteData({ couleur: '', commentaire: '' })
+                setNoteDetail(null)
+            } else {
+                const errorData = await res.json().catch(() => ({}))
+                setEditError(errorData.error || 'Erreur lors de la modification de la note')
+            }
+        } catch (error) {
+            console.error('Erreur:', error)
+            setEditError('Erreur de connexion. Veuillez réessayer.')
+        }
+    }
+
     // Fonctions pour le positionnement enseignant
     const handleClickPositionnement = (eleve, competenceCode) => {
         setElevePositionnement(eleve)
@@ -451,7 +580,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         if (!elevePositionnement || !competencePositionnement) return
 
         try {
-            const response = await fetch(getApiUrl(`/positionnements`), {
+            const response = await apiFetch(`/positionnements`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -466,7 +595,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
 
             if (response.ok) {
                 // Recharger les positionnements enseignant
-                const positionnementsResponse = await fetch(getApiUrl(`/positionnements`))
+                const positionnementsResponse = await apiFetch(`/positionnements`)
                 if (positionnementsResponse.ok) {
                     const nouveauxPositionnements = await positionnementsResponse.json()
                     setPositionnementsEnseignant(nouveauxPositionnements)
@@ -834,10 +963,22 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
 
     // Fonction modifiée pour inclure les lignes de bilan
     const genererLignesTableauAvecBilan = (hierarchie, eleveId, modeComplet = false) => {
-        // En mode complet, vérifier que les compétences N3 sont chargées
-        if (modeComplet && competencesN3.length === 0) {
+        // En mode complet, vérifier que les compétences N3 sont chargées SEULEMENT si une compétence spécifique est sélectionnée
+        console.log(`🔍 genererLignesTableauAvecBilan pour élève ${eleveId}:`, {
+            modeComplet,
+            'competencesN3.length': competencesN3.length,
+            'hierarchie keys': Object.keys(hierarchie),
+            'competenceChoisie': competenceChoisie,
+            'va retourner vide': modeComplet && competenceChoisie?.niveau2 && competencesN3.length === 0
+        });
+        
+        // Ne vérifier competencesN3 que si une compétence niveau2 est sélectionnée
+        if (modeComplet && competenceChoisie?.niveau2 && competencesN3.length === 0) {
+            console.log(`❌ Retour tableau vide car competencesN3 pas chargées pour ${competenceChoisie.niveau2}`);
             return [] // Retourner un tableau vide si les données ne sont pas encore chargées
         }
+        
+        console.log(`✅ Génération des lignes autorisée - continuons...`)
 
         // En mode complet (vue d'ensemble), construire la hiérarchie complète
         const hierarchieAUtiliser = modeComplet ? construireHierarchieComplete(eleveId) : hierarchie
@@ -1488,6 +1629,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
 
 
 
+    // DEBUG - Logs pour identifier le problème d'affichage des notes
+    console.log('🔍 DEBUG TableauNotes - Variables clés:', {
+        competenceChoisie,
+        codeCompetence,
+        'notes.length': notes.length,
+        'eleves.length': eleves.length,
+        isStudentMode,
+        isTeacherMode,
+        'premier eleve': eleves[0],
+        'premieres notes': notes.slice(0, 3)
+    });
+
     return (
         <div className="tableau-container">
 
@@ -1498,9 +1651,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
             )}
             {/* Si mode vue d'ensemble, organiser par élève avec leurs blocs */}
             {!codeCompetence ? (
-                eleves.map(eleve => {
+                eleves
+                    .filter(eleve => !isStudentMode || eleve.id === studentInfo?.id) // En mode étudiant, afficher seulement l'élève connecté
+                    .map(eleve => {
                     const hierarchie = organiserNotesParHierarchie(eleve.id)
                     const lignes = genererLignesTableauAvecBilan(hierarchie, eleve.id, true) // Mode complet activé
+                    
+                    console.log(`📊 Élève ${eleve.prenom} (${eleve.id}):`, {
+                        'notes dans hierarchie': Object.keys(hierarchie).length,
+                        'lignes générées': lignes.length,
+                        'hierarchie': hierarchie,
+                        'lignes avec notes': lignes.filter(l => l.notes && l.notes.length > 0).length
+                    });
 
                     // En mode complet, on affiche toujours l'élève même sans notes
 
@@ -1681,20 +1843,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                                                 }}>
                                                                                    
                                                                                     {evaluationsN1.map((note, i) => (
-                                                                                        <div
+                                                                                        <NotePastille
                                                                                             key={i}
-                                                                                            style={{
-                                                                                                display: 'inline-block',
-                                                                                                width: '12px',
-                                                                                                height: '12px',
-                                                                                                borderRadius: '50%',
-                                                                                                backgroundColor: getCouleurCss(note.couleur),
-                                                                                                border: '1px solid #333',
-                                                                                                cursor: 'pointer',
-                                                                                                title: `${note.competenceCode} - ${note.couleur} (${note.date})`
-                                                                                            }}
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation();
+                                                                                            note={note}
+                                                                                            disabled={ouvertureModalEnCours}
+                                                                                            tooltip={creerTooltipEnrichi(note)}
+                                                                                            size="small"
+                                                                                            onClick={(note) => {
                                                                                                 if (!ouvertureModalEnCours) {
                                                                                                     setNoteDetail(note);
                                                                                                 }
@@ -1773,20 +1928,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                                                                     alignItems: 'center' 
                                                                                                 }}>
                                                                                                     {notes.map((note, i) => (
-                                                                                                        <div
+                                                                                                        <NotePastille
                                                                                                             key={i}
-                                                                                                            style={{
-                                                                                                                display: 'inline-block',
-                                                                                                                width: '12px',
-                                                                                                                height: '12px',
-                                                                                                                borderRadius: '50%',
-                                                                                                                backgroundColor: getCouleurCss(note.couleur),
-                                                                                                                border: '1px solid #333',
-                                                                                                                cursor: 'pointer',
-                                                                                                                title: `${note.competenceCode} - ${note.couleur} (${note.date})`
-                                                                                                            }}
-                                                                                                            onClick={(e) => {
-                                                                                                                e.stopPropagation();
+                                                                                                            note={note}
+                                                                                                            disabled={ouvertureModalEnCours}
+                                                                                                            tooltip={creerTooltipEnrichi(note)}
+                                                                                                            size="small"
+                                                                                                            onClick={(note) => {
                                                                                                                 if (!ouvertureModalEnCours) {
                                                                                                                     setNoteDetail(note);
                                                                                                                 }
@@ -1814,6 +1962,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                                                     key={i}
                                                                                     note={note}
                                                                                     disabled={ouvertureModalEnCours}
+                                                                                    tooltip={creerTooltipEnrichi(note)}
                                                                                     onClick={(note) => {
                                                                                         // Ne pas ouvrir la popup si on est en train d'ouvrir une modal
                                                                                         if (ouvertureModalEnCours) return;
@@ -2066,7 +2215,9 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                 })
             ) : (
                 /* Mode compétence spécifique - affichage classique */
-                eleves.map(eleve => {
+                eleves
+                    .filter(eleve => !isStudentMode || eleve.id === studentInfo?.id) // En mode étudiant, afficher seulement l'élève connecté
+                    .map(eleve => {
                     const hierarchie = organiserNotesParHierarchie(eleve.id)
                     // Activer le mode complet si on sélectionne une compétence N1 pour voir toutes les N2
                     const modeComplet = isCompetenceN1(codeCompetence)
@@ -2309,20 +2460,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                                         }}>
                                                                            
                                                                             {evaluationsN1.map((note, i) => (
-                                                                                <div
+                                                                                <NotePastille
                                                                                     key={i}
-                                                                                    style={{
-                                                                                        display: 'inline-block',
-                                                                                        width: '12px',
-                                                                                        height: '12px',
-                                                                                        borderRadius: '50%',
-                                                                                        backgroundColor: getCouleurCss(note.couleur),
-                                                                                        border: '1px solid #333',
-                                                                                        cursor: 'pointer',
-                                                                                        title: `${note.competenceCode} - ${note.couleur} (${note.date})`
-                                                                                    }}
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
+                                                                                    note={note}
+                                                                                    disabled={ouvertureModalEnCours}
+                                                                                    tooltip={creerTooltipEnrichi(note)}
+                                                                                    size="small"
+                                                                                    onClick={(note) => {
                                                                                         if (!ouvertureModalEnCours) {
                                                                                             setNoteDetail(note);
                                                                                         }
@@ -2366,20 +2510,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                                         }}>
                                                                            
                                                                             {evaluationsN2.map((note, i) => (
-                                                                                <div
+                                                                                <NotePastille
                                                                                     key={i}
-                                                                                    style={{
-                                                                                        display: 'inline-block',
-                                                                                        width: '12px',
-                                                                                        height: '12px',
-                                                                                        borderRadius: '50%',
-                                                                                        backgroundColor: getCouleurCss(note.couleur),
-                                                                                        border: '1px solid #333',
-                                                                                        cursor: 'pointer',
-                                                                                        title: `${note.competenceCode} - ${note.couleur} (${note.date})`
-                                                                                    }}
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
+                                                                                    note={note}
+                                                                                    disabled={ouvertureModalEnCours}
+                                                                                    tooltip={creerTooltipEnrichi(note)}
+                                                                                    size="small"
+                                                                                    onClick={(note) => {
                                                                                         if (!ouvertureModalEnCours) {
                                                                                             setNoteDetail(note);
                                                                                         }
@@ -2450,20 +2587,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                                                             alignItems: 'center' 
                                                                                         }}>
                                                                                             {notes.map((note, i) => (
-                                                                                                <div
+                                                                                                <NotePastille
                                                                                                     key={i}
-                                                                                                    style={{
-                                                                                                        display: 'inline-block',
-                                                                                                        width: '12px',
-                                                                                                        height: '12px',
-                                                                                                        borderRadius: '50%',
-                                                                                                        backgroundColor: getCouleurCss(note.couleur),
-                                                                                                        border: '1px solid #333',
-                                                                                                        cursor: 'pointer',
-                                                                                                        title: `${note.competenceCode} - ${note.couleur} (${note.date})`
-                                                                                                    }}
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation();
+                                                                                                    note={note}
+                                                                                                    disabled={ouvertureModalEnCours}
+                                                                                                    tooltip={creerTooltipEnrichi(note)}
+                                                                                                    size="small"
+                                                                                                    onClick={(note) => {
                                                                                                         if (!ouvertureModalEnCours) {
                                                                                                             setNoteDetail(note);
                                                                                                         }
@@ -2491,6 +2621,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                                                             key={i}
                                                                             note={note}
                                                                             disabled={ouvertureModalEnCours}
+                                                                            tooltip={creerTooltipEnrichi(note)}
                                                                             onClick={(note) => {
                                                                                 // Ne pas ouvrir la popup si on est en train d'ouvrir une modal
                                                                                 if (ouvertureModalEnCours) return;
@@ -2698,41 +2829,161 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
             {noteDetail && (
                 <div className="modal-note-detail">
                     <div className="modal-content">
-                        <h4>Détail de la note</h4>
+                        <h4>{isEditingNote ? 'Modifier la note' : 'Détail de la note'}</h4>
                         <p><strong>Compétence :</strong> {getNomCompetence(noteDetail.competence_code)}</p>
-                        <p><strong>Couleur :</strong> {noteDetail.couleur}</p>
-                        <p><strong>Date :</strong> {noteDetail.date}</p>
-                        <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
-                        {noteDetail.commentaire && (
-                            <div style={{ marginTop: '10px' }}>
-                                <p><strong>Commentaire/Remédiation :</strong></p>
-                                <div style={{ 
-                                    backgroundColor: '#f8f9fa', 
-                                    padding: '10px', 
-                                    borderRadius: '4px',
-                                    border: '1px solid #dee2e6',
-                                    fontStyle: 'italic'
-                                }}>
-                                    {noteDetail.commentaire}
+                        
+                        {!isEditingNote ? (
+                            <>
+                                <p><strong>Couleur :</strong> {noteDetail.couleur}</p>
+                                <p><strong>Date :</strong> {noteDetail.date}</p>
+                                <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
+                                {noteDetail.commentaire && (
+                                    <div style={{ marginTop: '10px' }}>
+                                        <p><strong>Commentaire/Remédiation :</strong></p>
+                                        <div style={{ 
+                                            backgroundColor: '#f8f9fa', 
+                                            padding: '10px', 
+                                            borderRadius: '4px',
+                                            border: '1px solid #dee2e6',
+                                            fontStyle: 'italic'
+                                        }}>
+                                            {noteDetail.commentaire}
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <>
+                                <p><strong>Date :</strong> {noteDetail.date}</p>
+                                <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
+                                
+                                <div style={{ marginTop: '15px' }}>
+                                    <label><strong>Couleur :</strong></label>
+                                    <div style={{ 
+                                        marginTop: '10px', 
+                                        display: 'flex', 
+                                        gap: '10px', 
+                                        flexWrap: 'wrap',
+                                        justifyContent: 'center'
+                                    }}>
+                                        {[
+                                            { nom: 'rouge', label: 'Non acquis', css: '#e53935' },
+                                            { nom: 'jaune', label: 'Maîtrise fragile', css: '#fdd835' },
+                                            { nom: 'bleu', label: 'Maîtrise satisfaisante', css: '#1e88e5' },
+                                            { nom: 'vert', label: 'Très bonne maîtrise', css: '#43a047' }
+                                        ].map(couleur => (
+                                            <button
+                                                key={couleur.nom}
+                                                onClick={() => setEditingNoteData(prev => ({ ...prev, couleur: couleur.nom }))}
+                                                style={{
+                                                    backgroundColor: couleur.css,
+                                                    color: 'white',
+                                                    border: editingNoteData.couleur === couleur.nom ? '3px solid #333' : '1px solid #ccc',
+                                                    borderRadius: '8px',
+                                                    padding: '12px 16px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '13px',
+                                                    fontWeight: 'bold',
+                                                    minWidth: '120px',
+                                                    textAlign: 'center',
+                                                    transform: editingNoteData.couleur === couleur.nom ? 'scale(1.05)' : 'scale(1)',
+                                                    transition: 'all 0.2s ease',
+                                                    boxShadow: editingNoteData.couleur === couleur.nom ? '0 4px 8px rgba(0,0,0,0.2)' : '0 2px 4px rgba(0,0,0,0.1)'
+                                                }}
+                                            >
+                                                {couleur.label}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
-                        <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                            <button onClick={() => setNoteDetail(null)}>Fermer</button>
-                            {!isStudentMode && (
-                                <button
-                                    onClick={() => handleDeleteNote(noteDetail.id)}
-                                    style={{
-                                        backgroundColor: '#e53935',
-                                        color: 'white',
-                                        border: 'none',
-                                        padding: '8px 16px',
+
+                                <div style={{ marginTop: '15px' }}>
+                                    <label><strong>Commentaire/Remédiation :</strong></label>
+                                    <textarea
+                                        value={editingNoteData.commentaire}
+                                        onChange={(e) => setEditingNoteData(prev => ({ ...prev, commentaire: e.target.value }))}
+                                        placeholder="Commentaire ou remédiation..."
+                                        style={{
+                                            width: '100%',
+                                            height: '80px',
+                                            marginTop: '5px',
+                                            padding: '8px',
+                                            borderRadius: '4px',
+                                            border: '1px solid #ccc',
+                                            resize: 'vertical'
+                                        }}
+                                    />
+                                </div>
+
+                                {/* Affichage de l'erreur */}
+                                {editError && (
+                                    <div style={{
+                                        marginTop: '10px',
+                                        padding: '10px',
+                                        backgroundColor: '#ffe6e6',
+                                        border: '1px solid #ff4444',
                                         borderRadius: '4px',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    Supprimer
-                                </button>
+                                        color: '#cc0000',
+                                        fontSize: '14px'
+                                    }}>
+                                        {editError}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                        
+                        <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                            {!isEditingNote ? (
+                                <>
+                                    <button onClick={() => setNoteDetail(null)}>Fermer</button>
+                                    {!isStudentMode && (
+                                        <>
+                                            <button
+                                                onClick={handleEditNote}
+                                                style={{
+                                                    backgroundColor: '#2196F3',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    padding: '8px 16px',
+                                                    borderRadius: '4px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                Modifier
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteNote(noteDetail.id)}
+                                                style={{
+                                                    backgroundColor: '#e53935',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    padding: '8px 16px',
+                                                    borderRadius: '4px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                Supprimer
+                                            </button>
+                                        </>
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    <button onClick={handleCancelEdit}>Annuler</button>
+                                    <button
+                                        onClick={handleSaveEditedNote}
+                                        style={{
+                                            backgroundColor: '#4CAF50',
+                                            color: 'white',
+                                            border: 'none',
+                                            padding: '8px 16px',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        Enregistrer
+                                    </button>
+                                </>
                             )}
                         </div>
                     </div>

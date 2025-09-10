@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { getApiUrl } from '../utils/api'
+import { apiFetch } from '../utils/api'
 
 function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teacherInfo = null }) {
   const [enseignants, setEnseignants] = useState([])
@@ -42,7 +42,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     }
     // Si c'est un super admin, on ne filtre pas (voir tous les enseignants)
 
-    fetch(getApiUrl(url))
+    apiFetch(url)
       .then(res => res.json())
       .then(setEnseignants)
       .catch(err => console.error('Erreur lors du chargement des enseignants:', err))
@@ -58,7 +58,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     } 
     
 
-    fetch(getApiUrl(url))
+    apiFetch(url)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -74,7 +74,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
   }
 
   const fetchEnseignantClasses = (enseignantId) => {
-    fetch(getApiUrl(`/enseignants/${enseignantId}/classes`))
+    apiFetch(`/enseignants/${enseignantId}/classes`)
       .then(res => res.json())
       .then(setEnseignantClasses)
       .catch(err => console.error('Erreur lors du chargement des classes de l\'enseignant:', err))
@@ -88,7 +88,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     }
 
     try {
-      const res = await fetch(getApiUrl(`/enseignants`), {
+      const res = await apiFetch(`/enseignants`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newEnseignant),
@@ -123,7 +123,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     }
 
     try {
-      const res = await fetch(getApiUrl(`/enseignants/${editingEnseignantId}`), {
+      const res = await apiFetch(`/enseignants/${editingEnseignantId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingEnseignant),
@@ -148,7 +148,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     if (!confirm('Êtes-vous sûr de vouloir supprimer cet enseignant ? Cela supprimera aussi ses associations avec les classes.')) return
     
     try {
-      const res = await fetch(getApiUrl(`/enseignants/${id}`), {
+      const res = await apiFetch(`/enseignants/${id}`, {
         method: 'DELETE',
       })
       
@@ -167,7 +167,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
   // Régénérer le token
   const regenererToken = async (id) => {
     try {
-      const res = await fetch(getApiUrl(`/enseignants/${id}/regenerate-token`), {
+      const res = await apiFetch(`/enseignants/${id}/regenerate-token`, {
         method: 'POST'
       })
       
@@ -189,7 +189,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     if (!selectedEnseignant) return
 
     try {
-      const res = await fetch(getApiUrl(`/enseignant-classes`), {
+      const res = await apiFetch(`/enseignant-classes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -216,7 +216,7 @@ function AdminEnseignant({ isSuperAdmin = false, isTeacherReferent = false, teac
     if (!selectedEnseignant) return
 
     try {
-      const res = await fetch(getApiUrl(`/enseignant-classes/${selectedEnseignant.id}/${classeId}`), {
+      const res = await apiFetch(`/enseignant-classes/${selectedEnseignant.id}/${classeId}`, {
         method: 'DELETE'
       })
       

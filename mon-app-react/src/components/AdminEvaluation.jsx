@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { getApiUrl } from '../utils/api'
+import { apiFetch } from '../utils/api'
 
 function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, isTeacherReferent = false, teacherInfo = null }) {
   const [elevesWithEvaluations, setElevesWithEvaluations] = useState([])
@@ -86,7 +86,7 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
         url += `?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
       }
 
-      fetch(getApiUrl(url))
+      apiFetch(url)
         .then(res => res.json())
         .then(data => {
           // S'assurer que c'est toujours un tableau
@@ -107,7 +107,7 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
     if (!confirm('Êtes-vous sûr de vouloir supprimer TOUTES les évaluations de cet élève ?')) return
     
     try {
-      const res = await fetch(getApiUrl(`/eleves/${eleveId}/evaluations`), {
+      const res = await apiFetch(`/eleves/${eleveId}/evaluations`, {
         method: 'DELETE',
       })
       
@@ -122,7 +122,7 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
             url += `?etablissement=${encodeURIComponent(teacherInfo.etablissement)}`;
           }
 
-          fetch(getApiUrl(url))
+          apiFetch(url)
             .then(res => res.json())
             .then(data => {
               setElevesWithEvaluations(Array.isArray(data) ? data : [])
@@ -198,7 +198,7 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
               classeChoisie_type: typeof classeChoisie
             })
 
-            const response = await fetch(getApiUrl(`/evaluations/import`), {
+            const response = await apiFetch(`/evaluations/import`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -265,7 +265,7 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
 
     try {
       // Récupérer les données d'évaluations détaillées
-      const response = await fetch(getApiUrl(`/evaluations/export/${classeChoisie}`))
+      const response = await apiFetch(`/evaluations/export/${classeChoisie}`)
       if (!response.ok) {
         throw new Error('Erreur lors de la récupération des données')
       }

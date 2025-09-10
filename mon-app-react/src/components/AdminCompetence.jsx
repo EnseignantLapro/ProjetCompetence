@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { getApiUrl } from '../utils/api'
+import { apiFetch } from '../utils/api'
 
 function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent = false }) {
   const [competencesN3, setCompetencesN3] = useState([])
@@ -32,7 +32,7 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
       url += `?${params.toString()}`
     }
 
-    fetch(getApiUrl(url))
+    apiFetch(url)
       .then(res => res.json())
       .then(setCompetencesN3)
       .catch(err => console.error('Erreur lors du chargement des compétences:', err))
@@ -51,7 +51,7 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
       enseignant_id: teacherInfo?.id || null
     }
 
-    const res = await fetch(getApiUrl(`/competences-n3`) , {
+    const res = await apiFetch(`/competences-n3` , {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(competenceData),
@@ -79,7 +79,7 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
       enseignant_id: editingCompetence.enseignant_id || teacherInfo?.id || null
     }
 
-    const res = await fetch(getApiUrl(`/competences-n3/${editingCompetenceId}`), {
+    const res = await apiFetch(`/competences-n3/${editingCompetenceId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(competenceData),
@@ -99,7 +99,7 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
   const supprimerCompetenceN3 = async (id) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette compétence ?')) return
 
-    const res = await fetch(getApiUrl(`/competences-n3/${id}`), {
+    const res = await apiFetch(`/competences-n3/${id}`, {
       method: 'DELETE',
     })
     

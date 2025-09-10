@@ -4,7 +4,7 @@ import TableauNotes from './components/TableauNotes'
 import ChoixCompetence from './components/ChoixCompetence'
 import Baniere from './components/Baniere'
 import { competencesN1N2, tachesProfessionelles } from './data/competences'
-import { getApiUrl } from './utils/api'
+import { apiFetch } from './utils/api'
 import './App.css'
 
 function App() {
@@ -48,7 +48,7 @@ function App() {
   // Fonction pour vérifier le token élève côté serveur
   const verifyStudentToken = async (token) => {
     try {
-      const response = await fetch(getApiUrl(`/auth/verify-token`), {
+      const response = await apiFetch(`/auth/verify-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })
@@ -68,7 +68,7 @@ function App() {
   // Fonction pour vérifier le token enseignant côté serveur
   const verifyTeacherToken = async (token) => {
     try {
-      const response = await fetch(getApiUrl(`/auth/verify-teacher-token`), {
+      const response = await apiFetch(`/auth/verify-teacher-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })
@@ -252,7 +252,7 @@ function App() {
         }
       } else {
         // Code BDD traditionnel
-        fetch(getApiUrl(`/competences-n3?parent_code=${niveau2}`))
+        apiFetch(`/competences-n3?parent_code=${niveau2}`)
           .then(res => res.json())
           .then(data => {
             const found = data.find(sc => sc.code === niveau3)
@@ -264,35 +264,43 @@ function App() {
     }
   }, [competenceChoisie])
 
+  // Effet séparé pour charger la classe depuis localStorage (mode normal uniquement)
   useEffect(() => {
-    // En mode élève, ne pas charger la classe depuis localStorage
-    // La classe sera automatiquement définie lors de la vérification du token
-    // En mode enseignant, charger depuis les classes assignées ou localStorage
-    if (!isStudentMode && !isTeacherMode) {
+    if (!isStudentMode && !isTeacherMode && !classeChoisie) {
       const savedClasse = localStorage.getItem('classe_choisie')
       if (savedClasse) {
         setClasseChoisie(savedClasse)
       }
-    } else if (isTeacherMode && teacherInfo && teacherInfo.classes && teacherInfo.classes.length > 0) {
-      // En mode enseignant, sélectionner la première classe assignée par défaut
-      if (!classeChoisie) {
-        setClasseChoisie(teacherInfo.classes[0].id.toString())
-      }
     }
+  }, [isStudentMode, isTeacherMode, classeChoisie])
 
-    // Charger toutes les classes pour l'affichage
-    fetch(getApiUrl(`/classes`))
-      .then(res => res.json())
-      .then(allClasses => {
-        if (isTeacherMode && teacherInfo && teacherInfo.classes) {
-          // En mode enseignant, filtrer pour ne montrer que les classes assignées
-          setClasses(teacherInfo.classes)
-        } else {
-          // Mode normal ou élève : toutes les classes
+  // Effet séparé pour définir la classe par défaut en mode enseignant
+  useEffect(() => {
+    if (isTeacherMode && teacherInfo && teacherInfo.classes && teacherInfo.classes.length > 0 && !classeChoisie) {
+      setClasseChoisie(teacherInfo.classes[0].id.toString())
+    }
+  }, [isTeacherMode, teacherInfo, classeChoisie])
+
+  // Effet séparé pour charger toutes les classes (une seule fois)
+  useEffect(() => {
+    if (!appInitialized) return // Attendre l'initialisation de l'app
+    
+    if (isTeacherMode && teacherInfo && teacherInfo.classes) {
+      // En mode enseignant, utiliser directement les classes assignées
+      setClasses(teacherInfo.classes)
+    } else {
+      // Mode normal ou élève : charger toutes les classes depuis l'API
+      apiFetch(`/classes`)
+        .then(res => res.json())
+        .then(allClasses => {
           setClasses(allClasses)
-        }
-      })
-  }, [isStudentMode, isTeacherMode, teacherInfo])
+        })
+        .catch(err => {
+          console.error('Erreur lors du chargement des classes:', err)
+          setClasses([])
+        })
+    }
+  }, [isTeacherMode, teacherInfo, appInitialized])
 
   const handleClasseChange = (e) => {
     // Empêcher le changement de classe en mode élève

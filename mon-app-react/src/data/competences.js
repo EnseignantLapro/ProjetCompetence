@@ -142,12 +142,12 @@ export const tachesProfessionelles = [
     duree: '',
     niveau: '',
     TacheAssociees: [
-        { code: 'T1', nom: 'Analyse des besoins du client' },
-        { code: 'T2', nom: 'Réception de l’installation avec le client' },
-        { code: 'T3', nom: 'Formation du client' },
-        { code: 'T4', nom: 'Explication des modalités de l’intervention' },
-        { code: 'T5', nom: 'Information et/ou conseil au client' },
-        { code: 'T6', nom: 'Fidélisation de la clientèle' }
+        { code: 'T1', nom: 'Analyse des besoins du client' , presence:['C04']},
+        { code: 'T2', nom: 'Réception de l’installation avec le client' , presence:['C01']},
+        { code: 'T3', nom: 'Formation du client' , presence:['C01']},
+        { code: 'T4', nom: 'Explication des modalités de l’intervention' , presence:['C01']},
+        { code: 'T5', nom: 'Information et/ou conseil au client' , presence:[]},
+        { code: 'T6', nom: 'Fidélisation de la clientèle' , presence:[]}
     ]
   },
     {
@@ -158,12 +158,12 @@ export const tachesProfessionelles = [
     duree: '',
     niveau: '',
     TacheAssociees: [
-        { code: 'T1', nom: 'Analyse de la demande du client' },
-        { code: 'T2', nom: 'Production des documents pour la mise en œuvre (plans d\'exécution, protocoles, paramétrages etc.)' },
-        { code: 'T3', nom: 'Vérification du dossier et interprétation des plans d’exécution' },
-        { code: 'T4', nom: 'Préparation du chantier en fonction de l’intervention souhaitée' },
-        { code: 'T5', nom: 'Réalisation des opérations avec, en particulier, prise en compte des contraintes client et contrôle matériel et logiciel de l’installation' },
-        { code: 'T6', nom: 'Recettage de l’installation' }
+        { code: 'T1', nom: 'Analyse de la demande du client' , presence:['C09']},
+        { code: 'T2', nom: 'Production des documents pour la mise en œuvre (plans d\'exécution, protocoles, paramétrages etc.)' , presence:['C09','C06']},
+        { code: 'T3', nom: 'Vérification du dossier et interprétation des plans d’exécution' , presence:['C06']},
+        { code: 'T4', nom: 'Préparation du chantier en fonction de l’intervention souhaitée' , presence:['C09']},
+        { code: 'T5', nom: 'Réalisation des opérations avec, en particulier, prise en compte des contraintes client et contrôle matériel et logiciel de l’installation' , presence:['C09']},
+        { code: 'T6', nom: 'Recettage de l’installation' , presence:['C06']}
     ]
   },
     {
@@ -174,13 +174,13 @@ export const tachesProfessionelles = [
         duree: '',
         niveau: '',
         TacheAssociees: [
-            { code: 'T1', nom: 'Suivi de l’exploitation technique' },
-            { code: 'T2', nom: 'Contact avec les supports techniques externes' },
-            { code: 'T3', nom: 'Supervision de l’état du réseau dans son périmètre' },
-            { code: 'T4', nom: 'Réalisation d’un diagnostic de premier niveau' },
-            { code: 'T5', nom: 'Configuration matérielle et logicielle des équipements' },
-            { code: 'T6', nom: 'Intégration de nouveaux équipements' },
-            { code: 'T7', nom: 'Mise à jour des équipements' }
+            { code: 'T1', nom: 'Suivi de l’exploitation technique' , presence:['C10']},
+            { code: 'T2', nom: 'Contact avec les supports techniques externes' , presence:['C01']},
+            { code: 'T3', nom: 'Supervision de l’état du réseau dans son périmètre' , presence:['C11']},
+            { code: 'T4', nom: 'Réalisation d’un diagnostic de premier niveau' , presence:['C10']},
+            { code: 'T5', nom: 'Configuration matérielle et logicielle des équipements' , presence:['C11']},
+            { code: 'T6', nom: 'Intégration de nouveaux équipements' , presence:['C09']},
+            { code: 'T7', nom: 'Mise à jour des équipements', presence:['C10'] }
         ]
     },
     {
@@ -191,12 +191,12 @@ export const tachesProfessionelles = [
         duree: '',
         niveau: '',
         TacheAssociees: [
-            { code: 'T1', nom: 'Identification de toutes les étapes du projet jusqu’à la réception des travaux' },
-            { code: 'T2', nom: 'Identification des ressources humaines et matérielles' },
-            { code: 'T3', nom: 'Management des équipes opérationnelles internes' },
-            { code: 'T4', nom: 'Gestion de la sous-traitance' },
-            { code: 'T5', nom: 'Pilotage de l’exécution des travaux' },
-            { code: 'T6', nom: 'Encadrement des équipes externes' }
+            { code: 'T1', nom: 'Identification de toutes les étapes du projet jusqu’à la réception des travaux', presence: ['C02'] },
+            { code: 'T2', nom: 'Identification des ressources humaines et matérielles', presence: ['C02', 'C03'] },
+            { code: 'T3', nom: 'Management des équipes opérationnelles internes', presence: ['C03'] },
+            { code: 'T4', nom: 'Gestion de la sous-traitance', presence: [] },
+            { code: 'T5', nom: 'Pilotage de l’exécution des travaux', presence: ['C03'] },
+            { code: 'T6', nom: 'Encadrement des équipes externes', presence: [] }
         ]
     },
     {
@@ -204,14 +204,15 @@ export const tachesProfessionelles = [
         nom: 'Maintenance des réseaux informatiques',
         description: '',
         competences: ['C02', 'C04', 'C06', 'C09', 'C10', 'C11'],
-        duree: '',
+        duree: '', 
         niveau: '',
         TacheAssociees: [
-            { code: 'T1', nom: 'Analyse des dysfonctionnements' },
-            { code: 'T2', nom: 'Mise en œuvre de la maintenance préventive' },
-            { code: 'T3', nom: 'Mise en œuvre de la maintenance corrective' },
-            { code: 'T4', nom: 'Réalisation des tests de validation' },
-            { code: 'T5', nom: 'Rédaction des rapports d’intervention' }
+            { code: 'T1', nom: 'Pilotage et suivi des interventions jusqu’à la fin de l’incident', presence: [] },
+            { code: 'T2', nom: 'Communication des procédures auprès des techniciens de maintenance', presence: [] },
+            { code: 'T3', nom: 'Réalisation de reportings quotidiens et hebdomadaires pour les interventions', presence: [] },
+            { code: 'T4', nom: 'Réalisation de diagnostics et d’interventions de maintenance curative', presence: ['C11'] },
+            { code: 'T5', nom: 'Réparation de câblage, changement de cartes ou d’équipements', presence: ['C11'] },
+            { code: 'T6', nom: 'Rédaction de comptes rendus d’intervention', presence: [] }
         ]
     },
     {
@@ -222,10 +223,10 @@ export const tachesProfessionelles = [
         duree: '',
         niveau: '',
         TacheAssociees: [
-            { code: 'T1', nom: 'Collecte des informations' },
-            { code: 'T2', nom: 'Analyse des informations' },
-            { code: 'T3', nom: 'Interprétation d’un cahier des charges' },
-            { code: 'T4', nom: 'Formalisation du cahier des charges' }
+            { code: 'T1', nom: 'Collecte des informations' , presence: [ 'C05']},
+            { code: 'T2', nom: 'Analyse des informations', presence: [ 'C04'] },
+            { code: 'T3', nom: 'Interprétation d’un cahier des charges', presence: [ 'C04'] },
+            { code: 'T4', nom: 'Formalisation du cahier des charges', presence: [] }
         ]
     },
     {
@@ -236,11 +237,56 @@ export const tachesProfessionelles = [
         duree: '',
         niveau: '',
         TacheAssociees: [
-            { code: 'T1', nom: 'Conception de l’architecture d’une solution logicielle' },
-            { code: 'T2', nom: 'Modélisation d’une solution logicielle' },
-            { code: 'T3', nom: 'Développement, utilisation ou adaptation de composants logiciels' },
-            { code: 'T4', nom: 'Tests de mise en production' },
-            { code: 'T5', nom: 'Recette et validation' }
+            { code: 'T1', nom: 'Conception de l’architecture d’une solution logicielle', presence: ['C05'] },
+            { code: 'T2', nom: 'Modélisation d’une solution logicielle', presence: ['C05','C04'] },
+            { code: 'T3', nom: 'Développement, utilisation ou adaptation de composants logiciels', presence: ['C08'] },
+            { code: 'T4', nom: 'Tests de mise en production', presence: ['C05','C08'] },
+            { code: 'T5', nom: 'Recette et validation', presence: ['C05'] }
+        ]
+    },
+    {
+        code: 'D3',
+        nom: 'Gestion d’incidents',
+        description: '',
+        competences: ['C01', 'C04', 'C10', 'C11'],
+        duree: '',
+        niveau: '',
+        TacheAssociees: [
+            { code: 'T1', nom: 'Ouverture et analyse des tickets par niveau de criticité', presence: ['C10'] },
+            { code: 'T2', nom: 'Traitement des tickets', presence: ['C10'] },
+            { code: 'T3', nom: 'Remédiation des incidents', presence: ['C10'] },
+            { code: 'T4', nom: 'Élaboration des rapports d’incidents', presence: ['C01'] },
+            { code: 'T5', nom: 'Transmission de l’information (escalade)', presence: ['C01'] }
+        ]
+    },
+    {
+        code: 'D4',
+        nom: 'Valorisation de la donnée',
+        description: '',
+        competences: ['C03', 'C04', 'C08'],
+        duree: '',
+        niveau: '',
+        TacheAssociees: [
+            { code: 'T1', nom: 'Collecte de la donnée', presence: ['C08'] },
+            { code: 'T2', nom: 'Stockage de la donnée', presence: ['C08'] },
+            { code: 'T3', nom: 'Orchestration de la donnée', presence: ['C08'] },
+            { code: 'T4', nom: 'Analyse de la donnée', presence: ['C04'] },
+            { code: 'T5', nom: 'Exploitation de la donnée', presence: ['C08'] }
+        ]
+    },
+    {
+        code: 'D5',
+        nom: 'Audit de l’installation ou du système',
+        description: '',
+        competences: ['C01', 'C03', 'C10'],
+        duree: '',
+        niveau: '',
+        TacheAssociees: [
+            { code: 'T1', nom: 'Évaluation des biens et moyens dans le périmètre de l’audit', presence: ['C10'] },
+            { code: 'T2', nom: 'Évaluation de la configuration', presence: ['C10'] },
+            { code: 'T3', nom: 'Évaluation du contrôle d’accès', presence: ['C10'] },
+            { code: 'T4', nom: 'Évaluation de la gestion de compte', presence: [] },
+            { code: 'T5', nom: 'Évaluation de la sécurité', presence: ['C10'] }
         ]
     }
 ];

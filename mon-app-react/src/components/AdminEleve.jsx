@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getApiUrl } from '../utils/api'
+import { apiFetch } from '../utils/api'
 
 function AdminEleve({ classe }) {
     const [eleves, setEleves] = useState([])
@@ -78,7 +78,7 @@ function AdminEleve({ classe }) {
     const chargerEleves = async () => {
         try {
             setLoading(true)
-            const response = await fetch(getApiUrl(`/eleves/with-counts?classe_id=${classe.id}`))
+            const response = await apiFetch(`/eleves/with-counts?classe_id=${classe.id}`)
             if (response.ok) {
                 const data = await response.json()
                 setEleves(data)
@@ -119,7 +119,7 @@ function AdminEleve({ classe }) {
         }
 
         try {
-            const response = await fetch(getApiUrl(`/eleves`), {
+            const response = await apiFetch(`/eleves`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -154,7 +154,7 @@ function AdminEleve({ classe }) {
         }
 
         try {
-            const response = await fetch(getApiUrl(`/eleves/${eleveEnEdition.id}`), {
+            const response = await apiFetch(`/eleves/${eleveEnEdition.id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -187,7 +187,7 @@ function AdminEleve({ classe }) {
 
         try {
             // Tentative de suppression normale
-            const response = await fetch(getApiUrl(`/eleves/${eleve.id}`), {
+            const response = await apiFetch(`/eleves/${eleve.id}`, {
                 method: 'DELETE'
             })
 
@@ -209,7 +209,7 @@ function AdminEleve({ classe }) {
                 
                 if (forceDelete) {
                     // Suppression forcée
-                    const forceResponse = await fetch(getApiUrl(`/eleves/${eleve.id}?forceDelete=true`), {
+                    const forceResponse = await apiFetch(`/eleves/${eleve.id}?forceDelete=true`, {
                         method: 'DELETE'
                     })
                     
@@ -250,7 +250,7 @@ function AdminEleve({ classe }) {
         }
 
         try {
-            const response = await fetch(getApiUrl(`/eleves/${eleve.id}/regenerate-token`), {
+            const response = await apiFetch(`/eleves/${eleve.id}/regenerate-token`, {
                 method: 'POST'
             })
 
@@ -297,7 +297,7 @@ function AdminEleve({ classe }) {
                     }
 
                     try {
-                        const response = await fetch(getApiUrl(`/eleves`), {
+                        const response = await apiFetch(`/eleves`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({

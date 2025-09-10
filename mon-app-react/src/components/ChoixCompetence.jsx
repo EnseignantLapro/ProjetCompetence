@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getApiUrl } from '../utils/api'
+import { apiFetch } from '../utils/api'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import '../App.css'
 
@@ -52,25 +52,22 @@ useEffect(() => {
       }
     }
     
-    fetch(getApiUrl(url))
+    apiFetch(url)
       .then(res => res.json())
       .then(competencesN3BDD => {
         
-        // 2. Charger les tâches professionnelles du fichier selon la compétence N1 du N2 sélectionné
+        // 2. Charger les tâches professionnelles du fichier selon la présence pour la compétence N1
         let tachesFromFile = []
         
         // Extraire la compétence N1 du code N2 (ex: C01.1 -> C01)
         const competenceN1 = niveau2.split('.')[0]
         
-        if (competenceN1) {
-          // Filtrer les tâches professionnelles qui contiennent cette compétence N1
-          const tachesCompatibles = tachesProfessionelles.filter(tache => 
-            tache.competences.includes(competenceN1)
-          )
-          
-          // Créer une liste de toutes les tâches associées avec leur parent
-          tachesCompatibles.forEach(tacheProf => {
-            tacheProf.TacheAssociees.forEach(tache => {
+        // Pour chaque bloc de tâches professionnelles
+        tachesProfessionelles.forEach(tacheProf => {
+          // Pour chaque tâche associée, vérifier si la compétence N1 est présente
+          tacheProf.TacheAssociees.forEach(tache => {
+            // On ajoute la tâche seulement si la compétence N1 est dans le tableau presence
+            if (tache.presence && tache.presence.includes(competenceN1)) {
               tachesFromFile.push({
                 code: `${niveau2}.${tacheProf.code}.${tache.code}`, // Ex: C01.1.R1.T1
                 nom: `${tacheProf.nom} — ${tache.nom}`, // Nom simplifié
@@ -79,9 +76,9 @@ useEffect(() => {
                 tacheProf: tacheProf,
                 tache: tache
               })
-            })
+            }
           })
-        }
+        })
         
         // 3. Combiner les deux sources
         const toutesLesOptions = [
@@ -117,7 +114,7 @@ useEffect(() => {
       enseignant_id: teacherInfo?.id || null
     }
 
-    const res = await fetch(getApiUrl(`/competences-n3`), {
+    const res = await apiFetch(`/competences-n3`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(competenceData),
