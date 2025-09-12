@@ -46,6 +46,7 @@ function App() {
 
   // État pour les devoirs
   const [devoirSelectionne, setDevoirSelectionne] = useState(null)
+  const [devoirsDisponibles, setDevoirsDisponibles] = useState([])
 
   const [nomNiveau1, setNomNiveau1] = useState('')
   const [nomNiveau2, setNomNiveau2] = useState('')
@@ -287,6 +288,13 @@ function App() {
     }
   }, [isTeacherMode, teacherInfo, classeChoisie])
 
+  // Effet séparé pour définir la classe par défaut en mode normal
+  useEffect(() => {
+    if (!isTeacherMode && !isStudentMode && classes.length > 0 && !classeChoisie) {
+      setClasseChoisie(classes[0].id.toString())
+    }
+  }, [isTeacherMode, isStudentMode, classes, classeChoisie])
+
   // Effet séparé pour charger toutes les classes (une seule fois)
   useEffect(() => {
     if (!appInitialized) return // Attendre l'initialisation de l'app
@@ -318,10 +326,8 @@ function App() {
     // Réinitialiser le filtre d'élèves quand on change de classe
     setEleveFiltre('')
     
-    // Sauvegarder en localStorage seulement en mode normal (pas enseignant connecté)
-    if (!isTeacherMode) {
-      localStorage.setItem('classe_choisie', value)
-    }
+    // Sauvegarder en localStorage (pour tous les modes sauf élève)
+    localStorage.setItem('classe_choisie', value)
   }
 
   const handleEleveChange = (e) => {
@@ -333,6 +339,10 @@ function App() {
 
   const handleDevoirChange = (devoirKey) => {
     setDevoirSelectionne(devoirKey)
+  }
+
+  const handleDevoirsUpdate = (devoirs) => {
+    setDevoirsDisponibles(devoirs)
   }
 
   const handleToggleAdmin = () => {
@@ -413,6 +423,7 @@ function App() {
         devoirSelectionne={devoirSelectionne}
         onDevoirChange={handleDevoirChange}
         codeCompetence={competenceChoisie}
+        devoirsDisponibles={devoirsDisponibles}
       />
 
       <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
@@ -544,6 +555,7 @@ function App() {
                 appInitialized={appInitialized}
                 devoirSelectionne={devoirSelectionne}
                 onDevoirChange={handleDevoirChange}
+                onDevoirsUpdate={handleDevoirsUpdate}
               />
             </div>
           </>

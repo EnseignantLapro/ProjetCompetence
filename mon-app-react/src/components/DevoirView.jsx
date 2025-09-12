@@ -9,7 +9,7 @@ const couleurs = {
   vert: { label: 'Maîtrisé', hex: '#2ecc71' },
 }
 
-const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFiltre }, ref) => {
+const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFiltre, competencesN1N2, competencesN3 }, ref) => {
   const [devoirData, setDevoirData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -18,6 +18,60 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
   const [commentairesLocaux, setCommentairesLocaux] = useState({})
   const [elevesFiltres, setElevesFiltres] = useState([])
   const [competencesTemporaires, setCompetencesTemporaires] = useState(new Set())
+
+  // Fonction pour obtenir le nom complet d'une compétence
+  function getNomCompetence(code) {
+    if (!code) return ''
+    
+    // Pour N1 (pas de point)
+    if (!code.includes('.')) {
+      const c1 = competencesN1N2?.find(c => c.code === code)
+      return c1 ? `${c1.code} — ${c1.nom}` : code
+    }
+
+    const parts = code.split('.')
+    const codeN1 = parts[0]
+    const codeN2 = parts.slice(0, 2).join('.')
+
+    const c1 = competencesN1N2?.find(c => c.code === codeN1)
+    const c2 = c1?.enfants?.find(sc => sc.code === codeN2)
+
+    // Pour N2 (2 parties)
+    if (parts.length === 2) {
+      return c2 ? `${c2.code} — ${c2.nom}` : code
+    }
+
+    // Pour N3 (3 ou 4 parties), chercher dans competencesN3
+    const c3 = competencesN3?.find(c => c.code === code)
+    return c3 ? `${c3.code} — ${c3.nom}` : code
+  }
+
+  // Fonction pour obtenir seulement le libellé (sans le code) du plus petit niveau
+  function getLibelleCompetence(code) {
+    if (!code) return ''
+    
+    // Pour N1 (pas de point)
+    if (!code.includes('.')) {
+      const c1 = competencesN1N2?.find(c => c.code === code)
+      return c1 ? c1.nom : ''
+    }
+
+    const parts = code.split('.')
+    const codeN1 = parts[0]
+    const codeN2 = parts.slice(0, 2).join('.')
+
+    const c1 = competencesN1N2?.find(c => c.code === codeN1)
+    const c2 = c1?.enfants?.find(sc => sc.code === codeN2)
+
+    // Pour N2 (2 parties)
+    if (parts.length === 2) {
+      return c2 ? c2.nom : ''
+    }
+
+    // Pour N3 (3 ou 4 parties), chercher dans competencesN3
+    const c3 = competencesN3?.find(c => c.code === code)
+    return c3 ? c3.nom : ''
+  }
 
   useEffect(() => {
     const chargerDevoir = async () => {
@@ -225,7 +279,8 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2>📋 {devoirInfo.devoir_label}</h2>
+        <h2>DEVOIR 📋 : {devoirInfo.devoir_label}</h2>
+        <h3><strong>Date :</strong> {new Date(devoirInfo.date).toLocaleDateString()}</h3>
         <button 
           onClick={onClose}
           style={{
@@ -242,10 +297,11 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
       </div>
 
       <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
-        <p><strong>Date :</strong> {new Date(devoirInfo.date).toLocaleDateString()}</p>
-        <p><strong>Élèves :</strong> {elevesFiltres.length}{eleveFiltre ? ` (filtré sur 1 élève)` : ` (${eleves.length} total)`}</p>
+        
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <strong>Compétences :</strong>
+          <span style={{ color: 'red' }}>Si une compétence n'a aucune note elle ne sera pas conservée dans ce devoir</span>
+          <br></br>
+          <strong style={{ fontWeight: 'bold' }}>Compétences :</strong>
           {toutesLesCompetences.map(comp => (
             <span key={comp} style={{
               backgroundColor: '#e9ecef',
@@ -254,24 +310,32 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
               fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
-              gap: '5px'
+              gap: '5px',
+              flexDirection: 'column'
             }}>
-              {comp}
-              <button
-                onClick={() => retirerCompetence(comp)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#dc3545',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  padding: '0',
-                  lineHeight: '1'
-                }}
-                title="Retirer cette compétence du devoir"
-              >
-                ✕
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', width: '100%' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1 }}>
+                  <span style={{ fontWeight: 'bold', fontSize: '13px' }}>{comp}</span>
+                  <span style={{ fontSize: '10px', color: '#666', fontStyle: 'italic' }}>
+                    {getLibelleCompetence(comp)}
+                  </span>
+                </div>
+                <button
+                  onClick={() => retirerCompetence(comp)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#dc3545',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    padding: '0',
+                    lineHeight: '1'
+                  }}
+                  title="Retirer cette compétence du devoir"
+                >
+                  ✕
+                </button>
+              </div>
             </span>
           ))}
         </div>
@@ -335,9 +399,7 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
                 <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
                   {eleve.prenom} {eleve.nom}
                 </div>
-                <div style={{ fontSize: '12px', color: '#666' }}>
-                  ID: {eleve.id}
-                </div>
+                
               </div>
             </div>
 
@@ -355,27 +417,34 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
                     border: isTemporaire ? '2px dashed #ff9800' : 'none'
                   }}>
                     <div style={{ 
-                      fontWeight: 'bold', 
                       marginBottom: '8px',
-                      fontSize: '14px',
                       color: '#333',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '5px'
+                      gap: '5px',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start'
                     }}>
-                      {comp}
-                      {isTemporaire && (
-                        <span style={{
-                          fontSize: '10px',
-                          backgroundColor: '#ff9800',
-                          color: 'white',
-                          padding: '2px 6px',
-                          borderRadius: '10px',
-                          fontWeight: 'normal'
-                        }}>
-                          NOUVEAU
-                        </span>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', width: '100%' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{comp}</div>
+                          <div style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>
+                            {getLibelleCompetence(comp)}
+                          </div>
+                        </div>
+                        {isTemporaire && (
+                          <span style={{
+                            fontSize: '10px',
+                            backgroundColor: '#ff9800',
+                            color: 'white',
+                            padding: '2px 6px',
+                            borderRadius: '10px',
+                            fontWeight: 'normal'
+                          }}>
+                            Temporaire
+                          </span>
+                        )}
+                      </div>
                     </div>
                     
                     {/* Boutons de notation avec style TableauNotes */}

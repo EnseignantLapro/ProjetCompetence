@@ -8,7 +8,7 @@ import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import { apiFetch } from '../utils/api'
 import{getCouleurPourCompetence,isCompetenceInHierarchy,isCompetenceN1,getNotesVisibles,ajouterNoteDirecte,getCommentaireDerniereEvaluation} from './TableauNotesUtils'
 
-function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false, devoirSelectionne = null, onDevoirChange = null }) {
+function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false, devoirSelectionne = null, onDevoirChange = null, onDevoirsUpdate = null }) {
     const [eleves, setEleves] = useState([])
     const [elevesVisibles, setElevesVisibles] = useState([]) // Les élèves qui doivent être affichés selon le filtre
     const [notes, setNotes] = useState([])
@@ -49,6 +49,48 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         )
     }
 
+    // Vérifier si des notes ont été saisies pour la compétence actuelle avec le devoir en cours
+    // Fonction pour détecter si la compétence est en cours de notation
+    // Utilise les flags existants pour une meilleure intégration
+    const isEnCoursDeNotation = () => {
+        if (!codeCompetence) return false
+        
+        // Vérifier le mode d'évaluation depuis localStorage
+        const modeEvaluation = localStorage.getItem('mode_evaluation')
+        
+        // Si on est en mode "nouvelle évaluation" ET qu'il y a des évaluations trackées
+        if (modeEvaluation === 'nouvelle' && dernieresEvaluationsDirectes.size > 0) {
+            // Vérifier si il y a des évaluations pour la compétence actuelle
+            for (let [key, evaluation] of dernieresEvaluationsDirectes) {
+                if (key.includes(codeCompetence)) {
+                    return true
+                }
+            }
+        }
+        
+        // Fallback vers l'ancienne logique pour compatibilité
+        // Si un devoir existant est sélectionné, vérifier les notes pour ce devoir
+        if (devoirSelectionne) {
+            return notes.some(note => 
+                note.competence_code === codeCompetence && 
+                note.devoirKey === devoirSelectionne
+            )
+        }
+        
+        // Si un nouveau devoir est en cours de création, vérifier les notes avec ce nom
+        if (nouveauDevoirNom.trim()) {
+            return notes.some(note => 
+                note.competence_code === codeCompetence && 
+                note.devoir_label === nouveauDevoirNom.trim()
+            )
+        }
+        
+        return false
+    }
+
+    // Alias pour compatibilité avec le code existant
+    const hasNotesForCurrentDevoir = isEnCoursDeNotation
+
     // État pour gérer les blocs fermés/ouverts (par défaut fermés en mode enseignant normal, ouverts en mode élève et enseignant connecté)
     const [blocsFermes, setBlocsFermes] = useState(isStudentMode ? new Set() : new Set([1, 2, 3]))
 
@@ -73,8 +115,12 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     const [competenceModalCode, setCompetenceModalCode] = useState(null)
     const [commentairesEleves, setCommentairesEleves] = useState({}) // Format: {eleveId-competenceCode: commentaire}
     const [isEditingNote, setIsEditingNote] = useState(false)
-    const [editingNoteData, setEditingNoteData] = useState({ couleur: '', commentaire: '' })
+    const [editingNoteData, setEditingNoteData] = useState({ couleur: '', commentaire: '', devoirKey: '', nouveauDevoirNom: '' })
     const [editError, setEditError] = useState('')
+    const [devoirOption, setDevoirOption] = useState('aucun') // 'aucun', 'existant', 'nouveau'
+    
+    // État pour la liste des devoirs disponibles pour association
+    const [devoirsDisponibles, setDevoirsDisponibles] = useState([])
 
     useEffect(() => {
         // Ne pas charger tant que l'app n'est pas initialisée
@@ -193,7 +239,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
     // Initialiser les commentaires des élèves avec les valeurs existantes
     useEffect(() => {
-        if (eleves.length > 0 && dernieresEvaluationsDirectes.size > 0) {
+        if (eleves.length > 0 && dernieresEvaluationsDirectes.size > 0 && codeCompetence) {
             const nouveauxCommentaires = {}
             eleves.forEach(eleve => {
                 const cleEleveCompetence = `${eleve.id}-${codeCompetence}`
@@ -243,13 +289,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // Dédoublonner les devoirs par devoirKey
     const devoirsSansDoublons = useMemo(() => {
         const devoirsMap = new Map()
-        devoirs.forEach(devoir => {
-            if (!devoirsMap.has(devoir.devoirKey)) {
-                devoirsMap.set(devoir.devoirKey, devoir)
-            }
+        devoirsDisponibles.forEach(devoir => {
+            devoirsMap.set(devoir.devoirKey, devoir)
         })
-        return Array.from(devoirsMap.values())
-    }, [devoirs])
+        return Array.from(devoirsMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date))
+    }, [devoirsDisponibles])
 
     // Réinitialiser l'affichage du tableau quand la compétence change
     useEffect(() => {
@@ -290,6 +334,15 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         }
     }, [devoirSelectionne, isTeacherMode])
 
+    // Mettre à jour la liste des devoirs disponibles quand les notes changent
+    useEffect(() => {
+        if (notes.length > 0) {
+            chargerDevoirsDisponibles()
+        } else {
+            setDevoirsDisponibles([])
+        }
+    }, [notes])
+
     // Ajouter automatiquement la compétence sélectionnée au devoir actif
     useEffect(() => {
         if (devoirViewVisible && codeCompetence && devoirViewRef.current) {
@@ -301,6 +354,26 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             }, 100)
         }
     }, [devoirViewVisible, codeCompetence])
+
+    // Réinitialiser l'affichage des options de devoir quand la compétence change
+    useEffect(() => {
+        if (!codeCompetence) return
+        
+        // Utiliser la nouvelle fonction pour détecter si la compétence est en cours de notation
+        const estEnCoursDeNotation = isEnCoursDeNotation()
+        
+        // Si la compétence n'est pas en cours de notation, réinitialiser les champs
+        if (!estEnCoursDeNotation) {
+            // Fermer le bloc de sélection de devoir pour permettre sa réouverture
+            setShowDevoirSelection(false)
+            // Vider le champ nouveau devoir seulement si pas de notes en cours
+            setNouveauDevoirNom('')
+        } else {
+            // Pour une compétence en cours de notation, juste fermer le bloc mais préserver les données
+            // NE PAS vider nouveauDevoirNom car l'utilisateur pourrait être en train de créer un nouveau devoir
+            setShowDevoirSelection(false)
+        }
+    }, [codeCompetence, devoirSelectionne, dernieresEvaluationsDirectes])
 
 
 
@@ -463,18 +536,71 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         }
     }
 
+    // Fonction pour extraire les devoirs disponibles depuis les notes déjà chargées
+    const chargerDevoirsDisponibles = () => {
+        try {
+            if (!notes.length) {
+                setDevoirsDisponibles([])
+                return
+            }
+            
+            // Extraire tous les devoirs uniques depuis les notes de la classe
+            const devoirsMap = new Map()
+            notes.forEach(note => {
+                if (note.devoirKey && note.devoir_label) {
+                    const existant = devoirsMap.get(note.devoirKey)
+                    // Si le devoir existe déjà, garder celui avec le label le plus long ou la date la plus récente
+                    if (!existant || 
+                        note.devoir_label.length > existant.devoir_label.length ||
+                        (note.devoir_label.length === existant.devoir_label.length && new Date(note.date) > new Date(existant.date))) {
+                        devoirsMap.set(note.devoirKey, {
+                            devoirKey: note.devoirKey,
+                            devoir_label: note.devoir_label,
+                            date: note.date
+                        })
+                    }
+                }
+            })
+            
+            const tousLesDevoirs = Array.from(devoirsMap.values())
+            
+            setDevoirsDisponibles(tousLesDevoirs)
+            
+            // Notifier App.jsx de la mise à jour des devoirs
+            if (onDevoirsUpdate) {
+                onDevoirsUpdate(tousLesDevoirs)
+            }
+        } catch (error) {
+            console.error('Erreur lors de l\'extraction des devoirs:', error)
+            setDevoirsDisponibles([])
+        }
+    }
+
     const handleEditNote = () => {
+        // Charger les devoirs disponibles depuis les notes déjà chargées
+        chargerDevoirsDisponibles()
+        
+        // Déterminer l'option de devoir actuelle
+        let optionDevoir = 'aucun'
+        if (noteDetail.devoirKey) {
+            optionDevoir = 'existant'
+        }
+        
         setEditingNoteData({
             couleur: noteDetail.couleur,
-            commentaire: noteDetail.commentaire || ''
+            commentaire: noteDetail.commentaire || '',
+            devoirKey: noteDetail.devoirKey || '',
+            nouveauDevoirNom: ''
         })
+        setDevoirOption(optionDevoir)
         setEditError('') // Réinitialiser l'erreur
         setIsEditingNote(true)
     }
 
     const handleCancelEdit = () => {
         setIsEditingNote(false)
-        setEditingNoteData({ couleur: '', commentaire: '' })
+        setEditingNoteData({ couleur: '', commentaire: '', devoirKey: '', nouveauDevoirNom: '' })
+        setDevoirOption('aucun')
         setEditError('') // Réinitialiser l'erreur
         setNoteDetail(null) // Fermer la popup
     }
@@ -483,6 +609,20 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         setEditError('') // Réinitialiser l'erreur avant la tentative
         
         try {
+            // Déterminer les informations de devoir à sauvegarder
+            let devoirKey = editingNoteData.devoirKey
+            let devoirLabel = ''
+            
+            if (editingNoteData.nouveauDevoirNom.trim()) {
+                // Créer un nouveau devoir
+                devoirKey = `${classeChoisie.id}_${teacherInfo.id}_${Date.now()}`
+                devoirLabel = editingNoteData.nouveauDevoirNom.trim()
+            } else if (editingNoteData.devoirKey) {
+                // Utiliser un devoir existant
+                const devoirExistant = devoirsDisponibles.find(d => d.devoirKey === editingNoteData.devoirKey)
+                devoirLabel = devoirExistant?.devoir_label || ''
+            }
+            
             const res = await apiFetch(`/notes/${noteDetail.id}`, {
                 method: 'PUT',
                 headers: {
@@ -494,7 +634,9 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     couleur: editingNoteData.couleur,
                     date: noteDetail.date,
                     prof_id: noteDetail.prof_id,
-                    commentaire: editingNoteData.commentaire
+                    commentaire: editingNoteData.commentaire,
+                    devoirKey: devoirKey || null,
+                    devoir_label: devoirLabel || null
                 })
             })
 
@@ -502,13 +644,20 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 // Met à jour la note dans l'état local
                 setNotes(prev => prev.map(n => 
                     n.id === noteDetail.id 
-                        ? { ...n, couleur: editingNoteData.couleur, commentaire: editingNoteData.commentaire }
+                        ? { 
+                            ...n, 
+                            couleur: editingNoteData.couleur, 
+                            commentaire: editingNoteData.commentaire,
+                            devoirKey: devoirKey || null,
+                            devoir_label: devoirLabel || null
+                        }
                         : n
                 ))
                 
                 // Fermer la popup après sauvegarde réussie
                 setIsEditingNote(false)
-                setEditingNoteData({ couleur: '', commentaire: '' })
+                setEditingNoteData({ couleur: '', commentaire: '', devoirKey: '', nouveauDevoirNom: '' })
+                setDevoirOption('aucun')
                 setNoteDetail(null)
             } else {
                 const errorData = await res.json().catch(() => ({}))
@@ -1725,6 +1874,110 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                     />
                                 </div>
 
+                                {/* Section association au devoir */}
+                                <div style={{ marginTop: '15px' }}>
+                                    <label><strong>Association au devoir :</strong></label>
+                                    
+                                    {/* Option 1: Aucun devoir */}
+                                    <div style={{ marginTop: '10px' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                            <input
+                                                type="radio"
+                                                name="devoirOption"
+                                                checked={devoirOption === 'aucun'}
+                                                onChange={() => {
+                                                    setDevoirOption('aucun')
+                                                    setEditingNoteData(prev => ({ ...prev, devoirKey: '', nouveauDevoirNom: '' }))
+                                                }}
+                                            />
+                                            Aucun devoir associé
+                                        </label>
+                                    </div>
+
+                                    {/* Option 2: Devoir existant */}
+                                    <div style={{ marginTop: '8px' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                            <input
+                                                type="radio"
+                                                name="devoirOption"
+                                                checked={devoirOption === 'existant'}
+                                                onChange={() => {
+                                                    setDevoirOption('existant')
+                                                    setEditingNoteData(prev => ({ ...prev, nouveauDevoirNom: '' }))
+                                                }}
+                                            />
+                                            Associer à un devoir existant
+                                        </label>
+                                        {devoirOption === 'existant' && (
+                                            <div>
+                                                {devoirsDisponibles.length > 0 ? (
+                                                    <select
+                                                        value={editingNoteData.devoirKey}
+                                                        onChange={(e) => setEditingNoteData(prev => ({ ...prev, devoirKey: e.target.value }))}
+                                                        style={{
+                                                            width: '100%',
+                                                            padding: '8px',
+                                                            marginTop: '5px',
+                                                            borderRadius: '4px',
+                                                            border: '1px solid #ccc'
+                                                        }}
+                                                    >
+                                                        <option value="">Sélectionner un devoir...</option>
+                                                        {devoirsSansDoublons.map((devoir, index) => (
+                                                            <option key={`edit-modal-${devoir.devoirKey}-${index}-${++keyCounter}`} value={devoir.devoirKey}>
+                                                                {devoir.devoir_label} ({new Date(devoir.date).toLocaleDateString()})
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                ) : (
+                                                    <div style={{
+                                                        marginTop: '5px',
+                                                        padding: '8px',
+                                                        backgroundColor: '#fff3cd',
+                                                        border: '1px solid #ffeaa7',
+                                                        borderRadius: '4px',
+                                                        fontSize: '14px',
+                                                        color: '#856404'
+                                                    }}>
+                                                        Aucun devoir existant trouvé pour cette classe et ce professeur.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Option 3: Nouveau devoir */}
+                                    <div style={{ marginTop: '8px' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                            <input
+                                                type="radio"
+                                                name="devoirOption"
+                                                checked={devoirOption === 'nouveau'}
+                                                onChange={() => {
+                                                    setDevoirOption('nouveau')
+                                                    setEditingNoteData(prev => ({ ...prev, devoirKey: '' }))
+                                                }}
+                                            />
+                                            Créer un nouveau devoir
+                                        </label>
+                                        {devoirOption === 'nouveau' && (
+                                            <input
+                                                type="text"
+                                                value={editingNoteData.nouveauDevoirNom}
+                                                onChange={(e) => setEditingNoteData(prev => ({ ...prev, nouveauDevoirNom: e.target.value }))}
+                                                placeholder="Nom du nouveau devoir..."
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '8px',
+                                                    marginTop: '5px',
+                                                    borderRadius: '4px',
+                                                    border: '1px solid #ccc'
+                                                }}
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+
                                 {/* Affichage de l'erreur */}
                                 {editError && (
                                     <div style={{
@@ -1862,7 +2115,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                         </button>
                     </div>
 
-                    {showDevoirSelection && !devoirViewVisible && (
+                    {showDevoirSelection && !devoirViewVisible && !hasNotesForCurrentDevoir() && (
                         <div>
                             {/* Devoir existant */}
                             {devoirsSansDoublons.length > 0 && (
@@ -1875,6 +2128,12 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                         onChange={(e) => {
                                             const nouveauDevoir = e.target.value
                                             
+                                            // Vérifier si des notes ont été saisies avec le devoir actuel
+                                            if (hasNotesForCurrentDevoir()) {
+                                                alert('Impossible de changer de devoir : des notes ont déjà été saisies.')
+                                                return
+                                            }
+                                            
                                             // Vérifier s'il y a des notes existantes pour cette compétence
                                             if (hasNotesForCompetence() && devoirSelectionne && nouveauDevoir !== devoirSelectionne) {
                                                 alert('Impossible de changer l\'association au devoir : des notes ont déjà été saisies pour cette compétence.')
@@ -1884,20 +2143,20 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                             setDevoirSelectionne(nouveauDevoir)
                                             if (nouveauDevoir) setNouveauDevoirNom('') // Effacer le nouveau devoir si on sélectionne un existant
                                         }}
-                                        disabled={hasNotesForCompetence() && devoirSelectionne}
+                                        disabled={hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)}
                                         style={{
                                             width: '100%',
                                             padding: '8px',
                                             borderRadius: '4px',
                                             border: '1px solid #ccc',
                                             fontSize: '14px',
-                                            backgroundColor: hasNotesForCompetence() && devoirSelectionne ? '#f8f9fa' : 'white',
-                                            cursor: hasNotesForCompetence() && devoirSelectionne ? 'not-allowed' : 'pointer'
+                                            backgroundColor: (hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)) ? '#f8f9fa' : 'white',
+                                            cursor: (hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)) ? 'not-allowed' : 'pointer'
                                         }}
                                     >
                                         <option value="">-- Sélectionner un devoir existant --</option>
-                                        {devoirsSansDoublons.map(devoir => (
-                                            <option key={devoir.devoirKey} value={devoir.devoirKey}>
+                                        {devoirsSansDoublons.map((devoir, index) => (
+                                            <option key={`quick-note-${devoir.devoirKey}-${index}-${++keyCounter}`} value={devoir.devoirKey}>
                                                 {devoir.devoir_label} ({new Date(devoir.date).toLocaleDateString()})
                                             </option>
                                         ))}
@@ -1914,7 +2173,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                     type="text"
                                     value={nouveauDevoirNom}
                                     onChange={(e) => {
-                                        // Vérifier s'il y a des notes existantes pour cette compétence
+                                        // Vérifier si des notes ont été saisies avec ce nouveau devoir
+                                        if (hasNotesForCurrentDevoir()) {
+                                            alert('Impossible de modifier le nom du devoir : des notes ont déjà été saisies.')
+                                            return
+                                        }
+                                        
+                                        // Vérifier s'il y a des notes existantes pour cette compétence avec un devoir sélectionné
                                         if (hasNotesForCompetence() && devoirSelectionne) {
                                             alert('Impossible de créer un nouveau devoir : des notes ont déjà été saisies pour cette compétence avec un devoir existant.')
                                             return
@@ -1923,36 +2188,49 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                         setNouveauDevoirNom(e.target.value)
                                         if (e.target.value) setDevoirSelectionne('') // Effacer la sélection existante si on tape un nouveau
                                     }}
-                                    disabled={hasNotesForCompetence() && devoirSelectionne}
-                                    placeholder={hasNotesForCompetence() && devoirSelectionne ? "Création bloquée : notes existantes" : "Ex: TP Chimie 12/09/25, Contrôle Math..."}
+                                    disabled={hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)}
+                                    placeholder={
+                                        hasNotesForCurrentDevoir() 
+                                            ? "Nom du devoir verrouillé : notes saisies" 
+                                            : hasNotesForCompetence() && devoirSelectionne 
+                                                ? "Création bloquée : notes existantes" 
+                                                : "Ex: TP Chimie 12/09/25, Contrôle Math..."
+                                    }
                                     style={{
                                         width: '100%',
                                         padding: '8px',
                                         borderRadius: '4px',
                                         border: '1px solid #ccc',
                                         fontSize: '14px',
-                                        backgroundColor: hasNotesForCompetence() && devoirSelectionne ? '#f8f9fa' : 'white',
-                                        cursor: hasNotesForCompetence() && devoirSelectionne ? 'not-allowed' : 'text'
+                                        backgroundColor: (hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)) ? '#f8f9fa' : 'white',
+                                        cursor: (hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)) ? 'not-allowed' : 'text'
                                     }}
                                 />
                             </div>
+                        </div>
+                    )}
 
-                            {(devoirSelectionne || nouveauDevoirNom.trim()) && (
-                                <div style={{ 
-                                    padding: '10px', 
-                                    backgroundColor: '#e8f5e8', 
-                                    borderRadius: '4px',
-                                    fontSize: '14px',
-                                    color: '#2e7d2e'
-                                }}>
-                                    ✅ Les notes saisies seront associées au devoir : 
-                                    <strong>
-                                        {devoirSelectionne 
-                                            ? devoirs.find(d => d.devoirKey === devoirSelectionne)?.devoir_label 
-                                            : nouveauDevoirNom.trim()
-                                        }
-                                    </strong>
-                                </div>
+                    {/* Message de confirmation - affiché en dehors du bloc même quand il est masqué */}
+                    {!devoirViewVisible && (devoirSelectionne || nouveauDevoirNom.trim()) && (
+                        <div style={{ 
+                            padding: '10px', 
+                            backgroundColor: '#e8f5e8', 
+                            borderRadius: '4px',
+                            fontSize: '14px',
+                            color: '#2e7d2e',
+                            marginTop: '10px'
+                        }}>
+                            ✅ Les notes saisies seront associées au devoir : 
+                            <strong>
+                                {devoirSelectionne 
+                                    ? devoirs.find(d => d.devoirKey === devoirSelectionne)?.devoir_label 
+                                    : nouveauDevoirNom.trim()
+                                }
+                            </strong>
+                            {hasNotesForCurrentDevoir() && (
+                                <span style={{ marginLeft: '10px', fontStyle: 'italic' }}>
+                                    (🔒 Devoir verrouillé)
+                                </span>
                             )}
                         </div>
                     )}
@@ -1976,6 +2254,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     }}
                     teacherInfo={teacherInfo}
                     eleveFiltre={eleveFiltre}
+                    competencesN1N2={competencesN1N2}
+                    competencesN3={competencesN3}
                 /></>
             ):(<> {/* Section de sélection de devoir - affiché seulement si une compétence est sélectionnée et en mode enseignant */}
             

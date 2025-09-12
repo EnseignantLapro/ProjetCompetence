@@ -21,10 +21,10 @@ function Baniere({
     hasAdminAccess = false,
     devoirSelectionne = null,
     onDevoirChange = null,
-    codeCompetence = null
+    codeCompetence = null,
+    devoirsDisponibles = []
 }) {
     const [eleves, setEleves] = useState([])
-    const [devoirs, setDevoirs] = useState([])
 
     // Charger les élèves quand la classe change
     useEffect(() => {
@@ -41,36 +41,10 @@ function Baniere({
         }
     }, [classeChoisie, isStudentMode])
 
-    // Charger les devoirs existants du professeur
-    useEffect(() => {
-        const chargerDevoirs = async () => {
-            if (isTeacherMode && teacherInfo?.id && codeCompetence) {
-                try {
-                    const response = await apiFetch('/devoirs')
-                    const devoirsData = await response.json()
-                    setDevoirs(devoirsData)
-                } catch (error) {
-                    console.error('Erreur lors du chargement des devoirs:', error)
-                    setDevoirs([])
-                }
-            } else {
-                setDevoirs([])
-            }
-        }
-        
-        chargerDevoirs()
-    }, [isTeacherMode, teacherInfo?.id, codeCompetence])
-
-    // Dédoublonner les devoirs par devoirKey
+    // Dédoublonner les devoirs reçus en props
     const devoirsSansDoublons = useMemo(() => {
-        const devoirsMap = new Map()
-        devoirs.forEach(devoir => {
-            if (!devoirsMap.has(devoir.devoirKey)) {
-                devoirsMap.set(devoir.devoirKey, devoir)
-            }
-        })
-        return Array.from(devoirsMap.values())
-    }, [devoirs])
+        return devoirsDisponibles || []
+    }, [devoirsDisponibles])
 
     const getClasseName = () => {
         if (!classeChoisie) return ''
@@ -196,8 +170,8 @@ function Baniere({
                                 </div>
                             )}
                             
-                            {/* Sélecteur de devoirs - affiché seulement en mode enseignant avec classe sélectionnée */}
-                            {isTeacherMode && classeChoisie && devoirsSansDoublons.length > 0 && onDevoirChange && (
+                            {/* Sélecteur de devoirs - affiché avec classe sélectionnée et devoirs disponibles */}
+                            {classeChoisie && devoirsSansDoublons.length > 0 && onDevoirChange && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                     <label htmlFor="select-devoir" style={{ fontWeight: '500' }}>
                                         Devoir :
