@@ -8,7 +8,7 @@ import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import { apiFetch } from '../utils/api'
 import{getCouleurPourCompetence,isCompetenceInHierarchy,isCompetenceN1,getNotesVisibles,ajouterNoteDirecte,getCommentaireDerniereEvaluation} from './TableauNotesUtils'
 
-function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false }) {
+function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false, devoirSelectionne = null }) {
     const [eleves, setEleves] = useState([])
     const [elevesVisibles, setElevesVisibles] = useState([]) // Les élèves qui doivent être affichés selon le filtre
     const [notes, setNotes] = useState([])
@@ -28,10 +28,12 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     const [devoirKeyVisible, setDevoirKeyVisible] = useState(null)
 
     // États pour la gestion du devoir en cours de saisie
-    const [devoirSelectionne, setDevoirSelectionne] = useState('')
     const [nouveauDevoirNom, setNouveauDevoirNom] = useState('')
     const [devoirs, setDevoirs] = useState([])
     const [showDevoirSelection, setShowDevoirSelection] = useState(false)
+
+    // Function placeholder pour la compatibilité (maintenant géré par le parent)
+    const setDevoirSelectionne = () => {}
 
     // État pour gérer les blocs fermés/ouverts (par défaut fermés en mode enseignant normal, ouverts en mode élève et enseignant connecté)
     const [blocsFermes, setBlocsFermes] = useState(isStudentMode ? new Set() : new Set([1, 2, 3]))
@@ -45,6 +47,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // Refs pour maintenir la position des élèves lors des changements d'affichage
     const eleveRefs = useRef({})
     const [eleveAMaintenir, setEleveAMaintenir] = useState(null)
+    const devoirViewRef = useRef(null)
 
     const codeCompetence = competenceChoisie
         ? competenceChoisie.niveau3 || competenceChoisie.niveau2 || competenceChoisie.niveau1
@@ -223,6 +226,17 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         chargerDevoirs()
     }, [isTeacherMode, teacherInfo?.id, codeCompetence])
 
+    // Dédoublonner les devoirs par devoirKey
+    const devoirsSansDoublons = useMemo(() => {
+        const devoirsMap = new Map()
+        devoirs.forEach(devoir => {
+            if (!devoirsMap.has(devoir.devoirKey)) {
+                devoirsMap.set(devoir.devoirKey, devoir)
+            }
+        })
+        return Array.from(devoirsMap.values())
+    }, [devoirs])
+
     // Réinitialiser l'affichage du tableau quand la compétence change
     useEffect(() => {
         setTableauVisible(false)
@@ -248,6 +262,19 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             return () => clearTimeout(timeout)
         }
     }, [eleveAMaintenir, tableauVisible, blocsFermes])
+
+    // Activer automatiquement la vue devoir quand un devoir est sélectionné dans la bannière
+    useEffect(() => {
+        if (devoirSelectionne && isTeacherMode) {
+            // Activer la vue devoir
+            setDevoirViewVisible(true)
+            setDevoirKeyVisible(devoirSelectionne)
+        } else if (!devoirSelectionne) {
+            // Désactiver la vue devoir si aucun devoir n'est sélectionné
+            setDevoirViewVisible(false)
+            setDevoirKeyVisible(null)
+        }
+    }, [devoirSelectionne, isTeacherMode])
 
 
 
@@ -1769,18 +1796,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 </div>
             )}
 
-            {/* Vue devoir */}
-            {devoirViewVisible && devoirKeyVisible ? (
-                <DevoirView
-                    devoirKey={devoirKeyVisible}
-                    onClose={() => {
-                        setDevoirViewVisible(false)
-                        setDevoirKeyVisible(null)
-                    }}
-                    teacherInfo={teacherInfo}
-                />
-            ):(<> {/* Section de sélection de devoir - affiché seulement si une compétence est sélectionnée et en mode enseignant */}
-            {codeCompetence && isTeacherMode && !isStudentMode && eleves.length > 0 && (
+ {codeCompetence && isTeacherMode && !isStudentMode && eleves.length > 0 && (
                 <div style={{ 
                     marginBottom: '20px', 
                     padding: '15px', 
@@ -1808,10 +1824,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                         </button>
                     </div>
 
-                    {showDevoirSelection && (
+                    {showDevoirSelection && !devoirViewVisible && (
                         <div>
                             {/* Devoir existant */}
-                            {devoirs.length > 0 && (
+                            {devoirsSansDoublons.length > 0 && (
                                 <div style={{ marginBottom: '15px' }}>
                                     <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
                                         Associer à un devoir existant :
@@ -1831,7 +1847,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                         }}
                                     >
                                         <option value="">-- Sélectionner un devoir existant --</option>
-                                        {devoirs.map(devoir => (
+                                        {devoirsSansDoublons.map(devoir => (
                                             <option key={devoir.devoirKey} value={devoir.devoirKey}>
                                                 {devoir.devoir_label} ({new Date(devoir.date).toLocaleDateString()})
                                             </option>
@@ -1843,7 +1859,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                             {/* OU nouveau devoir */}
                             <div style={{ marginBottom: '10px' }}>
                                 <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                                    {devoirs.length > 0 ? 'OU créer un nouveau devoir :' : 'Créer un nouveau devoir :'}
+                                    {devoirsSansDoublons.length > 0 ? 'OU créer un nouveau devoir :' : 'Créer un nouveau devoir :'}
                                 </label>
                                 <input
                                     type="text"
@@ -1882,8 +1898,37 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                             )}
                         </div>
                     )}
+
+                    {/* Message quand un devoir est en cours de visualisation */}
+                    {devoirViewVisible && devoirKeyVisible && (
+                        <div style={{ 
+                            padding: '10px', 
+                            backgroundColor: '#e3f2fd', 
+                            borderRadius: '4px',
+                            fontSize: '14px',
+                            color: '#1976d2',
+                            marginTop: '10px'
+                        }}>
+                            📋 <strong>Mode devoir actif</strong> : Les nouvelles compétences saisies seront automatiquement ajoutées au devoir en cours de visualisation.
+                        </div>
+                    )}
                 </div>
             )}
+            {/* Vue devoir */}
+            {devoirViewVisible && devoirKeyVisible ? (<>
+               
+                <DevoirView
+                    ref={devoirViewRef}
+                    devoirKey={devoirKeyVisible}
+                    onClose={() => {
+                        setDevoirViewVisible(false)
+                        setDevoirKeyVisible(null)
+                    }}
+                    teacherInfo={teacherInfo}
+                    eleveFiltre={eleveFiltre}
+                /></>
+            ):(<> {/* Section de sélection de devoir - affiché seulement si une compétence est sélectionnée et en mode enseignant */}
+            
             {/* Si mode vue d'ensemble, organiser par élève avec leurs blocs */}
             {!codeCompetence ? (
                 elevesVisibles
@@ -2500,7 +2545,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                         transform: derniereCouleur === 'rouge' ? 'scale(1.05)' : 'scale(1)',
                                                         transition: 'all 0.2s ease'
                                                     }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'rouge',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom)}
+                                                    onClick={() => {
+                                                        // Si un devoir est ouvert, ajouter la compétence temporairement
+                                                        if (devoirViewVisible && devoirViewRef.current) {
+                                                            devoirViewRef.current.ajouterCompetence(codeCompetence)
+                                                        }
+                                                        ajouterNoteDirecte(eleve, codeCompetence, 'rouge',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirViewVisible ? devoirKeyVisible : devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes)
+                                                    }}
                                                     disabled={!codeCompetence}
                                                 >
                                                     Non acquis
@@ -2519,7 +2570,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                         transform: derniereCouleur === 'jaune' ? 'scale(1.05)' : 'scale(1)',
                                                         transition: 'all 0.2s ease'
                                                     }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'jaune',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom)}
+                                                    onClick={() => {
+                                                        // Si un devoir est ouvert, ajouter la compétence temporairement
+                                                        if (devoirViewVisible && devoirViewRef.current) {
+                                                            devoirViewRef.current.ajouterCompetence(codeCompetence)
+                                                        }
+                                                        ajouterNoteDirecte(eleve, codeCompetence, 'jaune',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirViewVisible ? devoirKeyVisible : devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes)
+                                                    }}
                                                     disabled={!codeCompetence}
                                                 >
                                                     Maîtrise fragile
@@ -2538,7 +2595,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                         transform: derniereCouleur === 'bleu' ? 'scale(1.05)' : 'scale(1)',
                                                         transition: 'all 0.2s ease'
                                                     }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'bleu',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom)}
+                                                    onClick={() => {
+                                                        // Si un devoir est ouvert, ajouter la compétence temporairement
+                                                        if (devoirViewVisible && devoirViewRef.current) {
+                                                            devoirViewRef.current.ajouterCompetence(codeCompetence)
+                                                        }
+                                                        ajouterNoteDirecte(eleve, codeCompetence, 'bleu',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirViewVisible ? devoirKeyVisible : devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes)
+                                                    }}
                                                     disabled={!codeCompetence}
                                                 >
                                                     Maîtrise satisfaisante
@@ -2557,7 +2620,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                         transform: derniereCouleur === 'vert' ? 'scale(1.05)' : 'scale(1)',
                                                         transition: 'all 0.2s ease'
                                                     }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'vert' ,notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom)}
+                                                    onClick={() => {
+                                                        // Si un devoir est ouvert, ajouter la compétence temporairement
+                                                        if (devoirViewVisible && devoirViewRef.current) {
+                                                            devoirViewRef.current.ajouterCompetence(codeCompetence)
+                                                        }
+                                                        ajouterNoteDirecte(eleve, codeCompetence, 'vert' ,notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirViewVisible ? devoirKeyVisible : devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes)
+                                                    }}
                                                     disabled={!codeCompetence}
                                                 >
                                                     Très bonne maîtrise

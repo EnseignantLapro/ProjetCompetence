@@ -44,6 +44,9 @@ function App() {
   // État pour le filtre d'élèves
   const [eleveFiltre, setEleveFiltre] = useState('') // ID de l'élève sélectionné, '' = tous les élèves
 
+  // État pour les devoirs
+  const [devoirSelectionne, setDevoirSelectionne] = useState(null)
+
   const [nomNiveau1, setNomNiveau1] = useState('')
   const [nomNiveau2, setNomNiveau2] = useState('')
   const [nomNiveau3, setNomNiveau3] = useState('')
@@ -328,6 +331,10 @@ function App() {
     setEleveFiltre(e.target.value)
   }
 
+  const handleDevoirChange = (devoirKey) => {
+    setDevoirSelectionne(devoirKey)
+  }
+
   const handleToggleAdmin = () => {
     setAdminVisible(!adminVisible)
   }
@@ -403,6 +410,9 @@ function App() {
         teacherInfo={teacherInfo}
         onTeacherLogout={handleTeacherLogout}
         hasAdminAccess={hasAdminAccess()}
+        devoirSelectionne={devoirSelectionne}
+        onDevoirChange={handleDevoirChange}
+        codeCompetence={competenceChoisie}
       />
 
       <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
@@ -532,6 +542,7 @@ function App() {
                 isTeacherMode={isTeacherMode}
                 teacherInfo={teacherInfo}
                 appInitialized={appInitialized}
+                devoirSelectionne={devoirSelectionne}
               />
             </div>
           </>

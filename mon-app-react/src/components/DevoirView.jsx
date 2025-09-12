@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { apiFetch } from '../utils/api'
+import { getPhotoUrl } from './TableauNotesUtils'
 
 const couleurs = {
   rouge: { label: 'Non acquis', hex: '#e74c3c' },
@@ -8,12 +9,15 @@ const couleurs = {
   vert: { label: 'Maîtrisé', hex: '#2ecc71' },
 }
 
-function DevoirView({ devoirKey, onClose, teacherInfo }) {
+const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFiltre }, ref) => {
   const [devoirData, setDevoirData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [eleves, setEleves] = useState([])
   const [competences, setCompetences] = useState([])
+  const [commentairesLocaux, setCommentairesLocaux] = useState({})
+  const [elevesFiltres, setElevesFiltres] = useState([])
+  const [competencesTemporaires, setCompetencesTemporaires] = useState(new Set())
 
   useEffect(() => {
     const chargerDevoir = async () => {
@@ -26,20 +30,13 @@ function DevoirView({ devoirKey, onClose, teacherInfo }) {
         setDevoirData(data)
 
         if (data.length > 0) {
-          // Extraire les élèves uniques
-          const elevesUniques = data.reduce((acc, note) => {
-            const eleveId = note.eleve_id
-            if (!acc.find(e => e.id === eleveId)) {
-              acc.push({
-                id: eleveId,
-                prenom: note.prenom,
-                nom: note.nom,
-                classe_id: note.classe_id
-              })
-            }
-            return acc
-          }, [])
-          setEleves(elevesUniques)
+          // Récupérer la classe_id depuis les données du devoir
+          const classeId = data[0].classe_id
+          
+          // Charger TOUS les élèves de la classe (pas seulement ceux notés)
+          const elevesResponse = await apiFetch(`/eleves?classe_id=${classeId}`)
+          const tousLesEleves = await elevesResponse.json()
+          setEleves(tousLesEleves)
 
           // Extraire les compétences uniques
           const competencesUniques = [...new Set(data.map(note => note.competence_code))]
@@ -56,6 +53,31 @@ function DevoirView({ devoirKey, onClose, teacherInfo }) {
       chargerDevoir()
     }
   }, [devoirKey])
+
+  // Effect pour filtrer les élèves selon eleveFiltre
+  useEffect(() => {
+    if (!eleveFiltre || eleveFiltre === '') {
+      setElevesFiltres(eleves)
+    } else {
+      const eleveSelectionne = eleves.find(eleve => eleve.id.toString() === eleveFiltre.toString())
+      setElevesFiltres(eleveSelectionne ? [eleveSelectionne] : [])
+    }
+  }, [eleves, eleveFiltre])
+
+  // Fonction pour ajouter une compétence temporaire
+  const ajouterCompetenceTemporaire = (competenceCode) => {
+    if (!competences.includes(competenceCode) && !competencesTemporaires.has(competenceCode)) {
+      setCompetencesTemporaires(prev => new Set([...prev, competenceCode]))
+    }
+  }
+
+  // Fonction exposée pour que le parent puisse ajouter des compétences
+  React.useImperativeHandle(ref, () => ({
+    ajouterCompetence: ajouterCompetenceTemporaire
+  }))
+
+  // Combiner les compétences permanentes et temporaires pour l'affichage
+  const toutesLesCompetences = [...competences, ...Array.from(competencesTemporaires)]
 
   const obtenirNote = (eleveId, competenceCode) => {
     return devoirData.find(note => note.eleve_id === eleveId && note.competence_code === competenceCode)
@@ -81,6 +103,27 @@ function DevoirView({ devoirKey, onClose, teacherInfo }) {
           const newResponse = await apiFetch(`/devoirs/${devoirKey}`)
           const newData = await newResponse.json()
           setDevoirData(newData)
+          
+          // Mettre à jour les compétences permanentes et supprimer la temporaire
+          const nouvellesCompetences = [...new Set(newData.map(note => note.competence_code))]
+          setCompetences(nouvellesCompetences)
+          
+          // Supprimer de la liste temporaire si la compétence est maintenant permanente
+          if (nouvellesCompetences.includes(competenceCode)) {
+            setCompetencesTemporaires(prev => {
+              const nouvelles = new Set(prev)
+              nouvelles.delete(competenceCode)
+              return nouvelles
+            })
+          }
+          
+          // Nettoyer le commentaire local après sauvegarde
+          const cleCommentaire = `${eleveId}-${competenceCode}`
+          setCommentairesLocaux(prev => {
+            const newCommentaires = { ...prev }
+            delete newCommentaires[cleCommentaire]
+            return newCommentaires
+          })
         }
       } else {
         // Créer une nouvelle note
@@ -106,6 +149,27 @@ function DevoirView({ devoirKey, onClose, teacherInfo }) {
           const newResponse = await apiFetch(`/devoirs/${devoirKey}`)
           const newData = await newResponse.json()
           setDevoirData(newData)
+          
+          // Mettre à jour les compétences permanentes et supprimer la temporaire
+          const nouvellesCompetences = [...new Set(newData.map(note => note.competence_code))]
+          setCompetences(nouvellesCompetences)
+          
+          // Supprimer de la liste temporaire si la compétence est maintenant permanente
+          if (nouvellesCompetences.includes(competenceCode)) {
+            setCompetencesTemporaires(prev => {
+              const nouvelles = new Set(prev)
+              nouvelles.delete(competenceCode)
+              return nouvelles
+            })
+          }
+          
+          // Nettoyer le commentaire local après sauvegarde
+          const cleCommentaire = `${eleveId}-${competenceCode}`
+          setCommentairesLocaux(prev => {
+            const newCommentaires = { ...prev }
+            delete newCommentaires[cleCommentaire]
+            return newCommentaires
+          })
         }
       }
     } catch (err) {
@@ -167,90 +231,255 @@ function DevoirView({ devoirKey, onClose, teacherInfo }) {
 
       <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
         <p><strong>Date :</strong> {new Date(devoirInfo.date).toLocaleDateString()}</p>
-        <p><strong>Compétences :</strong> {competences.join(', ')}</p>
-        <p><strong>Élèves :</strong> {eleves.length}</p>
+        <p><strong>Élèves :</strong> {elevesFiltres.length}{eleveFiltre ? ` (filtré sur 1 élève)` : ` (${eleves.length} total)`}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <strong>Compétences :</strong>
+          {toutesLesCompetences.map(comp => (
+            <span key={comp} style={{
+              backgroundColor: '#e9ecef',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px'
+            }}>
+              {comp}
+              <button
+                onClick={() => retirerCompetence(comp)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#dc3545',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  padding: '0',
+                  lineHeight: '1'
+                }}
+                title="Retirer cette compétence du devoir"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
       </div>
 
-      {/* Tableau de notation */}
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #ddd' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#f8f9fa' }}>
-              <th style={{ padding: '10px', border: '1px solid #ddd', textAlign: 'left' }}>Élève</th>
-              {competences.map(comp => (
-                <th key={comp} style={{ padding: '10px', border: '1px solid #ddd', textAlign: 'center' }}>
-                  <div>
-                    {comp}
-                    <button
-                      onClick={() => retirerCompetence(comp)}
-                      style={{
-                        marginLeft: '5px',
-                        background: 'none',
-                        border: 'none',
-                        color: '#dc3545',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                      title="Retirer cette compétence du devoir"
-                    >
-                      ❌
-                    </button>
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {eleves.map(eleve => (
-              <tr key={eleve.id}>
-                <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold' }}>
+      {/* Interface en cards comme TableauNotes */}
+      {elevesFiltres.length === 0 ? (
+        <div style={{
+          textAlign: 'center',
+          padding: '40px',
+          color: '#666',
+          fontSize: '16px',
+          backgroundColor: '#f8f9fa',
+          borderRadius: '8px',
+          marginTop: '20px'
+        }}>
+          {eleveFiltre ? 
+            `Aucun élève trouvé avec l'ID ${eleveFiltre}` : 
+            'Aucun élève dans cette classe'
+          }
+        </div>
+      ) : (
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
+          gap: '20px',
+          marginTop: '20px' 
+        }}>
+          {elevesFiltres.map(eleve => (
+          <div key={eleve.id} style={{
+            border: '1px solid #ddd',
+            borderRadius: '8px',
+            backgroundColor: '#fff',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            overflow: 'hidden'
+          }}>
+            {/* Header avec photo et nom */}
+            <div style={{
+              backgroundColor: '#f8f9fa',
+              padding: '15px',
+              borderBottom: '1px solid #ddd',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <img 
+                src={getPhotoUrl(eleve.photo)} 
+                alt={`${eleve.prenom} ${eleve.nom}`}
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  border: '2px solid #ddd'
+                }}
+                onError={(e) => {
+                  e.target.src = '/default.jpg'
+                }}
+              />
+              <div>
+                <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
                   {eleve.prenom} {eleve.nom}
-                </td>
-                {competences.map(comp => {
-                  const note = obtenirNote(eleve.id, comp)
-                  return (
-                    <td key={comp} style={{ padding: '10px', border: '1px solid #ddd', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                        {Object.entries(couleurs).map(([couleurCode, couleurInfo]) => (
-                          <button
-                            key={couleurCode}
-                            onClick={() => ajouterOuModifierNote(eleve.id, comp, couleurCode)}
-                            style={{
-                              backgroundColor: note?.couleur === couleurCode ? couleurInfo.hex : '#f8f9fa',
-                              color: note?.couleur === couleurCode ? 'white' : '#333',
-                              border: `2px solid ${couleurInfo.hex}`,
-                              borderRadius: '50%',
-                              width: '30px',
-                              height: '30px',
-                              cursor: 'pointer',
-                              fontSize: '12px',
-                              fontWeight: 'bold'
-                            }}
-                            title={couleurInfo.label}
-                          >
-                            {couleurCode.charAt(0).toUpperCase()}
-                          </button>
-                        ))}
-                      </div>
-                      {note?.commentaire && (
-                        <div style={{ 
-                          fontSize: '11px', 
-                          color: '#666', 
-                          marginTop: '3px',
-                          maxWidth: '100px',
-                          wordWrap: 'break-word'
+                </div>
+                <div style={{ fontSize: '12px', color: '#666' }}>
+                  ID: {eleve.id}
+                </div>
+              </div>
+            </div>
+
+            {/* Compétences et notes */}
+            <div style={{ padding: '15px' }}>
+              {toutesLesCompetences.map(comp => {
+                const note = obtenirNote(eleve.id, comp)
+                const isTemporaire = competencesTemporaires.has(comp)
+                return (
+                  <div key={comp} style={{ 
+                    marginBottom: '15px',
+                    padding: '10px',
+                    backgroundColor: isTemporaire ? '#fff3e0' : '#f8f9fa',
+                    borderRadius: '6px',
+                    border: isTemporaire ? '2px dashed #ff9800' : 'none'
+                  }}>
+                    <div style={{ 
+                      fontWeight: 'bold', 
+                      marginBottom: '8px',
+                      fontSize: '14px',
+                      color: '#333',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}>
+                      {comp}
+                      {isTemporaire && (
+                        <span style={{
+                          fontSize: '10px',
+                          backgroundColor: '#ff9800',
+                          color: 'white',
+                          padding: '2px 6px',
+                          borderRadius: '10px',
+                          fontWeight: 'normal'
                         }}>
-                          {note.commentaire}
-                        </div>
+                          NOUVEAU
+                        </span>
                       )}
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    </div>
+                    
+                    {/* Boutons de notation avec style TableauNotes */}
+                    <div style={{ 
+                      display: 'flex', 
+                      gap: '5px', 
+                      marginBottom: '8px',
+                      flexWrap: 'wrap' 
+                    }}>
+                      {Object.entries(couleurs).map(([couleurCode, couleurInfo]) => (
+                        <button
+                          key={couleurCode}
+                          onClick={() => {
+                            const cleCommentaire = `${eleve.id}-${comp}`
+                            const commentaireLocal = commentairesLocaux[cleCommentaire] || note?.commentaire || ''
+                            ajouterOuModifierNote(eleve.id, comp, couleurCode, commentaireLocal)
+                          }}
+                          style={{
+                            backgroundColor: note?.couleur === couleurCode ? couleurInfo.hex : '#fff',
+                            color: note?.couleur === couleurCode ? 'white' : '#333',
+                            border: `2px solid ${couleurInfo.hex}`,
+                            borderRadius: '4px',
+                            padding: '6px 12px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            minWidth: '70px',
+                            transition: 'all 0.2s'
+                          }}
+                          title={couleurInfo.label}
+                          onMouseEnter={(e) => {
+                            if (note?.couleur !== couleurCode) {
+                              e.target.style.backgroundColor = couleurInfo.hex
+                              e.target.style.color = 'white'
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (note?.couleur !== couleurCode) {
+                              e.target.style.backgroundColor = '#fff'
+                              e.target.style.color = '#333'
+                            }
+                          }}
+                        >
+                          {couleurCode === 'rouge' ? 'Non acquis' :
+                           couleurCode === 'jaune' ? 'En cours' :
+                           couleurCode === 'bleu' ? 'Acquis' : 'Maîtrisé'}
+                        </button>
+                      ))}
+                      {!note && (
+                        <span style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          color: '#999',
+                          fontStyle: 'italic'
+                        }}>
+                          +Non évalué
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Champ commentaire */}
+                    <textarea
+                      placeholder="Commentaire..."
+                      value={(() => {
+                        const cleCommentaire = `${eleve.id}-${comp}`
+                        return commentairesLocaux[cleCommentaire] !== undefined 
+                          ? commentairesLocaux[cleCommentaire] 
+                          : (note?.commentaire || '')
+                      })()}
+                      onChange={(e) => {
+                        const commentaire = e.target.value
+                        const cleCommentaire = `${eleve.id}-${comp}`
+                        
+                        // Mettre à jour le commentaire local immédiatement
+                        setCommentairesLocaux(prev => ({
+                          ...prev,
+                          [cleCommentaire]: commentaire
+                        }))
+                      }}
+                      onBlur={(e) => {
+                        // Sauvegarder le commentaire seulement si l'élève a une note
+                        const commentaire = e.target.value
+                        if (note?.couleur && commentaire.trim() !== (note?.commentaire || '')) {
+                          ajouterOuModifierNote(eleve.id, comp, note.couleur, commentaire)
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        minHeight: '60px',
+                        padding: '8px',
+                        border: '1px solid #ddd',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        resize: 'vertical',
+                        fontFamily: 'inherit'
+                      }}
+                    />
+
+                    {note?.commentaire && (
+                      <div style={{ 
+                        marginTop: '5px',
+                        fontSize: '11px', 
+                        color: '#666',
+                        fontStyle: 'italic'
+                      }}>
+                        💬 {note.commentaire}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </div>
+      )}
 
       <div style={{ marginTop: '20px', fontSize: '14px', color: '#666' }}>
         <p><strong>Légende :</strong></p>
@@ -272,6 +501,6 @@ function DevoirView({ devoirKey, onClose, teacherInfo }) {
       </div>
     </div>
   )
-}
+})
 
 export default DevoirView

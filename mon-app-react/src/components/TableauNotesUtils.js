@@ -1,3 +1,6 @@
+// Import des fonctions utilitaires
+import { apiFetch } from '../utils/api'
+
 // Fonction helper pour récupérer la couleur avec une compétence spécifique
 const getCouleurPourCompetence = (eleveId, competenceCode,notes) => {
     const note = notes.find(n => n.eleve_id === eleveId && n.competence_code === competenceCode)
@@ -61,7 +64,7 @@ export { isCompetenceN1 };
 export { getNotesVisibles };
 
    // Fonction pour ajouter directement une note avec une couleur (mode filtré)
-    const ajouterNoteDirecte = async (eleve, competenceCode, couleur,notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom) => {
+    const ajouterNoteDirecte = async (eleve, competenceCode, couleur,notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes) => {
         // Désactiver les interactions en mode élève
         if (isStudentMode) {
             return
@@ -165,4 +168,19 @@ export { ajouterNoteDirecte };
     }
 
 export { getCommentaireDerniereEvaluation };
+
+// Fonction pour construire l'URL d'une photo
+const getPhotoUrl = (photoPath) => {
+    if (!photoPath) {
+        return '/default.jpg'
+    }
+    
+    if (photoPath.startsWith('http') || photoPath.startsWith('/')) {
+        return photoPath
+    }
+    
+    return `/${photoPath}`
+}
+
+export { getPhotoUrl };
 

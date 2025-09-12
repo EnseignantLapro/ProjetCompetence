@@ -1,5 +1,5 @@
 // components/Baniere.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { apiFetch } from '../utils/api'
 import '../App.css'
 
@@ -18,9 +18,13 @@ function Baniere({
     isTeacherMode = false,
     teacherInfo = null,
     onTeacherLogout = null,
-    hasAdminAccess = false
+    hasAdminAccess = false,
+    devoirSelectionne = null,
+    onDevoirChange = null,
+    codeCompetence = null
 }) {
     const [eleves, setEleves] = useState([])
+    const [devoirs, setDevoirs] = useState([])
 
     // Charger les élèves quand la classe change
     useEffect(() => {
@@ -36,6 +40,38 @@ function Baniere({
             setEleves([])
         }
     }, [classeChoisie, isStudentMode])
+
+    // Charger les devoirs existants du professeur
+    useEffect(() => {
+        const chargerDevoirs = async () => {
+            if (isTeacherMode && teacherInfo?.id && codeCompetence) {
+                try {
+                    const response = await apiFetch('/devoirs')
+                    const devoirsData = await response.json()
+                    setDevoirs(devoirsData)
+                } catch (error) {
+                    console.error('Erreur lors du chargement des devoirs:', error)
+                    setDevoirs([])
+                }
+            } else {
+                setDevoirs([])
+            }
+        }
+        
+        chargerDevoirs()
+    }, [isTeacherMode, teacherInfo?.id, codeCompetence])
+
+    // Dédoublonner les devoirs par devoirKey
+    const devoirsSansDoublons = useMemo(() => {
+        const devoirsMap = new Map()
+        devoirs.forEach(devoir => {
+            if (!devoirsMap.has(devoir.devoirKey)) {
+                devoirsMap.set(devoir.devoirKey, devoir)
+            }
+        })
+        return Array.from(devoirsMap.values())
+    }, [devoirs])
+
     const getClasseName = () => {
         if (!classeChoisie) return ''
         const classe = classes.find(c => c.id == classeChoisie)
@@ -154,6 +190,33 @@ function Baniere({
                                         {eleves.map(eleve => (
                                             <option key={eleve.id} value={eleve.id}>
                                                 {eleve.prenom} {eleve.nom}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                            
+                            {/* Sélecteur de devoirs - affiché seulement en mode enseignant avec classe sélectionnée */}
+                            {isTeacherMode && classeChoisie && devoirsSansDoublons.length > 0 && onDevoirChange && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <label htmlFor="select-devoir" style={{ fontWeight: '500' }}>
+                                        Devoir :
+                                    </label>
+                                    <select 
+                                        id="select-devoir" 
+                                        value={devoirSelectionne || ''} 
+                                        onChange={(e) => onDevoirChange(e.target.value || null)}
+                                        style={{
+                                            padding: '5px 10px',
+                                            borderRadius: '4px',
+                                            border: '1px solid #ccc',
+                                            minWidth: '180px'
+                                        }}
+                                    >
+                                        <option value="">-- Aucun devoir --</option>
+                                        {devoirsSansDoublons.map(devoir => (
+                                            <option key={devoir.devoirKey} value={devoir.devoirKey}>
+                                                {devoir.devoir_label}
                                             </option>
                                         ))}
                                     </select>
