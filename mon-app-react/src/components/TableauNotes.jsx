@@ -8,7 +8,7 @@ import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import { apiFetch } from '../utils/api'
 import{getCouleurPourCompetence,isCompetenceInHierarchy,isCompetenceN1,getNotesVisibles,ajouterNoteDirecte,getCommentaireDerniereEvaluation} from './TableauNotesUtils'
 
-function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false, devoirSelectionne = null }) {
+function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false, devoirSelectionne = null, onDevoirChange = null }) {
     const [eleves, setEleves] = useState([])
     const [elevesVisibles, setElevesVisibles] = useState([]) // Les élèves qui doivent être affichés selon le filtre
     const [notes, setNotes] = useState([])
@@ -32,8 +32,22 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     const [devoirs, setDevoirs] = useState([])
     const [showDevoirSelection, setShowDevoirSelection] = useState(false)
 
-    // Function placeholder pour la compatibilité (maintenant géré par le parent)
-    const setDevoirSelectionne = () => {}
+    // Fonction pour changer le devoir sélectionné (communication avec le parent)
+    const setDevoirSelectionne = (devoirKey) => {
+        if (onDevoirChange) {
+            onDevoirChange(devoirKey)
+        }
+    }
+
+    // Vérifier si des notes existent déjà pour cette compétence avec un devoir
+    const hasNotesForCompetence = () => {
+        if (!codeCompetence) return false
+        return notes.some(note => 
+            note.competence_code === codeCompetence && 
+            note.devoirKey && 
+            note.devoirKey.trim() !== ''
+        )
+    }
 
     // État pour gérer les blocs fermés/ouverts (par défaut fermés en mode enseignant normal, ouverts en mode élève et enseignant connecté)
     const [blocsFermes, setBlocsFermes] = useState(isStudentMode ? new Set() : new Set([1, 2, 3]))
@@ -1808,7 +1822,19 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 </div>
             )}
 
- {codeCompetence && isTeacherMode && !isStudentMode && eleves.length > 0 && (
+{/* Message quand un devoir est en cours de visualisation */}
+                    {devoirViewVisible && devoirKeyVisible ? (
+                        <div style={{ 
+                            padding: '10px', 
+                            backgroundColor: '#e3f2fd', 
+                            borderRadius: '4px',
+                            fontSize: '14px',
+                            color: '#1976d2',
+                            marginTop: '10px'
+                        }}>
+                            📋 <strong>Mode devoir actif</strong> : Les nouvelles compétences saisies seront automatiquement ajoutées au devoir en cours de visualisation.
+                        </div>
+                    ):(<> {codeCompetence && isTeacherMode && !isStudentMode && eleves.length > 0 && (
                 <div style={{ 
                     marginBottom: '20px', 
                     padding: '15px', 
@@ -1845,17 +1871,28 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                         Associer à un devoir existant :
                                     </label>
                                     <select
-                                        value={devoirSelectionne}
+                                        value={devoirSelectionne || ''}
                                         onChange={(e) => {
-                                            setDevoirSelectionne(e.target.value)
-                                            if (e.target.value) setNouveauDevoirNom('') // Effacer le nouveau devoir si on sélectionne un existant
+                                            const nouveauDevoir = e.target.value
+                                            
+                                            // Vérifier s'il y a des notes existantes pour cette compétence
+                                            if (hasNotesForCompetence() && devoirSelectionne && nouveauDevoir !== devoirSelectionne) {
+                                                alert('Impossible de changer l\'association au devoir : des notes ont déjà été saisies pour cette compétence.')
+                                                return
+                                            }
+                                            
+                                            setDevoirSelectionne(nouveauDevoir)
+                                            if (nouveauDevoir) setNouveauDevoirNom('') // Effacer le nouveau devoir si on sélectionne un existant
                                         }}
+                                        disabled={hasNotesForCompetence() && devoirSelectionne}
                                         style={{
                                             width: '100%',
                                             padding: '8px',
                                             borderRadius: '4px',
                                             border: '1px solid #ccc',
-                                            fontSize: '14px'
+                                            fontSize: '14px',
+                                            backgroundColor: hasNotesForCompetence() && devoirSelectionne ? '#f8f9fa' : 'white',
+                                            cursor: hasNotesForCompetence() && devoirSelectionne ? 'not-allowed' : 'pointer'
                                         }}
                                     >
                                         <option value="">-- Sélectionner un devoir existant --</option>
@@ -1877,16 +1914,25 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                     type="text"
                                     value={nouveauDevoirNom}
                                     onChange={(e) => {
+                                        // Vérifier s'il y a des notes existantes pour cette compétence
+                                        if (hasNotesForCompetence() && devoirSelectionne) {
+                                            alert('Impossible de créer un nouveau devoir : des notes ont déjà été saisies pour cette compétence avec un devoir existant.')
+                                            return
+                                        }
+                                        
                                         setNouveauDevoirNom(e.target.value)
                                         if (e.target.value) setDevoirSelectionne('') // Effacer la sélection existante si on tape un nouveau
                                     }}
-                                    placeholder="Ex: TP Chimie 12/09/25, Contrôle Math..."
+                                    disabled={hasNotesForCompetence() && devoirSelectionne}
+                                    placeholder={hasNotesForCompetence() && devoirSelectionne ? "Création bloquée : notes existantes" : "Ex: TP Chimie 12/09/25, Contrôle Math..."}
                                     style={{
                                         width: '100%',
                                         padding: '8px',
                                         borderRadius: '4px',
                                         border: '1px solid #ccc',
-                                        fontSize: '14px'
+                                        fontSize: '14px',
+                                        backgroundColor: hasNotesForCompetence() && devoirSelectionne ? '#f8f9fa' : 'white',
+                                        cursor: hasNotesForCompetence() && devoirSelectionne ? 'not-allowed' : 'text'
                                     }}
                                 />
                             </div>
@@ -1911,21 +1957,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                         </div>
                     )}
 
-                    {/* Message quand un devoir est en cours de visualisation */}
-                    {devoirViewVisible && devoirKeyVisible && (
-                        <div style={{ 
-                            padding: '10px', 
-                            backgroundColor: '#e3f2fd', 
-                            borderRadius: '4px',
-                            fontSize: '14px',
-                            color: '#1976d2',
-                            marginTop: '10px'
-                        }}>
-                            📋 <strong>Mode devoir actif</strong> : Les nouvelles compétences saisies seront automatiquement ajoutées au devoir en cours de visualisation.
-                        </div>
-                    )}
+                    
                 </div>
-            )}
+            )}</>)}
+
+
             {/* Vue devoir */}
             {devoirViewVisible && devoirKeyVisible ? (<>
                
@@ -1935,6 +1971,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     onClose={() => {
                         setDevoirViewVisible(false)
                         setDevoirKeyVisible(null)
+                        // Remettre "Aucun devoir" sélectionné dans la bannière
+                        setDevoirSelectionne(null)
                     }}
                     teacherInfo={teacherInfo}
                     eleveFiltre={eleveFiltre}

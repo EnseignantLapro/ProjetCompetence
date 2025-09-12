@@ -190,14 +190,26 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
       })
 
       if (response.ok) {
-        // Recharger les données
-        const newResponse = await apiFetch(`/devoirs/${devoirKey}`)
-        const newData = await newResponse.json()
-        setDevoirData(newData)
+        const result = await response.json()
         
-        // Mettre à jour les compétences
-        const competencesUniques = [...new Set(newData.map(note => note.competence_code))]
-        setCompetences(competencesUniques)
+        // Si aucun changement en base (changes: 0), c'était une compétence temporaire
+        if (result.changes === 0) {
+          // Retirer la compétence des compétences temporaires
+          setCompetencesTemporaires(prev => {
+            const nouvelles = new Set(prev)
+            nouvelles.delete(competenceCode)
+            return nouvelles
+          })
+        } else {
+          // Recharger les données si des changements ont été faits en base
+          const newResponse = await apiFetch(`/devoirs/${devoirKey}`)
+          const newData = await newResponse.json()
+          setDevoirData(newData)
+          
+          // Mettre à jour les compétences
+          const competencesUniques = [...new Set(newData.map(note => note.competence_code))]
+          setCompetences(competencesUniques)
+        }
       }
     } catch (err) {
       console.error('Erreur lors de la suppression de la compétence:', err)
@@ -481,24 +493,7 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
       </div>
       )}
 
-      <div style={{ marginTop: '20px', fontSize: '14px', color: '#666' }}>
-        <p><strong>Légende :</strong></p>
-        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          {Object.entries(couleurs).map(([code, info]) => (
-            <div key={code} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <div 
-                style={{ 
-                  width: '20px', 
-                  height: '20px', 
-                  backgroundColor: info.hex, 
-                  borderRadius: '50%' 
-                }}
-              ></div>
-              <span>{info.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+     
     </div>
   )
 })

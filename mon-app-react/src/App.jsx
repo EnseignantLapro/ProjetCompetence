@@ -543,6 +543,7 @@ function App() {
                 teacherInfo={teacherInfo}
                 appInitialized={appInitialized}
                 devoirSelectionne={devoirSelectionne}
+                onDevoirChange={handleDevoirChange}
               />
             </div>
           </>
