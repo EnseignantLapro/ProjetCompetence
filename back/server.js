@@ -201,6 +201,19 @@ db.serialize(() => {
         }
     })
 
+    // Ajouter les colonnes pour la gestion des devoirs
+    db.run(`ALTER TABLE notes ADD COLUMN devoirKey TEXT`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('Erreur lors de l\'ajout de la colonne devoirKey:', err.message)
+        }
+    })
+    
+    db.run(`ALTER TABLE notes ADD COLUMN devoir_label TEXT`, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+            console.error('Erreur lors de l\'ajout de la colonne devoir_label:', err.message)
+        }
+    })
+
     db.run(`CREATE TABLE IF NOT EXISTS competences_n3 (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   parent_code TEXT NOT NULL,
@@ -1785,18 +1798,43 @@ app.post('/notes', verifyToken, (req, res) => {
         return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' });
     }
     
-    const { eleve_id, competence_code, couleur, date, prof_id, commentaire } = req.body
+    const { eleve_id, competence_code, couleur, date, prof_id, commentaire, devoir_label, devoirKey } = req.body
+
+    // Fonction pour générer une clé de devoir
+    const generateDevoirKey = (date, competence_code, prof_id, classe_id) => {
+        return `${date}_${competence_code}_${prof_id}_${classe_id}`;
+    }
 
     // Si c'est un super admin, autoriser toutes les créations
     if (req.user.isSuperAdmin) {
-        db.run(
-            'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire) VALUES (?, ?, ?, ?, ?, ?)',
-            [eleve_id, competence_code, couleur, date, prof_id, commentaire || null],
-            function (err) {
+        // Si devoir_label est fourni et devoirKey est vide, générer la clé
+        if (devoir_label && !devoirKey) {
+            // On a besoin de la classe_id de l'élève pour générer la clé
+            db.get('SELECT classe_id FROM eleves WHERE id = ?', [eleve_id], (err, eleveData) => {
                 if (err) return res.status(500).json({ error: err.message })
-                res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire })
-            }
-        )
+                if (!eleveData) return res.status(404).json({ error: 'Élève non trouvé' })
+                
+                const newDevoirKey = generateDevoirKey(date, competence_code, prof_id, eleveData.classe_id);
+                
+                db.run(
+                    'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, newDevoirKey, devoir_label],
+                    function (err) {
+                        if (err) return res.status(500).json({ error: err.message })
+                        res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey: newDevoirKey, devoir_label })
+                    }
+                )
+            })
+        } else {
+            db.run(
+                'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, devoirKey || null, devoir_label || null],
+                function (err) {
+                    if (err) return res.status(500).json({ error: err.message })
+                    res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label })
+                }
+            )
+        }
         return
     }
 
@@ -1842,15 +1880,29 @@ app.post('/notes', verifyToken, (req, res) => {
                     return res.status(403).json({ error: errorMsg })
                 }
 
-                // Créer la note
-                db.run(
-                    'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire) VALUES (?, ?, ?, ?, ?, ?)',
-                    [eleve_id, competence_code, couleur, date, prof_id, commentaire || null],
-                    function (err) {
-                        if (err) return res.status(500).json({ error: err.message })
-                        res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire })
-                    }
-                )
+                // Créer la note avec gestion de devoir
+                if (devoir_label && !devoirKey) {
+                    // Générer la clé de devoir
+                    const newDevoirKey = generateDevoirKey(date, competence_code, prof_id, eleve.classe_id);
+                    
+                    db.run(
+                        'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                        [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, newDevoirKey, devoir_label],
+                        function (err) {
+                            if (err) return res.status(500).json({ error: err.message })
+                            res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey: newDevoirKey, devoir_label })
+                        }
+                    )
+                } else {
+                    db.run(
+                        'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                        [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, devoirKey || null, devoir_label || null],
+                        function (err) {
+                            if (err) return res.status(500).json({ error: err.message })
+                            res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label })
+                        }
+                    )
+                }
             })
         } else {
             // Vérifier les permissions selon le rôle
@@ -1867,15 +1919,29 @@ app.post('/notes', verifyToken, (req, res) => {
                 return res.status(403).json({ error: errorMsg })
             }
 
-            // Créer la note
-            db.run(
-                'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire) VALUES (?, ?, ?, ?, ?, ?)',
-                [eleve_id, competence_code, couleur, date, prof_id, commentaire || null],
-                function (err) {
-                    if (err) return res.status(500).json({ error: err.message })
-                    res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire })
-                }
-            )
+            // Créer la note avec gestion de devoir
+            if (devoir_label && !devoirKey) {
+                // Générer la clé de devoir
+                const newDevoirKey = generateDevoirKey(date, competence_code, prof_id, eleve.classe_id);
+                
+                db.run(
+                    'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, newDevoirKey, devoir_label],
+                    function (err) {
+                        if (err) return res.status(500).json({ error: err.message })
+                        res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey: newDevoirKey, devoir_label })
+                    }
+                )
+            } else {
+                db.run(
+                    'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, devoirKey || null, devoir_label || null],
+                    function (err) {
+                        if (err) return res.status(500).json({ error: err.message })
+                        res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label })
+                    }
+                )
+            }
         }
     })
 })
@@ -2162,6 +2228,76 @@ app.delete('/notes/:id', verifyToken, (req, res) => {
                 res.json({ message: 'Note supprimée', id: parseInt(id) })
             })
         }
+    })
+})
+
+// Récupérer les devoirs existants d'un professeur
+app.get('/devoirs', verifyToken, (req, res) => {
+    // Seuls les enseignants peuvent récupérer leurs devoirs
+    if (req.user.type !== 'teacher') {
+        return res.status(403).json({ error: 'Accès refusé' });
+    }
+    
+    const professorId = req.user.id;
+    
+    // Récupérer tous les devoirs distincts du professeur
+    db.all(`
+        SELECT DISTINCT devoirKey, devoir_label, date, competence_code
+        FROM notes 
+        WHERE prof_id = ? AND devoirKey IS NOT NULL AND devoirKey != ''
+        ORDER BY date DESC, devoir_label
+    `, [professorId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message })
+        res.json(rows)
+    })
+})
+
+// Route pour récupérer les détails d'un devoir spécifique
+app.get('/devoirs/:devoirKey', verifyToken, (req, res) => {
+    // Seuls les enseignants peuvent récupérer les détails d'un devoir
+    if (req.user.type !== 'teacher') {
+        return res.status(403).json({ error: 'Accès refusé' });
+    }
+    
+    const { devoirKey } = req.params;
+    const professorId = req.user.id;
+    
+    // Récupérer toutes les notes et élèves associés à ce devoir
+    db.all(`
+        SELECT n.*, e.prenom, e.nom, e.classe_id
+        FROM notes n
+        JOIN eleves e ON n.eleve_id = e.id
+        WHERE n.devoirKey = ? AND n.prof_id = ?
+        ORDER BY e.nom, e.prenom, n.competence_code
+    `, [devoirKey, professorId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message })
+        res.json(rows)
+    })
+})
+
+// Route pour retirer une compétence d'un devoir (remettre devoirKey à null)
+app.put('/devoirs/:devoirKey/remove-competence', verifyToken, (req, res) => {
+    // Seuls les enseignants peuvent modifier leurs devoirs
+    if (req.user.type !== 'teacher') {
+        return res.status(403).json({ error: 'Accès refusé' });
+    }
+    
+    const { devoirKey } = req.params;
+    const { competence_code } = req.body;
+    const professorId = req.user.id;
+    
+    if (!competence_code) {
+        return res.status(400).json({ error: 'Code de compétence requis' });
+    }
+    
+    // Mettre à jour toutes les notes de cette compétence pour ce devoir
+    db.run(`
+        UPDATE notes 
+        SET devoirKey = NULL, devoir_label = NULL 
+        WHERE devoirKey = ? AND competence_code = ? AND prof_id = ?
+    `, [devoirKey, competence_code, professorId], function(err) {
+        if (err) return res.status(500).json({ error: err.message })
+        res.json({ message: 'Compétence retirée du devoir', changes: this.changes })
     })
 })
 

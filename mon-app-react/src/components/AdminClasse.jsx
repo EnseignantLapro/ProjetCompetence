@@ -56,23 +56,12 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
   // Charger les enseignants assignés pour chaque classe
   useEffect(() => {
     if (classesWithCounts.length > 0) {
-      console.log('📋 Chargement enseignants pour', classesWithCounts.length, 'classes')
-      
       const teachersPromises = classesWithCounts.map(classe => 
         apiFetch(`/classes/${classe.id}/enseignants`)
-          .then(res => {
-            if (!res.ok) {
-              if (res.status === 404) {
-                console.warn(`⚠️ Classe ${classe.id} non trouvée (probablement supprimée)`)
-                return { classeId: classe.id, teachers: [] }
-              }
-              throw new Error(`HTTP ${res.status}`)
-            }
-            return res.json()
-          })
+          .then(res => res.json())
           .then(teachers => ({ classeId: classe.id, teachers }))
           .catch(err => {
-            console.error(`❌ Erreur enseignants classe ${classe.id}:`, err.message)
+            console.error(`Erreur lors du chargement des enseignants pour la classe ${classe.id}:`, err)
             return { classeId: classe.id, teachers: [] }
           })
       )
@@ -83,17 +72,9 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
           teachersByClass[classeId] = teachers
         })
         setClassTeachers(teachersByClass)
-        console.log('✅ Enseignants chargés pour toutes les classes')
-      }).catch(err => {
-        console.error('❌ Erreur Promise.all enseignants:', err)
-        // Cette erreur ne devrait pas se produire car on gère les erreurs individuelles
       })
-    } else {
-      // Si plus de classes, vider les enseignants
-      setClassTeachers({})
-      console.log('🧹 Enseignants vidés (pas de classes)')
     }
-  }, [classesWithCounts]) // Dépendre de classesWithCounts pour se re-déclencher après suppression
+  }, [])
 
   // Fonction pour recharger les classes
   const rechargerClasses = () => {
@@ -101,7 +82,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     if (isSuperAdmin) {
       url = `/classes/with-counts`;
     }
-    return apiFetch(url)
+    apiFetch(url)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -113,7 +94,6 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
       .catch(err => {
         setClassesWithCounts([])
         console.error('Erreur lors du chargement des classes:', err)
-        throw err // Re-lancer l'erreur pour que l'appelant puisse la gérer
       })
   }
 
@@ -209,40 +189,20 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
   const supprimerClasse = async (id) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette classe ?')) return
     
-    console.log('🗑️ Début suppression classe ID:', id)
-    
     try {
       const res = await apiFetch(`/classes/${id}`, {
         method: 'DELETE',
       })
       
-      console.log('📡 Réponse suppression:', res.status, res.ok)
-      
       if (res.ok) {
         const data = await res.json()
-        console.log('✅ Données de suppression:', data)
-        
         alert(data.message || 'Classe supprimée !')
-        
-        // Nettoyer les états liés à cette classe
-        if (assigningTeacher === id) {
-          setAssigningTeacher(null)
-          setSelectedTeacherId('')
-        }
-        if (editingClasseId === id) {
-          setEditingClasseId(null)
-          setEditingClasseNom('')
-        }
-        
         // Rafraîchir la liste
-        console.log('🔄 Début rechargement des classes...')
-        try {
-          await rechargerClasses()
-          console.log('✅ Rechargement réussi')
-        } catch (reloadErr) {
-          console.error('❌ Erreur lors du rechargement des classes:', reloadErr)
-          // Ne pas afficher d'erreur à l'utilisateur car la suppression a réussi
-        }
+        rechargerClasses()
+          .catch(err => {
+            setClassesWithCounts([])
+            console.error('Erreur lors du chargement des classes:', err)
+          })
       } else if (res.status === 400) {
         const errorData = await res.json()
         const forceDelete = confirm(
@@ -257,39 +217,19 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
           if (forceRes.ok) {
             const forceData = await forceRes.json()
             alert(`✅ ${forceData.message}`)
-            
-            // Nettoyer les états liés à cette classe
-            if (assigningTeacher === id) {
-              setAssigningTeacher(null)
-              setSelectedTeacherId('')
-            }
-            if (editingClasseId === id) {
-              setEditingClasseId(null)
-              setEditingClasseNom('')
-            }
-            
             // Rafraîchir la liste
-            try {
-              await rechargerClasses()
-            } catch (reloadErr) {
-              console.error('Erreur lors du rechargement des classes:', reloadErr)
-              // Ne pas afficher d'erreur à l'utilisateur car la suppression a réussi
-            }
+            rechargerClasses()
           } else {
-            const errorData = await forceRes.json()
-            alert(`Erreur lors de la suppression forcée: ${errorData.error || 'Erreur inconnue'}`)
+            alert('Erreur lors de la suppression forcée')
           }
         }
       } else {
-        const errorData = await res.json()
-        alert(`Erreur lors de la suppression: ${errorData.error || 'Erreur inconnue'}`)
+        alert('Erreur lors de la suppression')
       }
     } catch (err) {
-      console.error('❌ Erreur complète:', err)
-      alert('Erreur de connexion lors de la suppression')
+      console.error('Erreur:', err)
+      alert('Erreur lors de la suppression')
     }
-    
-    console.log('🏁 Fin suppression classe ID:', id)
   }
 
   return (

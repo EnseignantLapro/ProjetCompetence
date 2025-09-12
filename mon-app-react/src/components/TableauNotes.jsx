@@ -3,6 +3,7 @@ import './TableauNotes.css'
 import ColorPickerModal from './ColorPickerModal'
 import PositionnementModal from './PositionnementModal'
 import NotePastille from './NotePastille'
+import DevoirView from './DevoirView'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import { apiFetch } from '../utils/api'
 
@@ -20,6 +21,16 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     const [modalPositionnementOuvert, setModalPositionnementOuvert] = useState(false)
     const [elevePositionnement, setElevePositionnement] = useState(null)
     const [competencePositionnement, setCompetencePositionnement] = useState(null)
+
+    // État pour la vue devoir
+    const [devoirViewVisible, setDevoirViewVisible] = useState(false)
+    const [devoirKeyVisible, setDevoirKeyVisible] = useState(null)
+
+    // États pour la gestion du devoir en cours de saisie
+    const [devoirSelectionne, setDevoirSelectionne] = useState('')
+    const [nouveauDevoirNom, setNouveauDevoirNom] = useState('')
+    const [devoirs, setDevoirs] = useState([])
+    const [showDevoirSelection, setShowDevoirSelection] = useState(false)
 
     // État pour gérer les blocs fermés/ouverts (par défaut fermés en mode enseignant normal, ouverts en mode élève et enseignant connecté)
     const [blocsFermes, setBlocsFermes] = useState(isStudentMode ? new Set() : new Set([1, 2, 3]))
@@ -191,6 +202,26 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         }
     }, [eleves, eleveFiltre])
 
+    // Charger les devoirs existants du professeur
+    useEffect(() => {
+        const chargerDevoirs = async () => {
+            if (isTeacherMode && teacherInfo?.id && codeCompetence) {
+                try {
+                    const response = await apiFetch('/devoirs')
+                    const devoirsData = await response.json()
+                    setDevoirs(devoirsData)
+                } catch (error) {
+                    console.error('Erreur lors du chargement des devoirs:', error)
+                    setDevoirs([])
+                }
+            } else {
+                setDevoirs([])
+            }
+        }
+        
+        chargerDevoirs()
+    }, [isTeacherMode, teacherInfo?.id, codeCompetence])
+
     // Réinitialiser l'affichage du tableau quand la compétence change
     useEffect(() => {
         setTableauVisible(false)
@@ -361,6 +392,20 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     date: new Date().toISOString().split('T')[0],
                     prof_id: teacherInfo?.id || null,
                     commentaire: commentaire.trim() || null
+                }
+
+                // Ajouter les informations de devoir si sélectionné
+                if (devoirSelectionne) {
+                    // Utiliser un devoir existant
+                    const devoir = devoirs.find(d => d.devoirKey === devoirSelectionne)
+                    if (devoir) {
+                        nouvelleNote.devoirKey = devoir.devoirKey
+                        nouvelleNote.devoir_label = devoir.devoir_label
+                    }
+                } else if (nouveauDevoirNom.trim()) {
+                    // Créer un nouveau devoir
+                    nouvelleNote.devoir_label = nouveauDevoirNom.trim()
+                    // La devoirKey sera générée côté serveur
                 }
 
                 const response = await apiFetch(`/notes`, {
@@ -1633,6 +1678,112 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     <p>Aucun Élève est ajouté à votre classe.</p>
                 </div>
             )}
+
+            {/* Section de sélection de devoir - affiché seulement si une compétence est sélectionnée et en mode enseignant */}
+            {codeCompetence && isTeacherMode && !isStudentMode && eleves.length > 0 && (
+                <div style={{ 
+                    marginBottom: '20px', 
+                    padding: '15px', 
+                    border: '1px solid #ddd', 
+                    borderRadius: '5px',
+                    backgroundColor: '#f9f9f9'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+                        <h4 style={{ margin: 0, marginRight: '15px' }}>
+                            📋 Associer à un devoir (facultatif)
+                        </h4>
+                        <button
+                            type="button"
+                            onClick={() => setShowDevoirSelection(!showDevoirSelection)}
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#007bff',
+                                cursor: 'pointer',
+                                textDecoration: 'underline',
+                                fontSize: '14px'
+                            }}
+                        >
+                            {showDevoirSelection ? 'Masquer' : 'Afficher les options'}
+                        </button>
+                    </div>
+
+                    {showDevoirSelection && (
+                        <div>
+                            {/* Devoir existant */}
+                            {devoirs.length > 0 && (
+                                <div style={{ marginBottom: '15px' }}>
+                                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                                        Associer à un devoir existant :
+                                    </label>
+                                    <select
+                                        value={devoirSelectionne}
+                                        onChange={(e) => {
+                                            setDevoirSelectionne(e.target.value)
+                                            if (e.target.value) setNouveauDevoirNom('') // Effacer le nouveau devoir si on sélectionne un existant
+                                        }}
+                                        style={{
+                                            width: '100%',
+                                            padding: '8px',
+                                            borderRadius: '4px',
+                                            border: '1px solid #ccc',
+                                            fontSize: '14px'
+                                        }}
+                                    >
+                                        <option value="">-- Sélectionner un devoir existant --</option>
+                                        {devoirs.map(devoir => (
+                                            <option key={devoir.devoirKey} value={devoir.devoirKey}>
+                                                {devoir.devoir_label} ({new Date(devoir.date).toLocaleDateString()})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* OU nouveau devoir */}
+                            <div style={{ marginBottom: '10px' }}>
+                                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                                    {devoirs.length > 0 ? 'OU créer un nouveau devoir :' : 'Créer un nouveau devoir :'}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={nouveauDevoirNom}
+                                    onChange={(e) => {
+                                        setNouveauDevoirNom(e.target.value)
+                                        if (e.target.value) setDevoirSelectionne('') // Effacer la sélection existante si on tape un nouveau
+                                    }}
+                                    placeholder="Ex: TP Chimie 12/09/25, Contrôle Math..."
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px',
+                                        borderRadius: '4px',
+                                        border: '1px solid #ccc',
+                                        fontSize: '14px'
+                                    }}
+                                />
+                            </div>
+
+                            {(devoirSelectionne || nouveauDevoirNom.trim()) && (
+                                <div style={{ 
+                                    padding: '10px', 
+                                    backgroundColor: '#e8f5e8', 
+                                    borderRadius: '4px',
+                                    fontSize: '14px',
+                                    color: '#2e7d2e'
+                                }}>
+                                    ✅ Les notes saisies seront associées au devoir : 
+                                    <strong>
+                                        {devoirSelectionne 
+                                            ? devoirs.find(d => d.devoirKey === devoirSelectionne)?.devoir_label 
+                                            : nouveauDevoirNom.trim()
+                                        }
+                                    </strong>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
             {/* Si mode vue d'ensemble, organiser par élève avec leurs blocs */}
             {!codeCompetence ? (
                 elevesVisibles
@@ -2831,6 +2982,22 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Affichage du devoir associé */}
+                                {noteDetail.devoir_label && noteDetail.devoirKey && (
+                                    <div style={{ marginTop: '10px' }}>
+                                        <p><strong>Devoir associé :</strong></p>
+                                        <div style={{ 
+                                            backgroundColor: '#e3f2fd', 
+                                            padding: '10px', 
+                                            borderRadius: '4px',
+                                            border: '1px solid #2196f3',
+                                            color: '#1565c0'
+                                        }}>
+                                            📋 {noteDetail.devoir_label}
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <>
@@ -2916,6 +3083,28 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                             {!isEditingNote ? (
                                 <>
                                     <button onClick={() => setNoteDetail(null)}>Fermer</button>
+                                    
+                                    {/* Bouton pour afficher le devoir associé */}
+                                    {noteDetail.devoirKey && !isStudentMode && (
+                                        <button
+                                            onClick={() => {
+                                                setDevoirKeyVisible(noteDetail.devoirKey)
+                                                setDevoirViewVisible(true)
+                                                setNoteDetail(null)
+                                            }}
+                                            style={{
+                                                backgroundColor: '#2196f3',
+                                                color: 'white',
+                                                border: 'none',
+                                                padding: '8px 16px',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            📋 Voir le devoir
+                                        </button>
+                                    )}
+                                    
                                     {!isStudentMode && (
                                         <>
                                             <button
@@ -2968,6 +3157,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Vue devoir */}
+            {devoirViewVisible && devoirKeyVisible && (
+                <DevoirView
+                    devoirKey={devoirKeyVisible}
+                    onClose={() => {
+                        setDevoirViewVisible(false)
+                        setDevoirKeyVisible(null)
+                    }}
+                    teacherInfo={teacherInfo}
+                />
             )}
         </div>
     )
