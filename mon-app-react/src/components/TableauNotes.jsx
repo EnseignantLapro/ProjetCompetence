@@ -6,6 +6,7 @@ import NotePastille from './NotePastille'
 import DevoirView from './DevoirView'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import { apiFetch } from '../utils/api'
+import{getCouleurPourCompetence,isCompetenceInHierarchy,isCompetenceN1,getNotesVisibles,ajouterNoteDirecte,getCommentaireDerniereEvaluation} from './TableauNotesUtils'
 
 function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false }) {
     const [eleves, setEleves] = useState([])
@@ -179,7 +180,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             const nouveauxCommentaires = {}
             eleves.forEach(eleve => {
                 const cleEleveCompetence = `${eleve.id}-${codeCompetence}`
-                const commentaireExistant = getCommentaireDerniereEvaluation(eleve.id, codeCompetence)
+                const commentaireExistant = getCommentaireDerniereEvaluation(eleve.id, codeCompetence,dernieresEvaluationsDirectes)
                 if (commentaireExistant && !commentairesEleves[cleEleveCompetence]) {
                     nouveauxCommentaires[cleEleveCompetence] = commentaireExistant
                 }
@@ -248,63 +249,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         }
     }, [eleveAMaintenir, tableauVisible, blocsFermes])
 
-    const getCouleur = (eleveId) => {
-        const note = notes.find(n => n.eleve_id === eleveId && n.competence_code === codeCompetence)
-        return note ? note.couleur : ''
-    }
 
-    // Fonction helper pour récupérer la couleur avec une compétence spécifique
-    const getCouleurPourCompetence = (eleveId, competenceCode) => {
-        const note = notes.find(n => n.eleve_id === eleveId && n.competence_code === competenceCode)
-        return note ? note.couleur : ''
-    }
 
-    // Fonction pour vérifier si une compétence fait partie de la hiérarchie sélectionnée
-    const isCompetenceInHierarchy = (competenceCode) => {
-        // Si aucune compétence n'est sélectionnée, on affiche tout
-        if (!codeCompetence) {
-         
-            return true;
-        }
+  
 
-        if (!competenceCode) {
-           
-            return false;
-        }
 
-        // Si c'est exactement la même compétence
-        if (competenceCode === codeCompetence) {
-           
-            return true;
-        }
 
-        // Si la compétence sélectionnée est un parent de cette compétence
-        // Par exemple : sélection "C01" et compétence "C01.1" ou "C01.1.2"
-        if (competenceCode.startsWith(codeCompetence + '.')) {
-           
-            return true;
-        }
-
-       
-        return false;
-    }
-
-    // Fonction pour vérifier si le code sélectionné est une compétence N1
-    const isCompetenceN1 = (competenceCode) => {
-        if (!competenceCode) return false
-        // Une compétence N1 ne contient pas de point
-        return !competenceCode.includes('.')
-    }
-
-    // Fonction pour obtenir toutes les notes visibles pour un élève
-    const getNotesVisibles = (eleveId) => {
-        const notesTotales = notes.filter(n => n.eleve_id === eleveId)
-        const notesAvecCode = notesTotales.filter(n => n.competence_code)
-        const notesFiltrees = notesAvecCode.filter(n => isCompetenceInHierarchy(n.competence_code))
-     
-        
-        return notesFiltrees
-    }
+ 
 
     const handleClickEleve = (eleve, competenceCodeSpecifique = null) => {
         // Désactiver les interactions en mode élève
@@ -329,7 +280,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             setNoteDetail({
                 eleve_id: eleve.id,
                 competence_code: competenceCodeSpecifique,
-                couleur: getCouleurPourCompetence(eleve.id, competenceCodeSpecifique)  // Récupérer la couleur actuelle pour cette compétence
+                couleur: getCouleurPourCompetence(eleve.id, competenceCodeSpecifique,notes)  // Récupérer la couleur actuelle pour cette compétence
             })
         }
         setModalOuvert(true)
@@ -341,107 +292,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         setNotes([...autres, nouvelleNote])
     }
 
-    // Fonction pour ajouter directement une note avec une couleur (mode filtré)
-    const ajouterNoteDirecte = async (eleve, competenceCode, couleur) => {
-        // Désactiver les interactions en mode élève
-        if (isStudentMode) {
-            return
-        }
-        
-        try {
-            const modeEvaluation = localStorage.getItem('mode_evaluation') || 'nouvelle'
-            const cleEleveCompetence = `${eleve.id}-${competenceCode}`
-            const derniereEvaluationDirecte = dernieresEvaluationsDirectes.get(cleEleveCompetence)
-            
-            // Récupérer le commentaire pour cette combinaison élève + compétence
-            const commentaire = commentairesEleves[cleEleveCompetence] || ''
+ 
 
-            // En mode "edition" : modifier l'évaluation existante s'il y en a une
-            // En mode "nouvelle" : toujours créer une nouvelle évaluation
-            if (modeEvaluation === 'edition' && derniereEvaluationDirecte) {
-                // Modifier la dernière évaluation directe existante
-                const response = await apiFetch(`/notes/${derniereEvaluationDirecte.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        ...derniereEvaluationDirecte,
-                        couleur: couleur,
-                        date: new Date().toISOString().split('T')[0],
-                        commentaire: commentaire.trim() || null
-                    })
-                })
-
-                if (response.ok) {
-                    // Mettre à jour l'état local
-                    const evaluationModifiee = { ...derniereEvaluationDirecte, couleur, commentaire }
-                    setDernieresEvaluationsDirectes(prev => new Map(prev.set(cleEleveCompetence, evaluationModifiee)))
-
-                    // Recharger toutes les notes depuis la base
-                    const notesResponse = await apiFetch(`/notes`)
-                    const toutesLesNotes = await notesResponse.json()
-                    setNotes(toutesLesNotes)
-                    
-                    // Ne pas vider le commentaire en mode édition, le laisser pour modification
-                }
-            } else {
-                // Créer une nouvelle évaluation (mode "nouvelle" ou aucune évaluation existante)
-                const nouvelleNote = {
-                    eleve_id: eleve.id,
-                    competence_code: competenceCode,
-                    couleur: couleur,
-                    date: new Date().toISOString().split('T')[0],
-                    prof_id: teacherInfo?.id || null,
-                    commentaire: commentaire.trim() || null
-                }
-
-                // Ajouter les informations de devoir si sélectionné
-                if (devoirSelectionne) {
-                    // Utiliser un devoir existant
-                    const devoir = devoirs.find(d => d.devoirKey === devoirSelectionne)
-                    if (devoir) {
-                        nouvelleNote.devoirKey = devoir.devoirKey
-                        nouvelleNote.devoir_label = devoir.devoir_label
-                    }
-                } else if (nouveauDevoirNom.trim()) {
-                    // Créer un nouveau devoir
-                    nouvelleNote.devoir_label = nouveauDevoirNom.trim()
-                    // La devoirKey sera générée côté serveur
-                }
-
-                const response = await apiFetch(`/notes`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(nouvelleNote)
-                })
-
-                if (response.ok) {
-                    const noteAjoutee = await response.json()
-                    // Tracker cette nouvelle évaluation comme la dernière directe
-                    setDernieresEvaluationsDirectes(prev => new Map(prev.set(cleEleveCompetence, noteAjoutee)))
-
-                    // Recharger toutes les notes depuis la base
-                    const notesResponse = await apiFetch(`/notes`)
-                    const toutesLesNotes = await notesResponse.json()
-                    setNotes(toutesLesNotes)
-                    
-                    // Après la première évaluation, passer en mode édition
-                    localStorage.setItem('mode_evaluation', 'edition')
-                    
-                    // Ne pas vider le commentaire, le laisser visible pour montrer qu'il a été sauvegardé
-                    // L'utilisateur peut voir que son commentaire est pris en compte
-                }
-            }
-        } catch (error) {
-            console.error('Erreur lors de l\'ajout/modification de la note:', error)
-        }
-    }
-
-    // Fonction pour obtenir le commentaire de la dernière évaluation directe
-    const getCommentaireDerniereEvaluation = (eleveId, competenceCode) => {
-        const cleEleveCompetence = `${eleveId}-${competenceCode}`
-        const derniereEvaluation = dernieresEvaluationsDirectes.get(cleEleveCompetence)
-        return derniereEvaluation?.commentaire || ''
-    }
 
     // Fonction pour calculer la note de progression basée sur le nombre de pastilles
     const calculerNoteProgression = (eleveId, numeroBloc) => {
@@ -776,7 +628,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
     // Fonction pour organiser les notes par hiérarchie pour un élève
     const organiserNotesParHierarchie = (eleveId) => {
-        const notesEleve = getNotesVisibles(eleveId)
+        const notesEleve = getNotesVisibles(eleveId,codeCompetence,notes)
         const hierarchie = {}
 
         notesEleve.forEach(note => {
@@ -972,7 +824,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         // Parcourir toutes les compétences du référentiel
         competencesN1N2.forEach(comp1 => {
             // En mode filtré, ne traiter que la compétence N1 sélectionnée ou toutes si aucune sélection
-            if (codeCompetence && !isCompetenceInHierarchy(comp1.code)) {
+            if (codeCompetence && !isCompetenceInHierarchy(comp1.code,codeCompetence)) {
                 return // Ignorer cette compétence N1 si elle ne correspond pas au filtre
             }
 
@@ -987,7 +839,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             // Ajouter les compétences de niveau 2
             comp1.enfants.forEach(comp2 => {
                 // En mode filtré, vérifier si cette N2 doit être incluse
-                if (codeCompetence && !isCompetenceInHierarchy(comp2.code)) {
+                if (codeCompetence && !isCompetenceInHierarchy(comp2.code,codeCompetence)) {
                     return // Ignorer cette compétence N2 si elle ne correspond pas au filtre
                 }
 
@@ -1679,7 +1531,255 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 </div>
             )}
 
-            {/* Section de sélection de devoir - affiché seulement si une compétence est sélectionnée et en mode enseignant */}
+           
+
+            {modalOuvert && eleveActuel && (
+                <ColorPickerModal
+                    eleve={eleveActuel}
+                    competenceCode={competenceModalCode || noteDetail?.competence_code || codeCompetence}
+                    onClose={() => {
+                        setModalOuvert(false)
+                        setCompetenceModalCode(null)
+                        // Nettoyer noteDetail quand on ferme la modal
+                        if (noteDetail?.competence_code !== codeCompetence) {
+                            setNoteDetail(null)
+                        }
+                    }}
+                    onSave={handleSaveNote}
+                    ajouterNote={(note) => setNotes(prev => [...prev, note])}
+                    teacherInfo={teacherInfo}
+                />
+            )}
+
+            {modalPositionnementOuvert && elevePositionnement && competencePositionnement && (
+                <PositionnementModal
+                    eleve={elevePositionnement}
+                    competenceCode={competencePositionnement}
+                    competenceNom={getNomCompetence(competencePositionnement)}
+                    positionnementActuel={getPositionnementEnseignant(elevePositionnement.id, competencePositionnement)}
+                    onClose={() => {
+                        setModalPositionnementOuvert(false)
+                        setElevePositionnement(null)
+                        setCompetencePositionnement(null)
+                    }}
+                    onSave={handleSavePositionnement}
+                />
+            )}
+
+            {noteDetail && (
+                <div className="modal-note-detail">
+                    <div className="modal-content">
+                        <h4>{isEditingNote ? 'Modifier la note' : 'Détail de la note'}</h4>
+                        <p><strong>Compétence :</strong> {getNomCompetence(noteDetail.competence_code)}</p>
+                        
+                        {!isEditingNote ? (
+                            <>
+                                <p><strong>Couleur :</strong> {noteDetail.couleur}</p>
+                                <p><strong>Date :</strong> {new Date(noteDetail.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</p>
+                                <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
+                                {noteDetail.commentaire && (
+                                    <div style={{ marginTop: '10px' }}>
+                                        <p><strong>Commentaire/Remédiation :</strong></p>
+                                        <div style={{ 
+                                            backgroundColor: '#f8f9fa', 
+                                            padding: '10px', 
+                                            borderRadius: '4px',
+                                            border: '1px solid #dee2e6',
+                                            fontStyle: 'italic',
+                                            color: '#212529'
+                                        }}>
+                                            {noteDetail.commentaire}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Affichage du devoir associé */}
+                                {noteDetail.devoir_label && noteDetail.devoirKey && (
+                                    <div style={{ marginTop: '10px' }}>
+                                        <p><strong>Devoir associé :</strong></p>
+                                        <div style={{ 
+                                            backgroundColor: '#e3f2fd', 
+                                            padding: '10px', 
+                                            borderRadius: '4px',
+                                            border: '1px solid #2196f3',
+                                            color: '#1565c0'
+                                        }}>
+                                            📋 {noteDetail.devoir_label}
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <>
+                                <p><strong>Date :</strong> {new Date(noteDetail.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</p>
+                                <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
+                                
+                                <div style={{ marginTop: '15px' }}>
+                                    <label><strong>Couleur :</strong></label>
+                                    <div style={{ 
+                                        marginTop: '10px', 
+                                        display: 'flex', 
+                                        gap: '10px', 
+                                        flexWrap: 'wrap',
+                                        justifyContent: 'center'
+                                    }}>
+                                        {[
+                                            { nom: 'rouge', label: 'Non acquis', css: '#e53935' },
+                                            { nom: 'jaune', label: 'Maîtrise fragile', css: '#fdd835' },
+                                            { nom: 'bleu', label: 'Maîtrise satisfaisante', css: '#1e88e5' },
+                                            { nom: 'vert', label: 'Très bonne maîtrise', css: '#43a047' }
+                                        ].map(couleur => (
+                                            <button
+                                                key={couleur.nom}
+                                                onClick={() => setEditingNoteData(prev => ({ ...prev, couleur: couleur.nom }))}
+                                                style={{
+                                                    backgroundColor: couleur.css,
+                                                    color: 'white',
+                                                    border: editingNoteData.couleur === couleur.nom ? '3px solid #333' : '1px solid #ccc',
+                                                    borderRadius: '8px',
+                                                    padding: '12px 16px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '13px',
+                                                    fontWeight: 'bold',
+                                                    minWidth: '120px',
+                                                    textAlign: 'center',
+                                                    transform: editingNoteData.couleur === couleur.nom ? 'scale(1.05)' : 'scale(1)',
+                                                    transition: 'all 0.2s ease',
+                                                    boxShadow: editingNoteData.couleur === couleur.nom ? '0 4px 8px rgba(0,0,0,0.2)' : '0 2px 4px rgba(0,0,0,0.1)'
+                                                }}
+                                            >
+                                                {couleur.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div style={{ marginTop: '15px' }}>
+                                    <label><strong>Commentaire/Remédiation :</strong></label>
+                                    <textarea
+                                        value={editingNoteData.commentaire}
+                                        onChange={(e) => setEditingNoteData(prev => ({ ...prev, commentaire: e.target.value }))}
+                                        placeholder="Commentaire ou remédiation..."
+                                        style={{
+                                            width: '100%',
+                                            height: '80px',
+                                            marginTop: '5px',
+                                            padding: '8px',
+                                            borderRadius: '4px',
+                                            border: '1px solid #ccc',
+                                            resize: 'vertical'
+                                        }}
+                                    />
+                                </div>
+
+                                {/* Affichage de l'erreur */}
+                                {editError && (
+                                    <div style={{
+                                        marginTop: '10px',
+                                        padding: '10px',
+                                        backgroundColor: '#ffe6e6',
+                                        border: '1px solid #ff4444',
+                                        borderRadius: '4px',
+                                        color: '#cc0000',
+                                        fontSize: '14px'
+                                    }}>
+                                        {editError}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                        
+                        <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                            {!isEditingNote ? (
+                                <>
+                                    <button onClick={() => setNoteDetail(null)}>Fermer</button>
+                                    
+                                    {/* Bouton pour afficher le devoir associé */}
+                                    {noteDetail.devoirKey && !isStudentMode && (
+                                        <button
+                                            onClick={() => {
+                                                setDevoirKeyVisible(noteDetail.devoirKey)
+                                                setDevoirViewVisible(true)
+                                                setNoteDetail(null)
+                                            }}
+                                            style={{
+                                                backgroundColor: '#2196f3',
+                                                color: 'white',
+                                                border: 'none',
+                                                padding: '8px 16px',
+                                                borderRadius: '4px',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            📋 Voir le devoir
+                                        </button>
+                                    )}
+                                    
+                                    {!isStudentMode && (
+                                        <>
+                                            <button
+                                                onClick={handleEditNote}
+                                                style={{
+                                                    backgroundColor: '#2196F3',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    padding: '8px 16px',
+                                                    borderRadius: '4px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                Modifier
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteNote(noteDetail.id)}
+                                                style={{
+                                                    backgroundColor: '#e53935',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    padding: '8px 16px',
+                                                    borderRadius: '4px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                Supprimer
+                                            </button>
+                                        </>
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    <button onClick={handleCancelEdit}>Annuler</button>
+                                    <button
+                                        onClick={handleSaveEditedNote}
+                                        style={{
+                                            backgroundColor: '#4CAF50',
+                                            color: 'white',
+                                            border: 'none',
+                                            padding: '8px 16px',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        Enregistrer
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Vue devoir */}
+            {devoirViewVisible && devoirKeyVisible ? (
+                <DevoirView
+                    devoirKey={devoirKeyVisible}
+                    onClose={() => {
+                        setDevoirViewVisible(false)
+                        setDevoirKeyVisible(null)
+                    }}
+                    teacherInfo={teacherInfo}
+                />
+            ):(<> {/* Section de sélection de devoir - affiché seulement si une compétence est sélectionnée et en mode enseignant */}
             {codeCompetence && isTeacherMode && !isStudentMode && eleves.length > 0 && (
                 <div style={{ 
                     marginBottom: '20px', 
@@ -2400,7 +2500,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                         transform: derniereCouleur === 'rouge' ? 'scale(1.05)' : 'scale(1)',
                                                         transition: 'all 0.2s ease'
                                                     }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'rouge')}
+                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'rouge',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom)}
                                                     disabled={!codeCompetence}
                                                 >
                                                     Non acquis
@@ -2419,7 +2519,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                         transform: derniereCouleur === 'jaune' ? 'scale(1.05)' : 'scale(1)',
                                                         transition: 'all 0.2s ease'
                                                     }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'jaune')}
+                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'jaune',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom)}
                                                     disabled={!codeCompetence}
                                                 >
                                                     Maîtrise fragile
@@ -2438,7 +2538,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                         transform: derniereCouleur === 'bleu' ? 'scale(1.05)' : 'scale(1)',
                                                         transition: 'all 0.2s ease'
                                                     }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'bleu')}
+                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'bleu',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom)}
                                                     disabled={!codeCompetence}
                                                 >
                                                     Maîtrise satisfaisante
@@ -2457,7 +2557,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                         transform: derniereCouleur === 'vert' ? 'scale(1.05)' : 'scale(1)',
                                                         transition: 'all 0.2s ease'
                                                     }}
-                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'vert')}
+                                                    onClick={() => ajouterNoteDirecte(eleve, codeCompetence, 'vert' ,notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom)}
                                                     disabled={!codeCompetence}
                                                 >
                                                     Très bonne maîtrise
@@ -2475,7 +2575,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                     const cleEleveCompetence = `${eleve.id}-${codeCompetence}`
                                                     return commentairesEleves[cleEleveCompetence] !== undefined 
                                                         ? commentairesEleves[cleEleveCompetence] 
-                                                        : getCommentaireDerniereEvaluation(eleve.id, codeCompetence)
+                                                        : getCommentaireDerniereEvaluation(eleve.id, codeCompetence,dernieresEvaluationsDirectes)
                                                 })()}
                                                 onChange={(e) => {
                                                     const cleEleveCompetence = `${eleve.id}-${codeCompetence}`
@@ -2921,257 +3021,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                             )}
                         </div>
                     )
-                }))}
-
-            {modalOuvert && eleveActuel && (
-                <ColorPickerModal
-                    eleve={eleveActuel}
-                    competenceCode={competenceModalCode || noteDetail?.competence_code || codeCompetence}
-                    onClose={() => {
-                        setModalOuvert(false)
-                        setCompetenceModalCode(null)
-                        // Nettoyer noteDetail quand on ferme la modal
-                        if (noteDetail?.competence_code !== codeCompetence) {
-                            setNoteDetail(null)
-                        }
-                    }}
-                    onSave={handleSaveNote}
-                    ajouterNote={(note) => setNotes(prev => [...prev, note])}
-                    teacherInfo={teacherInfo}
-                />
-            )}
-
-            {modalPositionnementOuvert && elevePositionnement && competencePositionnement && (
-                <PositionnementModal
-                    eleve={elevePositionnement}
-                    competenceCode={competencePositionnement}
-                    competenceNom={getNomCompetence(competencePositionnement)}
-                    positionnementActuel={getPositionnementEnseignant(elevePositionnement.id, competencePositionnement)}
-                    onClose={() => {
-                        setModalPositionnementOuvert(false)
-                        setElevePositionnement(null)
-                        setCompetencePositionnement(null)
-                    }}
-                    onSave={handleSavePositionnement}
-                />
-            )}
-
-            {noteDetail && (
-                <div className="modal-note-detail">
-                    <div className="modal-content">
-                        <h4>{isEditingNote ? 'Modifier la note' : 'Détail de la note'}</h4>
-                        <p><strong>Compétence :</strong> {getNomCompetence(noteDetail.competence_code)}</p>
-                        
-                        {!isEditingNote ? (
-                            <>
-                                <p><strong>Couleur :</strong> {noteDetail.couleur}</p>
-                                <p><strong>Date :</strong> {new Date(noteDetail.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</p>
-                                <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
-                                {noteDetail.commentaire && (
-                                    <div style={{ marginTop: '10px' }}>
-                                        <p><strong>Commentaire/Remédiation :</strong></p>
-                                        <div style={{ 
-                                            backgroundColor: '#f8f9fa', 
-                                            padding: '10px', 
-                                            borderRadius: '4px',
-                                            border: '1px solid #dee2e6',
-                                            fontStyle: 'italic',
-                                            color: '#212529'
-                                        }}>
-                                            {noteDetail.commentaire}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Affichage du devoir associé */}
-                                {noteDetail.devoir_label && noteDetail.devoirKey && (
-                                    <div style={{ marginTop: '10px' }}>
-                                        <p><strong>Devoir associé :</strong></p>
-                                        <div style={{ 
-                                            backgroundColor: '#e3f2fd', 
-                                            padding: '10px', 
-                                            borderRadius: '4px',
-                                            border: '1px solid #2196f3',
-                                            color: '#1565c0'
-                                        }}>
-                                            📋 {noteDetail.devoir_label}
-                                        </div>
-                                    </div>
-                                )}
-                            </>
-                        ) : (
-                            <>
-                                <p><strong>Date :</strong> {new Date(noteDetail.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</p>
-                                <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
-                                
-                                <div style={{ marginTop: '15px' }}>
-                                    <label><strong>Couleur :</strong></label>
-                                    <div style={{ 
-                                        marginTop: '10px', 
-                                        display: 'flex', 
-                                        gap: '10px', 
-                                        flexWrap: 'wrap',
-                                        justifyContent: 'center'
-                                    }}>
-                                        {[
-                                            { nom: 'rouge', label: 'Non acquis', css: '#e53935' },
-                                            { nom: 'jaune', label: 'Maîtrise fragile', css: '#fdd835' },
-                                            { nom: 'bleu', label: 'Maîtrise satisfaisante', css: '#1e88e5' },
-                                            { nom: 'vert', label: 'Très bonne maîtrise', css: '#43a047' }
-                                        ].map(couleur => (
-                                            <button
-                                                key={couleur.nom}
-                                                onClick={() => setEditingNoteData(prev => ({ ...prev, couleur: couleur.nom }))}
-                                                style={{
-                                                    backgroundColor: couleur.css,
-                                                    color: 'white',
-                                                    border: editingNoteData.couleur === couleur.nom ? '3px solid #333' : '1px solid #ccc',
-                                                    borderRadius: '8px',
-                                                    padding: '12px 16px',
-                                                    cursor: 'pointer',
-                                                    fontSize: '13px',
-                                                    fontWeight: 'bold',
-                                                    minWidth: '120px',
-                                                    textAlign: 'center',
-                                                    transform: editingNoteData.couleur === couleur.nom ? 'scale(1.05)' : 'scale(1)',
-                                                    transition: 'all 0.2s ease',
-                                                    boxShadow: editingNoteData.couleur === couleur.nom ? '0 4px 8px rgba(0,0,0,0.2)' : '0 2px 4px rgba(0,0,0,0.1)'
-                                                }}
-                                            >
-                                                {couleur.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div style={{ marginTop: '15px' }}>
-                                    <label><strong>Commentaire/Remédiation :</strong></label>
-                                    <textarea
-                                        value={editingNoteData.commentaire}
-                                        onChange={(e) => setEditingNoteData(prev => ({ ...prev, commentaire: e.target.value }))}
-                                        placeholder="Commentaire ou remédiation..."
-                                        style={{
-                                            width: '100%',
-                                            height: '80px',
-                                            marginTop: '5px',
-                                            padding: '8px',
-                                            borderRadius: '4px',
-                                            border: '1px solid #ccc',
-                                            resize: 'vertical'
-                                        }}
-                                    />
-                                </div>
-
-                                {/* Affichage de l'erreur */}
-                                {editError && (
-                                    <div style={{
-                                        marginTop: '10px',
-                                        padding: '10px',
-                                        backgroundColor: '#ffe6e6',
-                                        border: '1px solid #ff4444',
-                                        borderRadius: '4px',
-                                        color: '#cc0000',
-                                        fontSize: '14px'
-                                    }}>
-                                        {editError}
-                                    </div>
-                                )}
-                            </>
-                        )}
-                        
-                        <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                            {!isEditingNote ? (
-                                <>
-                                    <button onClick={() => setNoteDetail(null)}>Fermer</button>
-                                    
-                                    {/* Bouton pour afficher le devoir associé */}
-                                    {noteDetail.devoirKey && !isStudentMode && (
-                                        <button
-                                            onClick={() => {
-                                                setDevoirKeyVisible(noteDetail.devoirKey)
-                                                setDevoirViewVisible(true)
-                                                setNoteDetail(null)
-                                            }}
-                                            style={{
-                                                backgroundColor: '#2196f3',
-                                                color: 'white',
-                                                border: 'none',
-                                                padding: '8px 16px',
-                                                borderRadius: '4px',
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            📋 Voir le devoir
-                                        </button>
-                                    )}
-                                    
-                                    {!isStudentMode && (
-                                        <>
-                                            <button
-                                                onClick={handleEditNote}
-                                                style={{
-                                                    backgroundColor: '#2196F3',
-                                                    color: 'white',
-                                                    border: 'none',
-                                                    padding: '8px 16px',
-                                                    borderRadius: '4px',
-                                                    cursor: 'pointer'
-                                                }}
-                                            >
-                                                Modifier
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteNote(noteDetail.id)}
-                                                style={{
-                                                    backgroundColor: '#e53935',
-                                                    color: 'white',
-                                                    border: 'none',
-                                                    padding: '8px 16px',
-                                                    borderRadius: '4px',
-                                                    cursor: 'pointer'
-                                                }}
-                                            >
-                                                Supprimer
-                                            </button>
-                                        </>
-                                    )}
-                                </>
-                            ) : (
-                                <>
-                                    <button onClick={handleCancelEdit}>Annuler</button>
-                                    <button
-                                        onClick={handleSaveEditedNote}
-                                        style={{
-                                            backgroundColor: '#4CAF50',
-                                            color: 'white',
-                                            border: 'none',
-                                            padding: '8px 16px',
-                                            borderRadius: '4px',
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        Enregistrer
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Vue devoir */}
-            {devoirViewVisible && devoirKeyVisible && (
-                <DevoirView
-                    devoirKey={devoirKeyVisible}
-                    onClose={() => {
-                        setDevoirViewVisible(false)
-                        setDevoirKeyVisible(null)
-                    }}
-                    teacherInfo={teacherInfo}
-                />
-            )}
+                }))}</>)}
         </div>
     )
+
 }
 
 export default TableauNotes
