@@ -22,7 +22,24 @@ function ColorPickerModal({ eleve, competenceCode, onClose, ajouterNote, teacher
       try {
         const response = await apiFetch('/devoirs')
         const devoirsData = await response.json()
-        setDevoirs(devoirsData)
+        
+        // Dédoublonner les devoirs par devoirKey
+        const devoirsMap = new Map()
+        devoirsData.forEach(devoir => {
+          if (devoir && devoir.devoirKey) {
+            const existant = devoirsMap.get(devoir.devoirKey)
+            // Garder celui avec le label le plus long ou la date la plus récente
+            if (!existant || 
+                devoir.devoir_label.length > existant.devoir_label.length ||
+                (devoir.devoir_label.length === existant.devoir_label.length && new Date(devoir.date) > new Date(existant.date))) {
+              devoirsMap.set(devoir.devoirKey, devoir)
+            }
+          }
+        })
+        
+        const devoirsUniques = Array.from(devoirsMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date))
+        console.log('🔧 ColorPickerModal - devoirs bruts:', devoirsData.length, 'devoirs uniques:', devoirsUniques.length)
+        setDevoirs(devoirsUniques)
       } catch (error) {
         console.error('Erreur lors du chargement des devoirs:', error)
       }
@@ -100,7 +117,7 @@ function ColorPickerModal({ eleve, competenceCode, onClose, ajouterNote, teacher
         <div style={{ marginBottom: '1rem', padding: '10px', border: '1px solid #ddd', borderRadius: '4px', backgroundColor: '#f9f9f9' }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.5rem' }}>
             <label style={{ fontWeight: 'bold', marginRight: '10px' }}>
-              Associer à un devoir (facultatif) :
+              Associer à un devoir (facultatif) : d
             </label>
             <button
               type="button"
