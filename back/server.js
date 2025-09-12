@@ -50,75 +50,114 @@ function verifyToken(req, res, next) {
     
     const token = authHeader.substring(7);
     
+    // Si le type d'utilisateur est spécifié, utiliser la logique existante
     if (userType === 'student') {
-        // Vérifier token élève et récupérer son établissement
-        db.get(
-            `SELECT e.id, e.prenom, e.nom, e.id_moodle, e.classe_id, e.photo, 
-                    ref.etablissement 
-             FROM eleves e
-             JOIN classes c ON e.classe_id = c.id
-             LEFT JOIN enseignants ref ON c.idReferent = ref.id
-             WHERE e.token = ?`,
-            [token],
-            (err, eleve) => {
-                if (err) {
-                    console.error('Erreur lors de la vérification du token élève:', err);
-                    return res.status(500).json({ error: err.message });
-                }
-                
-                if (!eleve) {
-                    return res.status(401).json({ error: 'Token élève invalide' });
-                }
-                
+        return verifyStudentToken(token, req, res, next);
+    } else if (userType === 'teacher') {
+        return verifyTeacherToken(token, req, res, next);
+    }
+    
+    // Si pas de type spécifié, essayer d'abord enseignant, puis élève
+    verifyTeacherToken(token, req, res, (err) => {
+        if (err || !req.user) {
+            // Si échec enseignant, essayer élève
+            verifyStudentToken(token, req, res, next);
+        } else {
+            // Succès enseignant
+            next();
+        }
+    });
+}
+
+function verifyStudentToken(token, req, res, next) {
+    db.get(
+        `SELECT e.id, e.prenom, e.nom, e.id_moodle, e.classe_id, e.photo, 
+                ref.etablissement 
+         FROM eleves e
+         JOIN classes c ON e.classe_id = c.id
+         LEFT JOIN enseignants ref ON c.idReferent = ref.id
+         WHERE e.token = ?`,
+        [token],
+        (err, eleve) => {
+            if (err) {
+                console.error('Erreur lors de la vérification du token élève:', err);
+                return res.status(500).json({ error: err.message });
+            }
+            
+            if (!eleve) {
+                return res.status(401).json({ error: 'Token élève invalide' });
+            }
+            
+            // Si pas d'établissement via le référent, chercher via un enseignant associé
+            if (!eleve.etablissement) {
+                db.get(
+                    `SELECT e_ens.etablissement
+                     FROM enseignants e_ens
+                     JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                     WHERE ec.classe_id = ?
+                     LIMIT 1`,
+                    [eleve.classe_id],
+                    (err2, enseignantAssocie) => {
+                        if (err2) {
+                            console.error('Erreur lors de la recherche d\'enseignant associé:', err2);
+                            return res.status(500).json({ error: err2.message });
+                        }
+                        
+                        // Utiliser l'établissement de l'enseignant associé s'il existe
+                        eleve.etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                        req.user = { ...eleve, type: 'student' };
+                        next();
+                    }
+                );
+            } else {
                 req.user = { ...eleve, type: 'student' };
                 next();
             }
-        );
-    } else if (userType === 'teacher') {
-        // Vérifier token enseignant
-        const SUPER_ADMIN_TOKEN = 'wyj4zi9yan5qktoby5alm';
-        
-        if (token === SUPER_ADMIN_TOKEN) {
-            // Super admin
-            db.get(
-                'SELECT id, prenom, nom, id_moodle, photo, etablissement, referent FROM enseignants WHERE id = 1',
-                [],
-                (err, enseignant) => {
-                    if (err) {
-                        console.error('Erreur lors de la vérification du super admin:', err);
-                        return res.status(500).json({ error: err.message });
-                    }
-                    
-                    if (!enseignant) {
-                        return res.status(401).json({ error: 'Super admin non trouvé' });
-                    }
-                    
-                    req.user = { ...enseignant, type: 'teacher', isSuperAdmin: true };
-                    next();
-                }
-            );
-        } else {
-            // Enseignant normal
-            db.get(
-                'SELECT id, prenom, nom, id_moodle, photo, etablissement, referent FROM enseignants WHERE token = ?',
-                [token],
-                (err, enseignant) => {
-                    if (err) {
-                        console.error('Erreur lors de la vérification du token enseignant:', err);
-                        return res.status(500).json({ error: err.message });
-                    }
-                    
-                    if (!enseignant) {
-                        return res.status(401).json({ error: 'Token enseignant invalide' });
-                    }
-                    
-                    req.user = { ...enseignant, type: 'teacher', isSuperAdmin: false };
-                    next();
-                }
-            );
         }
+    );
+}
+
+function verifyTeacherToken(token, req, res, next) {
+    const SUPER_ADMIN_TOKEN = 'wyj4zi9yan5qktoby5alm';
+    
+    if (token === SUPER_ADMIN_TOKEN) {
+        // Super admin
+        db.get(
+            'SELECT id, prenom, nom, id_moodle, photo, etablissement, referent FROM enseignants WHERE id = 1',
+            [],
+            (err, enseignant) => {
+                if (err) {
+                    console.error('Erreur lors de la vérification du super admin:', err);
+                    return next('Super admin error');
+                }
+                
+                if (!enseignant) {
+                    return next('Super admin non trouvé');
+                }
+                
+                req.user = { ...enseignant, type: 'teacher', isSuperAdmin: true };
+                next();
+            }
+        );
     } else {
-        return res.status(400).json({ error: 'Type d\'utilisateur manquant ou invalide' });
+        // Enseignant normal
+        db.get(
+            'SELECT id, prenom, nom, id_moodle, photo, etablissement, referent FROM enseignants WHERE token = ?',
+            [token],
+            (err, enseignant) => {
+                if (err) {
+                    console.error('Erreur lors de la vérification du token enseignant:', err);
+                    return next('Teacher verification error');
+                }
+                
+                if (!enseignant) {
+                    return next('Token enseignant invalide');
+                }
+                
+                req.user = { ...enseignant, type: 'teacher', isSuperAdmin: false };
+                next();
+            }
+        );
     }
 }
 
@@ -625,36 +664,77 @@ app.put('/eleves/:id', verifyToken, (req, res) => {
         if (err) return res.status(500).json({ error: err.message })
         if (!eleve) return res.status(404).json({ error: 'Élève non trouvé' })
         
-        // Vérifier si l'enseignant peut modifier cet élève
-        const canModify = (
-            // L'élève est dans une classe dont le référent est du même établissement
-            eleve.referent_etablissement === req.user.etablissement
-        )
-        
-        if (!canModify) {
-            return res.status(403).json({ 
-                error: 'ahaha vous n\'avez pas dit le mot magique' 
-            })
-        }
+        // Si pas d'établissement via le référent, chercher via un enseignant associé
+        if (!eleve.referent_etablissement) {
+            db.get(`
+                SELECT e_ens.etablissement
+                FROM enseignants e_ens
+                JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                WHERE ec.classe_id = ?
+                LIMIT 1
+            `, [eleve.classe_id], (err2, enseignantAssocie) => {
+                if (err2) return res.status(500).json({ error: err2.message })
+                
+                // Utiliser l'établissement de l'enseignant associé s'il existe
+                eleve.referent_etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                
+                // Vérifier si l'enseignant peut modifier cet élève
+                const canModify = eleve.referent_etablissement === req.user.etablissement
+                
+                if (!canModify) {
+                    return res.status(403).json({ 
+                        error: 'ahaha vous n\'avez pas dit le mot magique' 
+                    })
+                }
 
-        // Effectuer la modification
-        db.run(
-            'UPDATE eleves SET nom = ?, prenom = ?, id_moodle = ?, classe_id = ?, photo = ?, token = ? WHERE id = ?',
-            [nom, prenom, moodle_id, classe_id, photo || 'default.jpg', token, id],
-            function (err) {
-                if (err) return res.status(500).json({ error: err.message })
-                if (this.changes === 0) return res.status(404).json({ error: 'Élève non trouvé' })
-                res.json({
-                    id: parseInt(id),
-                    nom,
-                    prenom,
-                    id_moodle: moodle_id,
-                    classe_id,
-                    photo: photo || 'default.jpg',
-                    token
+                // Effectuer la modification
+                db.run(
+                    'UPDATE eleves SET nom = ?, prenom = ?, id_moodle = ?, classe_id = ?, photo = ?, token = ? WHERE id = ?',
+                    [nom, prenom, moodle_id, classe_id, photo || 'default.jpg', token, id],
+                    function (err) {
+                        if (err) return res.status(500).json({ error: err.message })
+                        if (this.changes === 0) return res.status(404).json({ error: 'Élève non trouvé' })
+                        res.json({
+                            id: parseInt(id),
+                            nom,
+                            prenom,
+                            id_moodle: moodle_id,
+                            classe_id,
+                            photo: photo || 'default.jpg',
+                            token
+                        })
+                    }
+                )
+            })
+        } else {
+            // Vérifier si l'enseignant peut modifier cet élève
+            const canModify = eleve.referent_etablissement === req.user.etablissement
+            
+            if (!canModify) {
+                return res.status(403).json({ 
+                    error: 'ahaha vous n\'avez pas dit le mot magique' 
                 })
             }
-        )
+
+            // Effectuer la modification
+            db.run(
+                'UPDATE eleves SET nom = ?, prenom = ?, id_moodle = ?, classe_id = ?, photo = ?, token = ? WHERE id = ?',
+                [nom, prenom, moodle_id, classe_id, photo || 'default.jpg', token, id],
+                function (err) {
+                    if (err) return res.status(500).json({ error: err.message })
+                    if (this.changes === 0) return res.status(404).json({ error: 'Élève non trouvé' })
+                    res.json({
+                        id: parseInt(id),
+                        nom,
+                        prenom,
+                        id_moodle: moodle_id,
+                        classe_id,
+                        photo: photo || 'default.jpg',
+                        token
+                    })
+                }
+            )
+        }
     })
 })
 
@@ -1240,7 +1320,7 @@ app.get('/classes/:id/enseignants', verifyToken, (req, res) => {
             return res.status(403).json({ error: 'Impossible de déterminer votre établissement' })
         }
         
-        // Vérifier que la classe est de leur établissement
+        // Correction : si le référent est absent, on vérifie l'établissement via un enseignant associé
         db.get(`
             SELECT c.id, ref.etablissement as classe_etablissement
             FROM classes c
@@ -1248,23 +1328,59 @@ app.get('/classes/:id/enseignants', verifyToken, (req, res) => {
             WHERE c.id = ?
         `, [id], (err, classe) => {
             if (err) return res.status(500).json({ error: err.message })
-            if (!classe || classe.classe_etablissement !== req.user.etablissement) {
-                return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' })
+            
+            let classeEtab = classe ? classe.classe_etablissement : null;
+            
+            if (!classeEtab) {
+                // Si pas de référent, on cherche un enseignant associé à la classe
+                db.get(`
+                    SELECT e.etablissement
+                    FROM enseignants e
+                    JOIN enseignant_classes ec ON e.id = ec.enseignant_id
+                    WHERE ec.classe_id = ?
+                    LIMIT 1
+                `, [id], (err2, enseignantAssocie) => {
+                    if (err2) return res.status(500).json({ error: err2.message })
+                    
+                    classeEtab = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                    
+                    if (!classeEtab || classeEtab !== req.user.etablissement) {
+                        return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' })
+                    }
+                    
+                    // Récupérer les enseignants de la classe sans les tokens
+                    const query = `
+                        SELECT e.id, e.id_moodle, e.nom, e.prenom, e.photo, e.etablissement, e.referent
+                        FROM enseignants e
+                        JOIN enseignant_classes ec ON e.id = ec.enseignant_id
+                        WHERE ec.classe_id = ?
+                        ORDER BY e.nom, e.prenom
+                    `;
+                    
+                    db.all(query, [id], (err3, rows) => {
+                        if (err3) return res.status(500).json({ error: err3.message })
+                        res.json(rows)
+                    })
+                })
+            } else {
+                if (classeEtab !== req.user.etablissement) {
+                    return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' })
+                }
+                
+                // Récupérer les enseignants de la classe sans les tokens
+                const query = `
+                    SELECT e.id, e.id_moodle, e.nom, e.prenom, e.photo, e.etablissement, e.referent
+                    FROM enseignants e
+                    JOIN enseignant_classes ec ON e.id = ec.enseignant_id
+                    WHERE ec.classe_id = ?
+                    ORDER BY e.nom, e.prenom
+                `;
+                
+                db.all(query, [id], (err4, rows) => {
+                    if (err4) return res.status(500).json({ error: err4.message })
+                    res.json(rows)
+                })
             }
-            
-            // Récupérer les enseignants de la classe sans les tokens
-            const query = `
-                SELECT e.id, e.id_moodle, e.nom, e.prenom, e.photo, e.etablissement, e.referent
-                FROM enseignants e
-                JOIN enseignant_classes ec ON e.id = ec.enseignant_id
-                WHERE ec.classe_id = ?
-                ORDER BY e.nom, e.prenom
-            `
-            
-            db.all(query, [id], (err, rows) => {
-                if (err) return res.status(500).json({ error: err.message })
-                res.json(rows)
-            })
         })
     } else if (req.user.type === 'teacher') {
         if (req.user.isSuperAdmin) {
@@ -1292,23 +1408,56 @@ app.get('/classes/:id/enseignants', verifyToken, (req, res) => {
                 if (err) return res.status(500).json({ error: err.message })
                 if (!classe) return res.status(404).json({ error: 'Classe non trouvée' })
                 
-                if (classe.classe_etablissement !== req.user.etablissement) {
-                    return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' })
+                // Si pas d'établissement via le référent, chercher via un enseignant associé
+                if (!classe.classe_etablissement) {
+                    db.get(`
+                        SELECT e.etablissement
+                        FROM enseignants e
+                        JOIN enseignant_classes ec ON e.id = ec.enseignant_id
+                        WHERE ec.classe_id = ?
+                        LIMIT 1
+                    `, [id], (err2, enseignantAssocie) => {
+                        if (err2) return res.status(500).json({ error: err2.message })
+                        
+                        classe.classe_etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                        
+                        if (classe.classe_etablissement !== req.user.etablissement) {
+                            return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' })
+                        }
+                        
+                        // Récupérer les enseignants de la classe
+                        const query = `
+                            SELECT e.* 
+                            FROM enseignants e
+                            JOIN enseignant_classes ec ON e.id = ec.enseignant_id
+                            WHERE ec.classe_id = ?
+                            ORDER BY e.nom, e.prenom
+                        `
+                        
+                        db.all(query, [id], (err3, rows) => {
+                            if (err3) return res.status(500).json({ error: err3.message })
+                            res.json(rows)
+                        })
+                    })
+                } else {
+                    if (classe.classe_etablissement !== req.user.etablissement) {
+                        return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' })
+                    }
+                    
+                    // Récupérer les enseignants de la classe
+                    const query = `
+                        SELECT e.* 
+                        FROM enseignants e
+                        JOIN enseignant_classes ec ON e.id = ec.enseignant_id
+                        WHERE ec.classe_id = ?
+                        ORDER BY e.nom, e.prenom
+                    `
+                    
+                    db.all(query, [id], (err4, rows) => {
+                        if (err4) return res.status(500).json({ error: err4.message })
+                        res.json(rows)
+                    })
                 }
-                
-                // Récupérer les enseignants de la classe
-                const query = `
-                    SELECT e.* 
-                    FROM enseignants e
-                    JOIN enseignant_classes ec ON e.id = ec.enseignant_id
-                    WHERE ec.classe_id = ?
-                    ORDER BY e.nom, e.prenom
-                `
-                
-                db.all(query, [id], (err, rows) => {
-                    if (err) return res.status(500).json({ error: err.message })
-                    res.json(rows)
-                })
             })
         }
     } else {
@@ -1361,39 +1510,88 @@ app.post('/enseignant-classes', verifyToken, (req, res) => {
             return res.status(404).json({ error: 'Enseignant ou classe non trouvé' })
         }
         
-        // Vérifier que l'enseignant et la classe appartiennent au même établissement que l'utilisateur connecté
-        const canAssociate = (
-            row.enseignant_etablissement === req.user.etablissement &&
-            row.classe_etablissement === req.user.etablissement
-        )
-        
-        if (!canAssociate) {
-            return res.status(403).json({ 
-                error: 'ahaha vous n\'avez pas dit le mot magique'
-            })
-        }
-        
-        // Seuls les référents peuvent créer des associations (sauf pour eux-mêmes)
-        if (!req.user.referent && enseignant_id !== req.user.id) {
-            return res.status(403).json({ 
-                error: 'ahaha vous n\'avez pas dit le mot magique'
-            })
-        }
-
-        // Procéder à l'association
-        db.run(
-            'INSERT INTO enseignant_classes (enseignant_id, classe_id) VALUES (?, ?)',
-            [enseignant_id, classe_id],
-            function (err) {
-                if (err) {
-                    if (err.message.includes('UNIQUE constraint failed')) {
-                        return res.status(400).json({ error: 'Cet enseignant est déjà associé à cette classe' })
-                    }
-                    return res.status(500).json({ error: err.message })
+        // Si pas d'établissement via le référent, chercher via un enseignant associé
+        if (!row.classe_etablissement) {
+            db.get(`
+                SELECT e_ens.etablissement
+                FROM enseignants e_ens
+                JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                WHERE ec.classe_id = ?
+                LIMIT 1
+            `, [classe_id], (err2, enseignantAssocie) => {
+                if (err2) return res.status(500).json({ error: err2.message })
+                
+                row.classe_etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                
+                // Vérifier que l'enseignant et la classe appartiennent au même établissement que l'utilisateur connecté
+                const canAssociate = (
+                    row.enseignant_etablissement === req.user.etablissement &&
+                    row.classe_etablissement === req.user.etablissement
+                )
+                
+                if (!canAssociate) {
+                    return res.status(403).json({ 
+                        error: 'ahaha vous n\'avez pas dit le mot magique'
+                    })
                 }
-                res.json({ id: this.lastID, enseignant_id, classe_id })
+                
+                // Seuls les référents peuvent créer des associations (sauf pour eux-mêmes)
+                if (!req.user.referent && enseignant_id !== req.user.id) {
+                    return res.status(403).json({ 
+                        error: 'ahaha vous n\'avez pas dit le mot magique'
+                    })
+                }
+
+                // Procéder à l'association
+                db.run(
+                    'INSERT INTO enseignant_classes (enseignant_id, classe_id) VALUES (?, ?)',
+                    [enseignant_id, classe_id],
+                    function (err) {
+                        if (err) {
+                            if (err.message.includes('UNIQUE constraint failed')) {
+                                return res.status(400).json({ error: 'Cet enseignant est déjà associé à cette classe' })
+                            }
+                            return res.status(500).json({ error: err.message })
+                        }
+                        res.json({ id: this.lastID, enseignant_id, classe_id })
+                    }
+                )
+            })
+        } else {
+            // Vérifier que l'enseignant et la classe appartiennent au même établissement que l'utilisateur connecté
+            const canAssociate = (
+                row.enseignant_etablissement === req.user.etablissement &&
+                row.classe_etablissement === req.user.etablissement
+            )
+            
+            if (!canAssociate) {
+                return res.status(403).json({ 
+                    error: 'ahaha vous n\'avez pas dit le mot magique'
+                })
             }
-        )
+            
+            // Seuls les référents peuvent créer des associations (sauf pour eux-mêmes)
+            if (!req.user.referent && enseignant_id !== req.user.id) {
+                return res.status(403).json({ 
+                    error: 'ahaha vous n\'avez pas dit le mot magique'
+                })
+            }
+
+            // Procéder à l'association
+            db.run(
+                'INSERT INTO enseignant_classes (enseignant_id, classe_id) VALUES (?, ?)',
+                [enseignant_id, classe_id],
+                function (err) {
+                    if (err) {
+                        if (err.message.includes('UNIQUE constraint failed')) {
+                            return res.status(400).json({ error: 'Cet enseignant est déjà associé à cette classe' })
+                        }
+                        return res.status(500).json({ error: err.message })
+                    }
+                    res.json({ id: this.lastID, enseignant_id, classe_id })
+                }
+            )
+        }
     })
 })
 
@@ -1616,29 +1814,69 @@ app.post('/notes', verifyToken, (req, res) => {
         if (err) return res.status(500).json({ error: err.message })
         if (!eleve) return res.status(404).json({ error: 'Élève non trouvé' })
         
-        // Vérifier les permissions selon le rôle
-        const canCreate = req.user.referent 
-            ? // Référent : peut créer des notes pour tous les élèves de son établissement
-              eleve.classe_etablissement === req.user.etablissement
-            : // Enseignant normal : seulement pour SES élèves (classes où il enseigne)
-              eleve.is_teacher_of_class !== null
-        
-        if (!canCreate) {
-            const errorMsg = req.user.referent
-                ? 'Accès refusé : vous ne pouvez créer des notes que pour les élèves de votre établissement'
-                : 'Accès refusé : vous ne pouvez créer des notes que pour vos élèves (classes où vous enseignez)'
-            return res.status(403).json({ error: errorMsg })
-        }
+        // Si pas d'établissement via le référent, chercher via un enseignant associé
+        if (!eleve.classe_etablissement) {
+            db.get(`
+                SELECT e_ens.etablissement
+                FROM enseignants e_ens
+                JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                WHERE ec.classe_id = ?
+                LIMIT 1
+            `, [eleve.classe_id], (err2, enseignantAssocie) => {
+                if (err2) return res.status(500).json({ error: err2.message })
+                
+                // Utiliser l'établissement de l'enseignant associé s'il existe
+                eleve.classe_etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                
+                // Vérifier les permissions selon le rôle
+                const canCreate = req.user.referent 
+                    ? // Référent : peut créer des notes pour tous les élèves de son établissement
+                      eleve.classe_etablissement === req.user.etablissement
+                    : // Enseignant normal : seulement pour SES élèves (classes où il enseigne)
+                      eleve.is_teacher_of_class !== null
+                
+                if (!canCreate) {
+                    const errorMsg = req.user.referent
+                        ? 'Accès refusé : vous ne pouvez créer des notes que pour les élèves de votre établissement'
+                        : 'Accès refusé : vous ne pouvez créer des notes que pour vos élèves (classes où vous enseignez)'
+                    return res.status(403).json({ error: errorMsg })
+                }
 
-        // Créer la note
-        db.run(
-            'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire) VALUES (?, ?, ?, ?, ?, ?)',
-            [eleve_id, competence_code, couleur, date, prof_id, commentaire || null],
-            function (err) {
-                if (err) return res.status(500).json({ error: err.message })
-                res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire })
+                // Créer la note
+                db.run(
+                    'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire) VALUES (?, ?, ?, ?, ?, ?)',
+                    [eleve_id, competence_code, couleur, date, prof_id, commentaire || null],
+                    function (err) {
+                        if (err) return res.status(500).json({ error: err.message })
+                        res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire })
+                    }
+                )
+            })
+        } else {
+            // Vérifier les permissions selon le rôle
+            const canCreate = req.user.referent 
+                ? // Référent : peut créer des notes pour tous les élèves de son établissement
+                  eleve.classe_etablissement === req.user.etablissement
+                : // Enseignant normal : seulement pour SES élèves (classes où il enseigne)
+                  eleve.is_teacher_of_class !== null
+            
+            if (!canCreate) {
+                const errorMsg = req.user.referent
+                    ? 'Accès refusé : vous ne pouvez créer des notes que pour les élèves de votre établissement'
+                    : 'Accès refusé : vous ne pouvez créer des notes que pour vos élèves (classes où vous enseignent)'
+                return res.status(403).json({ error: errorMsg })
             }
-        )
+
+            // Créer la note
+            db.run(
+                'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire) VALUES (?, ?, ?, ?, ?, ?)',
+                [eleve_id, competence_code, couleur, date, prof_id, commentaire || null],
+                function (err) {
+                    if (err) return res.status(500).json({ error: err.message })
+                    res.json({ id: this.lastID, eleve_id, competence_code, couleur, date, prof_id, commentaire })
+                }
+            )
+        }
     })
 })
 
@@ -1700,7 +1938,12 @@ app.get('/notes', verifyToken, (req, res) => {
                 JOIN eleves e ON n.eleve_id = e.id
                 JOIN classes c ON e.classe_id = c.id
                 LEFT JOIN enseignants ref ON c.idReferent = ref.id
-                WHERE ref.etablissement = ?
+                LEFT JOIN (
+                    SELECT DISTINCT ec.classe_id, e_ens.etablissement
+                    FROM enseignant_classes ec
+                    JOIN enseignants e_ens ON ec.enseignant_id = e_ens.id
+                ) ens_etab ON c.id = ens_etab.classe_id
+                WHERE COALESCE(ref.etablissement, ens_etab.etablissement) = ?
             `, [req.user.etablissement], (err, rows) => {
                 if (err) return res.status(500).json({ error: err.message })
                 res.json(rows)
@@ -1763,30 +2006,70 @@ app.put('/notes/:id', verifyToken, (req, res) => {
         if (err) return res.status(500).json({ error: err.message })
         if (!note) return res.status(404).json({ error: 'Note non trouvée' })
         
-        // Vérifier les permissions selon le rôle
-        const canModify = req.user.referent 
-            ? // Référent : peut modifier toutes les notes de son établissement
-              note.classe_etablissement === req.user.etablissement
-            : // Enseignant normal : seulement SES notes pour SES élèves
-              note.prof_id === req.user.id && note.is_teacher_of_class !== null
-        
-        if (!canModify) {
-            const errorMsg = req.user.referent
-                ? 'Accès refusé : vous ne pouvez modifier que les notes des élèves de votre établissement'
-                : 'Accès refusé : vous ne pouvez modifier que vos propres notes pour vos élèves'
-            return res.status(403).json({ error: errorMsg })
-        }
+        // Si pas d'établissement via le référent, chercher via un enseignant associé
+        if (!note.classe_etablissement) {
+            db.get(`
+                SELECT e_ens.etablissement
+                FROM enseignants e_ens
+                JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                WHERE ec.classe_id = ?
+                LIMIT 1
+            `, [note.classe_id], (err2, enseignantAssocie) => {
+                if (err2) return res.status(500).json({ error: err2.message })
+                
+                note.classe_etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                
+                // Vérifier les permissions selon le rôle
+                const canModify = req.user.referent 
+                    ? // Référent : peut modifier toutes les notes de son établissement
+                      note.classe_etablissement === req.user.etablissement
+                    : // Enseignant normal : seulement SES notes pour SES élèves
+                      note.prof_id === req.user.id && note.is_teacher_of_class !== null
+                
+                if (!canModify) {
+                    const errorMsg = req.user.referent
+                        ? 'Accès refusé : vous ne pouvez modifier que les notes des élèves de votre établissement'
+                        : 'Accès refusé : vous ne pouvez modifier que vos propres notes pour vos élèves'
+                    return res.status(403).json({ error: errorMsg })
+                }
 
-        // Effectuer la modification
-        db.run(
-            'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ? WHERE id = ?',
-            [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, id],
-            function (err) {
-                if (err) return res.status(500).json({ error: err.message })
-                if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
-                res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire })
+                // Effectuer la modification
+                db.run(
+                    'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ? WHERE id = ?',
+                    [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, id],
+                    function (err) {
+                        if (err) return res.status(500).json({ error: err.message })
+                        if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
+                        res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire })
+                    }
+                )
+            })
+        } else {
+            // Vérifier les permissions selon le rôle
+            const canModify = req.user.referent 
+                ? // Référent : peut modifier toutes les notes de son établissement
+                  note.classe_etablissement === req.user.etablissement
+                : // Enseignant normal : seulement SES notes pour SES élèves
+                  note.prof_id === req.user.id && note.is_teacher_of_class !== null
+            
+            if (!canModify) {
+                const errorMsg = req.user.referent
+                    ? 'Accès refusé : vous ne pouvez modifier que les notes des élèves de votre établissement'
+                    : 'Accès refusé : vous ne pouvez modifier que vos propres notes pour vos élèves'
+                return res.status(403).json({ error: errorMsg })
             }
-        )
+
+            // Effectuer la modification
+            db.run(
+                'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ? WHERE id = ?',
+                [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, id],
+                function (err) {
+                    if (err) return res.status(500).json({ error: err.message })
+                    if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
+                    res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire })
+                }
+            )
+        }
     })
 })
 
@@ -1823,26 +2106,62 @@ app.delete('/notes/:id', verifyToken, (req, res) => {
         if (err) return res.status(500).json({ error: err.message })
         if (!note) return res.status(404).json({ error: 'Note non trouvée' })
         
-        // Vérifier les permissions selon le rôle
-        const canDelete = req.user.referent 
-            ? // Référent : peut supprimer toutes les notes de son établissement
-              note.classe_etablissement === req.user.etablissement
-            : // Enseignant normal : seulement SES notes pour SES élèves
-              note.prof_id === req.user.id && note.is_teacher_of_class !== null
-        
-        if (!canDelete) {
-            const errorMsg = req.user.referent
-                ? 'Accès refusé : vous ne pouvez supprimer que les notes des élèves de votre établissement'
-                : 'Accès refusé : vous ne pouvez supprimer que vos propres notes pour vos élèves'
-            return res.status(403).json({ error: errorMsg })
-        }
+        // Si pas d'établissement via le référent, chercher via un enseignant associé
+        if (!note.classe_etablissement) {
+            db.get(`
+                SELECT e_ens.etablissement
+                FROM enseignants e_ens
+                JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                WHERE ec.classe_id = ?
+                LIMIT 1
+            `, [note.classe_id], (err2, enseignantAssocie) => {
+                if (err2) return res.status(500).json({ error: err2.message })
+                
+                note.classe_etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                
+                // Vérifier les permissions selon le rôle
+                const canDelete = req.user.referent 
+                    ? // Référent : peut supprimer toutes les notes de son établissement
+                      note.classe_etablissement === req.user.etablissement
+                    : // Enseignant normal : seulement SES notes pour SES élèves
+                      note.prof_id === req.user.id && note.is_teacher_of_class !== null
+                
+                if (!canDelete) {
+                    const errorMsg = req.user.referent
+                        ? 'Accès refusé : vous ne pouvez supprimer que les notes des élèves de votre établissement'
+                        : 'Accès refusé : vous ne pouvez supprimer que vos propres notes pour vos élèves'
+                    return res.status(403).json({ error: errorMsg })
+                }
 
-        // Effectuer la suppression
-        db.run('DELETE FROM notes WHERE id = ?', [id], function (err) {
-            if (err) return res.status(500).json({ error: err.message })
-            if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
-            res.json({ message: 'Note supprimée', id: parseInt(id) })
-        })
+                // Effectuer la suppression
+                db.run('DELETE FROM notes WHERE id = ?', [id], function (err) {
+                    if (err) return res.status(500).json({ error: err.message })
+                    if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
+                    res.json({ message: 'Note supprimée', id: parseInt(id) })
+                })
+            })
+        } else {
+            // Vérifier les permissions selon le rôle
+            const canDelete = req.user.referent 
+                ? // Référent : peut supprimer toutes les notes de son établissement
+                  note.classe_etablissement === req.user.etablissement
+                : // Enseignant normal : seulement SES notes pour SES élèves
+                  note.prof_id === req.user.id && note.is_teacher_of_class !== null
+            
+            if (!canDelete) {
+                const errorMsg = req.user.referent
+                    ? 'Accès refusé : vous ne pouvez supprimer que les notes des élèves de votre établissement'
+                    : 'Accès refusé : vous ne pouvez supprimer que vos propres notes pour vos élèves'
+                return res.status(403).json({ error: errorMsg })
+            }
+
+            // Effectuer la suppression
+            db.run('DELETE FROM notes WHERE id = ?', [id], function (err) {
+                if (err) return res.status(500).json({ error: err.message })
+                if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
+                res.json({ message: 'Note supprimée', id: parseInt(id) })
+            })
+        }
     })
 })
 
@@ -1934,15 +2253,22 @@ app.post('/classes', verifyToken, (req, res) => {
     }
     
     const { nom, idReferent, creatorTeacherId } = req.body
-    // Correction : si idReferent n'est pas fourni, on utilise creatorTeacherId si présent
+    
+    // Déterminer le référent de la classe
     let referentId = null
-    if (idReferent) {
-        referentId = idReferent
-    } else if (creatorTeacherId) {
-        referentId = creatorTeacherId
+    if (req.user.isSuperAdmin) {
+        // Super admin peut spécifier n'importe quel référent
+        referentId = idReferent || creatorTeacherId || null
+    } else if (req.user.referent) {
+        // Un référent qui crée une classe devient automatiquement le référent de cette classe
+        referentId = req.user.id
     } else {
-        referentId = null
+        // Un enseignant normal ne peut pas créer de classe
+        return res.status(403).json({ 
+            error: 'Seuls les référents peuvent créer des classes' 
+        })
     }
+    
     db.run('INSERT INTO classes (nom, idReferent) VALUES (?, ?)', [nom, referentId], function (err) {
         if (err) return res.status(500).json({ error: err.message })
         res.json({ id: this.lastID, nom, idReferent: referentId })
@@ -2116,46 +2442,113 @@ app.delete('/classes/:id', verifyToken, (req, res) => {
     if (req.user.type !== 'teacher') {
         return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' });
     }
+    
     const { id } = req.params
     const { forceDelete } = req.query // Paramètre pour forcer la suppression
 
-    // D'abord, vérifier s'il y a des élèves dans cette classe
-    db.get('SELECT COUNT(*) as count FROM eleves WHERE classe_id = ?', [id], (err, row) => {
-        if (err) return res.status(500).json({ error: err.message })
+    // Fonction pour effectuer la suppression après vérification des permissions
+    function proceedWithClassDeletion() {
+        // D'abord, vérifier s'il y a des élèves dans cette classe
+        db.get('SELECT COUNT(*) as count FROM eleves WHERE classe_id = ?', [id], (err, row) => {
+            if (err) return res.status(500).json({ error: err.message })
 
-        const eleveCount = row.count
+            const eleveCount = row.count
 
-        if (eleveCount > 0 && forceDelete !== 'true') {
-            // Il y a des élèves dans la classe et on ne force pas la suppression
-            return res.status(400).json({
-                error: 'Cannot delete class with students',
-                message: `Cette classe contient ${eleveCount} élève(s). Supprimez d'abord les élèves ou utilisez la suppression forcée.`,
-                studentCount: eleveCount
-            })
-        }
+            if (eleveCount > 0 && forceDelete !== 'true') {
+                // Il y a des élèves dans la classe et on ne force pas la suppression
+                return res.status(400).json({
+                    error: 'Cannot delete class with students',
+                    message: `Cette classe contient ${eleveCount} élève(s). Supprimez d'abord les élèves ou utilisez la suppression forcée.`,
+                    studentCount: eleveCount
+                })
+            }
 
-        if (forceDelete === 'true' && eleveCount > 0) {
-            // Suppression forcée : supprimer d'abord tous les élèves de la classe
-            db.run('DELETE FROM eleves WHERE classe_id = ?', [id], (err) => {
-                if (err) return res.status(500).json({ error: err.message })
+            if (forceDelete === 'true' && eleveCount > 0) {
+                // Suppression forcée : supprimer d'abord tous les élèves de la classe
+                db.run('DELETE FROM eleves WHERE classe_id = ?', [id], (err) => {
+                    if (err) return res.status(500).json({ error: err.message })
 
-                // Puis supprimer la classe
+                    // Puis supprimer la classe
+                    db.run('DELETE FROM classes WHERE id = ?', [id], function (err) {
+                        if (err) return res.status(500).json({ error: err.message })
+                        if (this.changes === 0) return res.status(404).json({ error: 'Classe non trouvée' })
+                        res.json({
+                            message: `Classe supprimée avec ${eleveCount} élève(s)`,
+                            deletedStudents: eleveCount
+                        })
+                    })
+                })
+            } else {
+                // Pas d'élèves dans la classe, suppression normale
                 db.run('DELETE FROM classes WHERE id = ?', [id], function (err) {
                     if (err) return res.status(500).json({ error: err.message })
                     if (this.changes === 0) return res.status(404).json({ error: 'Classe non trouvée' })
-                    res.json({
-                        message: `Classe supprimée avec ${eleveCount} élève(s)`,
-                        deletedStudents: eleveCount
-                    })
+                    res.json({ message: 'Classe supprimée' })
                 })
+            }
+        })
+    }
+
+    // Si c'est un super admin, autoriser toutes les suppressions
+    if (req.user.isSuperAdmin) {
+        return proceedWithClassDeletion();
+    }
+
+    // Pour les enseignants normaux, vérifier les permissions sur la classe
+    db.get(`
+        SELECT c.*, ref.etablissement as classe_etablissement
+        FROM classes c
+        LEFT JOIN enseignants ref ON c.idReferent = ref.id
+        WHERE c.id = ?
+    `, [id], (err, classe) => {
+        if (err) return res.status(500).json({ error: err.message })
+        if (!classe) return res.status(404).json({ error: 'Classe non trouvée' })
+        
+        // Si pas d'établissement via le référent, chercher via un enseignant associé
+        if (!classe.classe_etablissement) {
+            db.get(`
+                SELECT e_ens.etablissement
+                FROM enseignants e_ens
+                JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                WHERE ec.classe_id = ?
+                LIMIT 1
+            `, [id], (err2, enseignantAssocie) => {
+                if (err2) return res.status(500).json({ error: err2.message })
+                
+                classe.classe_etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                
+                // Vérifier les permissions selon le rôle
+                const canDelete = req.user.referent 
+                    ? // Référent : peut supprimer les classes de son établissement OU les classes orphelines (sans établissement)
+                      classe.classe_etablissement === req.user.etablissement || classe.classe_etablissement === null
+                    : // Enseignant normal : ne peut pas supprimer de classes
+                      false
+                
+                if (!canDelete) {
+                    const errorMsg = req.user.referent
+                        ? 'Accès refusé : vous ne pouvez supprimer que les classes de votre établissement'
+                        : 'Accès refusé : seuls les référents peuvent supprimer des classes'
+                    return res.status(403).json({ error: errorMsg })
+                }
+
+                proceedWithClassDeletion();
             })
         } else {
-            // Pas d'élèves dans la classe, suppression normale
-            db.run('DELETE FROM classes WHERE id = ?', [id], function (err) {
-                if (err) return res.status(500).json({ error: err.message })
-                if (this.changes === 0) return res.status(404).json({ error: 'Classe non trouvée' })
-                res.json({ message: 'Classe supprimée' })
-            })
+            // Vérifier les permissions selon le rôle
+            const canDelete = req.user.referent 
+                ? // Référent : peut supprimer les classes de son établissement OU les classes orphelines (sans établissement)
+                  classe.classe_etablissement === req.user.etablissement || classe.classe_etablissement === null
+                : // Enseignant normal : ne peut pas supprimer de classes
+                  false
+            
+            if (!canDelete) {
+                const errorMsg = req.user.referent
+                    ? 'Accès refusé : vous ne pouvez supprimer que les classes de votre établissement'
+                    : 'Accès refusé : seuls les référents peuvent supprimer des classes'
+                return res.status(403).json({ error: errorMsg })
+            }
+
+            proceedWithClassDeletion();
         }
     })
 })
@@ -2473,26 +2866,62 @@ app.delete('/positionnements/:id', verifyToken, (req, res) => {
         if (err) return res.status(500).json({ error: err.message })
         if (!positionnement) return res.status(404).json({ error: 'Positionnement non trouvé' })
         
-        // Vérifier les permissions selon le rôle
-        const canDelete = req.user.referent 
-            ? // Référent : peut supprimer tous les positionnements de son établissement
-              positionnement.classe_etablissement === req.user.etablissement
-            : // Enseignant normal : seulement SES positionnements pour SES élèves
-              positionnement.prof_id === req.user.id && positionnement.is_teacher_of_class !== null
-        
-        if (!canDelete) {
-            const errorMsg = req.user.referent
-                ? 'Accès refusé : vous ne pouvez supprimer que les positionnements des élèves de votre établissement'
-                : 'Accès refusé : vous ne pouvez supprimer que vos propres positionnements pour vos élèves'
-            return res.status(403).json({ error: errorMsg })
-        }
+        // Si pas d'établissement via le référent, chercher via un enseignant associé
+        if (!positionnement.classe_etablissement) {
+            db.get(`
+                SELECT e_ens.etablissement
+                FROM enseignants e_ens
+                JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                WHERE ec.classe_id = ?
+                LIMIT 1
+            `, [positionnement.classe_id], (err2, enseignantAssocie) => {
+                if (err2) return res.status(500).json({ error: err2.message })
+                
+                positionnement.classe_etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                
+                // Vérifier les permissions selon le rôle
+                const canDelete = req.user.referent 
+                    ? // Référent : peut supprimer tous les positionnements de son établissement
+                      positionnement.classe_etablissement === req.user.etablissement
+                    : // Enseignant normal : seulement SES positionnements pour SES élèves
+                      positionnement.prof_id === req.user.id && positionnement.is_teacher_of_class !== null
+                
+                if (!canDelete) {
+                    const errorMsg = req.user.referent
+                        ? 'Accès refusé : vous ne pouvez supprimer que les positionnements des élèves de votre établissement'
+                        : 'Accès refusé : vous ne pouvez supprimer que vos propres positionnements pour vos élèves'
+                    return res.status(403).json({ error: errorMsg })
+                }
 
-        // Effectuer la suppression
-        db.run('DELETE FROM positionnements_enseignant WHERE id = ?', [id], function (err) {
-            if (err) return res.status(500).json({ error: err.message })
-            if (this.changes === 0) return res.status(404).json({ error: 'Positionnement non trouvé' })
-            res.status(204).end()
-        })
+                // Effectuer la suppression
+                db.run('DELETE FROM positionnements_enseignant WHERE id = ?', [id], function (err) {
+                    if (err) return res.status(500).json({ error: err.message })
+                    if (this.changes === 0) return res.status(404).json({ error: 'Positionnement non trouvé' })
+                    res.status(204).end()
+                })
+            })
+        } else {
+            // Vérifier les permissions selon le rôle
+            const canDelete = req.user.referent 
+                ? // Référent : peut supprimer tous les positionnements de son établissement
+                  positionnement.classe_etablissement === req.user.etablissement
+                : // Enseignant normal : seulement SES positionnements pour SES élèves
+                  positionnement.prof_id === req.user.id && positionnement.is_teacher_of_class !== null
+            
+            if (!canDelete) {
+                const errorMsg = req.user.referent
+                    ? 'Accès refusé : vous ne pouvez supprimer que les positionnements des élèves de votre établissement'
+                    : 'Accès refusé : vous ne pouvez supprimer que vos propres positionnements pour vos élèves'
+                return res.status(403).json({ error: errorMsg })
+            }
+
+            // Effectuer la suppression
+            db.run('DELETE FROM positionnements_enseignant WHERE id = ?', [id], function (err) {
+                if (err) return res.status(500).json({ error: err.message })
+                if (this.changes === 0) return res.status(404).json({ error: 'Positionnement non trouvé' })
+                res.status(204).end()
+            })
+        }
     })
 })
 
@@ -2646,31 +3075,72 @@ app.delete('/eleves/:id/evaluations', verifyToken, (req, res) => {
         if (err) return res.status(500).json({ error: err.message })
         if (!eleve) return res.status(404).json({ error: 'Élève non trouvé' })
         
-        // Vérifier les permissions selon le rôle
-        const canDelete = req.user.referent 
-            ? // Référent : peut supprimer les évaluations de tous les élèves de son établissement
-              eleve.classe_etablissement === req.user.etablissement
-            : // Enseignant normal : seulement SES élèves (classes où il enseigne)
-              eleve.is_teacher_of_class !== null
-        
-        if (!canDelete) {
-            const errorMsg = req.user.referent
-                ? 'Accès refusé : vous ne pouvez supprimer que les évaluations des élèves de votre établissement'
-                : 'Accès refusé : vous ne pouvez supprimer que les évaluations de vos élèves'
-            return res.status(403).json({ error: errorMsg })
-        }
+        // Si pas d'établissement via le référent, chercher via un enseignant associé
+        if (!eleve.classe_etablissement) {
+            db.get(`
+                SELECT e_ens.etablissement
+                FROM enseignants e_ens
+                JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                WHERE ec.classe_id = ?
+                LIMIT 1
+            `, [eleve.classe_id], (err2, enseignantAssocie) => {
+                if (err2) return res.status(500).json({ error: err2.message })
+                
+                eleve.classe_etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                
+                // Vérifier les permissions selon le rôle
+                const canDelete = req.user.referent 
+                    ? // Référent : peut supprimer les évaluations de tous les élèves de son établissement
+                      eleve.classe_etablissement === req.user.etablissement
+                    : // Enseignant normal : seulement SES élèves (classes où il enseigne)
+                      eleve.is_teacher_of_class !== null
+                
+                if (!canDelete) {
+                    const errorMsg = req.user.referent
+                        ? 'Accès refusé : vous ne pouvez supprimer que les évaluations des élèves de votre établissement'
+                        : 'Accès refusé : vous ne pouvez supprimer que les évaluations de vos élèves'
+                    return res.status(403).json({ error: errorMsg })
+                }
 
-        // Effectuer la suppression
-        db.run('DELETE FROM notes WHERE eleve_id = ?', [eleveId], function (err) {
-            if (err) {
-                console.error('Erreur lors de la suppression des évaluations:', err)
-                return res.status(500).json({ error: err.message })
-            }
-            res.json({
-                message: `${this.changes} évaluation(s) supprimée(s)`,
-                deletedCount: this.changes
+                // Effectuer la suppression
+                db.run('DELETE FROM notes WHERE eleve_id = ?', [eleveId], function (err) {
+                    if (err) {
+                        console.error('Erreur lors de la suppression des évaluations:', err)
+                        return res.status(500).json({ error: err.message })
+                    }
+                    res.json({
+                        message: `${this.changes} évaluation(s) supprimée(s)`,
+                        deletedCount: this.changes
+                    })
+                })
             })
-        })
+        } else {
+            // Vérifier les permissions selon le rôle
+            const canDelete = req.user.referent 
+                ? // Référent : peut supprimer les évaluations de tous les élèves de son établissement
+                  eleve.classe_etablissement === req.user.etablissement
+                : // Enseignant normal : seulement SES élèves (classes où il enseigne)
+                  eleve.is_teacher_of_class !== null
+            
+            if (!canDelete) {
+                const errorMsg = req.user.referent
+                    ? 'Accès refusé : vous ne pouvez supprimer que les évaluations des élèves de votre établissement'
+                    : 'Accès refusé : vous ne pouvez supprimer que les évaluations de vos élèves'
+                return res.status(403).json({ error: errorMsg })
+            }
+
+            // Effectuer la suppression
+            db.run('DELETE FROM notes WHERE eleve_id = ?', [eleveId], function (err) {
+                if (err) {
+                    console.error('Erreur lors de la suppression des évaluations:', err)
+                    return res.status(500).json({ error: err.message })
+                }
+                res.json({
+                    message: `${this.changes} évaluation(s) supprimée(s)`,
+                    deletedCount: this.changes
+                })
+            })
+        }
     })
 })
 

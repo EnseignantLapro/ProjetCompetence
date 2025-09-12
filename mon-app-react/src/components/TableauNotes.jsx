@@ -109,11 +109,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         apiFetch(competenceN3Url)
             .then(res => res.json())
             .then(competencesBDD => {
-                console.log(`📚 Compétences N3 chargées:`, {
-                    mode: competenceChoisie?.niveau2 ? 'spécifique' : 'vue d\'ensemble',
-                    parent_code: competenceChoisie?.niveau2,
-                    nombre: competencesBDD.length
-                });
+             
                     // Ajouter toutes les tâches professionnelles comme compétences N3
                     const tachesN3 = []
                     
@@ -223,29 +219,29 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
     const isCompetenceInHierarchy = (competenceCode) => {
         // Si aucune compétence n'est sélectionnée, on affiche tout
         if (!codeCompetence) {
-            console.log(`✅ isCompetenceInHierarchy(${competenceCode}): true (aucune compétence sélectionnée)`);
+         
             return true;
         }
 
         if (!competenceCode) {
-            console.log(`❌ isCompetenceInHierarchy(${competenceCode}): false (pas de code compétence)`);
+           
             return false;
         }
 
         // Si c'est exactement la même compétence
         if (competenceCode === codeCompetence) {
-            console.log(`✅ isCompetenceInHierarchy(${competenceCode}): true (même compétence que ${codeCompetence})`);
+           
             return true;
         }
 
         // Si la compétence sélectionnée est un parent de cette compétence
         // Par exemple : sélection "C01" et compétence "C01.1" ou "C01.1.2"
         if (competenceCode.startsWith(codeCompetence + '.')) {
-            console.log(`✅ isCompetenceInHierarchy(${competenceCode}): true (enfant de ${codeCompetence})`);
+           
             return true;
         }
 
-        console.log(`❌ isCompetenceInHierarchy(${competenceCode}): false (ne correspond pas à ${codeCompetence})`);
+       
         return false;
     }
 
@@ -261,15 +257,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
         const notesTotales = notes.filter(n => n.eleve_id === eleveId)
         const notesAvecCode = notesTotales.filter(n => n.competence_code)
         const notesFiltrees = notesAvecCode.filter(n => isCompetenceInHierarchy(n.competence_code))
-        
-        console.log(`🔍 getNotesVisibles pour élève ${eleveId}:`, {
-            'notes totales pour cet élève': notesTotales.length,
-            'notes avec code compétence': notesAvecCode.length,
-            'notes après filtre hiérarchie': notesFiltrees.length,
-            'codeCompetence actuel': codeCompetence,
-            'codes des notes': notesAvecCode.map(n => n.competence_code),
-            'exemples de notes': notesTotales.slice(0, 2)
-        });
+     
         
         return notesFiltrees
     }
@@ -964,21 +952,15 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
     // Fonction modifiée pour inclure les lignes de bilan
     const genererLignesTableauAvecBilan = (hierarchie, eleveId, modeComplet = false) => {
         // En mode complet, vérifier que les compétences N3 sont chargées SEULEMENT si une compétence spécifique est sélectionnée
-        console.log(`🔍 genererLignesTableauAvecBilan pour élève ${eleveId}:`, {
-            modeComplet,
-            'competencesN3.length': competencesN3.length,
-            'hierarchie keys': Object.keys(hierarchie),
-            'competenceChoisie': competenceChoisie,
-            'va retourner vide': modeComplet && competenceChoisie?.niveau2 && competencesN3.length === 0
-        });
+       
         
         // Ne vérifier competencesN3 que si une compétence niveau2 est sélectionnée
         if (modeComplet && competenceChoisie?.niveau2 && competencesN3.length === 0) {
-            console.log(`❌ Retour tableau vide car competencesN3 pas chargées pour ${competenceChoisie.niveau2}`);
+          
             return [] // Retourner un tableau vide si les données ne sont pas encore chargées
         }
         
-        console.log(`✅ Génération des lignes autorisée - continuons...`)
+
 
         // En mode complet (vue d'ensemble), construire la hiérarchie complète
         const hierarchieAUtiliser = modeComplet ? construireHierarchieComplete(eleveId) : hierarchie
@@ -1628,18 +1610,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
     }, [])
 
 
-
-    // DEBUG - Logs pour identifier le problème d'affichage des notes
-    console.log('🔍 DEBUG TableauNotes - Variables clés:', {
-        competenceChoisie,
-        codeCompetence,
-        'notes.length': notes.length,
-        'eleves.length': eleves.length,
-        isStudentMode,
-        isTeacherMode,
-        'premier eleve': eleves[0],
-        'premieres notes': notes.slice(0, 3)
-    });
+   
 
     return (
         <div className="tableau-container">
@@ -1657,12 +1628,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                     const hierarchie = organiserNotesParHierarchie(eleve.id)
                     const lignes = genererLignesTableauAvecBilan(hierarchie, eleve.id, true) // Mode complet activé
                     
-                    console.log(`📊 Élève ${eleve.prenom} (${eleve.id}):`, {
-                        'notes dans hierarchie': Object.keys(hierarchie).length,
-                        'lignes générées': lignes.length,
-                        'hierarchie': hierarchie,
-                        'lignes avec notes': lignes.filter(l => l.notes && l.notes.length > 0).length
-                    });
+               
 
                     // En mode complet, on affiche toujours l'élève même sans notes
 
@@ -2835,7 +2801,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                         {!isEditingNote ? (
                             <>
                                 <p><strong>Couleur :</strong> {noteDetail.couleur}</p>
-                                <p><strong>Date :</strong> {noteDetail.date}</p>
+                                <p><strong>Date :</strong> {new Date(noteDetail.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</p>
                                 <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
                                 {noteDetail.commentaire && (
                                     <div style={{ marginTop: '10px' }}>
@@ -2845,7 +2811,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                                             padding: '10px', 
                                             borderRadius: '4px',
                                             border: '1px solid #dee2e6',
-                                            fontStyle: 'italic'
+                                            fontStyle: 'italic',
+                                            color: '#212529'
                                         }}>
                                             {noteDetail.commentaire}
                                         </div>
@@ -2854,7 +2821,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                             </>
                         ) : (
                             <>
-                                <p><strong>Date :</strong> {noteDetail.date}</p>
+                                <p><strong>Date :</strong> {new Date(noteDetail.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</p>
                                 <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
                                 
                                 <div style={{ marginTop: '15px' }}>

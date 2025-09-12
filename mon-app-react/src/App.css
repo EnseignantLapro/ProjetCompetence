@@ -3,6 +3,13 @@
   box-sizing: border-box;
 }
 
+/* Protection contre le mode sombre forcé */
+html, body, #root {
+  background-color: #ffffff !important;
+  color: #213547 !important;
+  color-scheme: light !important;
+}
+
 body {
   overflow-x: hidden;
   max-width: 100%;
