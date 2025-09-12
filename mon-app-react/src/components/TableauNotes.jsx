@@ -251,8 +251,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     const [editError, setEditError] = useState('')
     const [devoirOption, setDevoirOption] = useState('aucun') // 'aucun', 'existant', 'nouveau'
     
-    // État pour la liste des devoirs disponibles pour association
-    const [devoirsDisponibles, setDevoirsDisponibles] = useState([])
+    // Utiliser l'état 'devoirs' pour tous les cas (plus besoin de devoirsDisponibles)
 
     useEffect(() => {
         // Ne pas charger tant que l'app n'est pas initialisée
@@ -293,16 +292,27 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             setPositionnementsEnseignant([])
         } else {
             // Mode normal (enseignant)
-            if (!idClasse) {
-                apiFetch(`/eleves`)
-                    .then(res => res.json())
-                    .then(setEleves)
+            let classeIdAUtiliser = idClasse
+            
+            // Si pas de classe choisie, utiliser la première classe disponible
+            if (!classeIdAUtiliser && classes && classes.length > 0) {
+                classeIdAUtiliser = classes[0].id
+                console.log('📚 Aucune classe sélectionnée - utilisation de la première classe:', classes[0].nom)
+            }
+            
+            if (!classeIdAUtiliser) {
+                console.log('⚠️ Aucune classe disponible')
+                setEleves([])
                 return
             }
 
-            apiFetch(`/eleves?classe_id=${idClasse}`)
+            console.log('📚 Chargement élèves pour classe ID:', classeIdAUtiliser)
+            apiFetch(`/eleves?classe_id=${classeIdAUtiliser}`)
                 .then(res => res.json())
-                .then(setEleves)
+                .then(data => {
+                    console.log('👥 Élèves chargés:', data.length)
+                    setEleves(data)
+                })
             apiFetch(`/notes`).then(res => res.json()).then(setNotes)
             apiFetch(`/positionnements`).then(res => res.json()).then(setPositionnementsEnseignant)
         }
@@ -398,41 +408,67 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         }
     }, [eleves, eleveFiltre])
 
-    // Charger les devoirs existants du professeur
+    // Extraire les devoirs depuis les notes chargées (plus de besoin d'appel API /devoirs)
     useEffect(() => {
-        const chargerDevoirs = async () => {
-            if (isTeacherMode && teacherInfo?.id && codeCompetence) {
-                try {
-                    const response = await apiFetch('/devoirs')
-                    const devoirsData = await response.json()
-                    setDevoirs(devoirsData)
-                } catch (error) {
-                    console.error('Erreur lors du chargement des devoirs:', error)
-                    setDevoirs([])
+        if (isTeacherMode && teacherInfo?.id && classeChoisie && notes.length > 0) {
+            // Extraire tous les devoirs uniques depuis les notes chargées (sans dépendre de codeCompetence)
+            const devoirsMap = new Map()
+            
+            notes.forEach(note => {
+                // FILTRE IMPORTANT : seulement les notes de l'enseignant connecté et de la classe sélectionnée
+                // Récupérer classe_id via l'élève pour le filtrage
+                const eleve = eleves.find(e => e.id === note.eleve_id);
+                const classe_id_via_eleve = eleve ? eleve.classe_id : null;
+                
+                if (note.devoirKey && note.devoir_label && 
+                    note.prof_id === teacherInfo.id && 
+                    classeChoisie && classe_id_via_eleve == parseInt(classeChoisie)) { // Utiliser classe via élève
+                    
+                    const existant = devoirsMap.get(note.devoirKey)
+                    // Si le devoir existe déjà, garder celui avec le label le plus long ou la date la plus récente
+                    if (!existant || 
+                        note.devoir_label.length > existant.devoir_label.length ||
+                        (note.devoir_label.length === existant.devoir_label.length && new Date(note.date) > new Date(existant.date))) {
+                        devoirsMap.set(note.devoirKey, {
+                            devoirKey: note.devoirKey,
+                            devoir_label: note.devoir_label,
+                            date: note.date,
+                            competence_code: note.competence_code
+                        })
+                    }
                 }
-            } else {
-                setDevoirs([])
+            })
+            
+            const devoirsData = Array.from(devoirsMap.values())
+            setDevoirs(devoirsData)
+            
+            // Notifier App.jsx pour mettre à jour la Baniere
+            if (onDevoirsUpdate) {
+                onDevoirsUpdate(devoirsData)
+            }
+        } else {
+            setDevoirs([])
+            // Vider les devoirs dans la Baniere
+            if (onDevoirsUpdate) {
+                onDevoirsUpdate([])
             }
         }
-        
-        chargerDevoirs()
-    }, [isTeacherMode, teacherInfo?.id, codeCompetence])
+    }, [isTeacherMode, teacherInfo?.id, classeChoisie, notes, onDevoirsUpdate]) // classeChoisie est directement l'ID
 
     // Dédoublonner les devoirs par devoirKey avec stabilisation pour éviter les re-calculs
     const devoirsSansDoublons = useMemo(() => {
-       
-        if (!devoirsDisponibles.length) return []
+        // Utiliser la liste des devoirs extraits et filtrés
+        if (!devoirs.length) return []
         
         const devoirsMap = new Map()
-        devoirsDisponibles.forEach(devoir => {
+        devoirs.forEach(devoir => {
             if (devoir && devoir.devoirKey) {
                 devoirsMap.set(devoir.devoirKey, devoir)
             }
         })
         const resultat = Array.from(devoirsMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date))
-      
         return resultat
-    }, [devoirsDisponibles]) // CHANGÉ: maintenant dépend du tableau entier, pas juste de la longueur
+    }, [devoirs])
 
     // Handler optimisé pour éviter les re-renders
     // Memoize les options pour éviter les re-renders coûteux
@@ -484,14 +520,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         }
     }, [devoirSelectionne, isTeacherMode])
 
-    // Mettre à jour la liste des devoirs disponibles quand les notes changent
-    useEffect(() => {
-        if (notes.length > 0) {
-            chargerDevoirsDisponibles()
-        } else {
-            setDevoirsDisponibles([])
-        }
-    }, [notes])
+    // Plus besoin de charger les devoirs séparément - ils sont extraits automatiquement des notes
 
     // Ajouter automatiquement la compétence sélectionnée au devoir actif
     useEffect(() => {
@@ -681,49 +710,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         }
     }
 
-    // Fonction pour extraire les devoirs disponibles depuis les notes déjà chargées
-    const chargerDevoirsDisponibles = () => {
-        try {
-            if (!notes.length) {
-                setDevoirsDisponibles([])
-                return
-            }
-            
-            // Extraire tous les devoirs uniques depuis les notes de la classe
-            const devoirsMap = new Map()
-            notes.forEach(note => {
-                if (note.devoirKey && note.devoir_label) {
-                    const existant = devoirsMap.get(note.devoirKey)
-                    // Si le devoir existe déjà, garder celui avec le label le plus long ou la date la plus récente
-                    if (!existant || 
-                        note.devoir_label.length > existant.devoir_label.length ||
-                        (note.devoir_label.length === existant.devoir_label.length && new Date(note.date) > new Date(existant.date))) {
-                        devoirsMap.set(note.devoirKey, {
-                            devoirKey: note.devoirKey,
-                            devoir_label: note.devoir_label,
-                            date: note.date
-                        })
-                    }
-                }
-            })
-            
-            const tousLesDevoirs = Array.from(devoirsMap.values())
-            
-            setDevoirsDisponibles(tousLesDevoirs)
-            
-            // Notifier App.jsx de la mise à jour des devoirs (éviter les appels redondants)
-            if (onDevoirsUpdate && tousLesDevoirs.length > 0) {
-                onDevoirsUpdate(tousLesDevoirs)
-            }
-        } catch (error) {
-            console.error('Erreur lors de l\'extraction des devoirs:', error)
-            setDevoirsDisponibles([])
-        }
-    }
-
     const handleEditNote = () => {
-        // Charger les devoirs disponibles depuis les notes déjà chargées
-        chargerDevoirsDisponibles()
+        // Utiliser les devoirs déjà extraits au lieu de les recharger
         
         // Déterminer l'option de devoir actuelle
         let optionDevoir = 'aucun'
@@ -764,7 +752,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 devoirLabel = editingNoteData.nouveauDevoirNom.trim()
             } else if (editingNoteData.devoirKey) {
                 // Utiliser un devoir existant
-                const devoirExistant = devoirsDisponibles.find(d => d.devoirKey === editingNoteData.devoirKey)
+                const devoirExistant = devoirs.find(d => d.devoirKey === editingNoteData.devoirKey)
                 devoirLabel = devoirExistant?.devoir_label || ''
             }
             
@@ -1884,6 +1872,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 <ColorPickerModal
                     eleve={eleveActuel}
                     competenceCode={competenceModalCode || noteDetail?.competence_code || codeCompetence}
+                    devoirs={devoirs}
                     onClose={() => {
                         setModalOuvert(false)
                         setCompetenceModalCode(null)
@@ -2055,7 +2044,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                         </label>
                                         {devoirOption === 'existant' && (
                                             <div>
-                                                {devoirsDisponibles.length > 0 ? (
+                                                {devoirs.length > 0 ? (
                                                     <select
                                                         value={editingNoteData.devoirKey}
                                                         onChange={(e) => setEditingNoteData(prev => ({ ...prev, devoirKey: e.target.value }))}

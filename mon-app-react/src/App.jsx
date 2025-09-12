@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import AdminPanel from './components/AdminPanel'
 import TableauNotes from './components/TableauNotes'
 import ChoixCompetence from './components/ChoixCompetence'
@@ -337,13 +337,13 @@ function App() {
     setEleveFiltre(e.target.value)
   }
 
-  const handleDevoirChange = (devoirKey) => {
+  const handleDevoirChange = useCallback((devoirKey) => {
     setDevoirSelectionne(devoirKey)
-  }
+  }, [])
 
-  const handleDevoirsUpdate = (devoirs) => {
+  const handleDevoirsUpdate = useCallback((devoirs) => {
     setDevoirsDisponibles(devoirs)
-  }
+  }, [])
 
   const handleToggleAdmin = () => {
     setAdminVisible(!adminVisible)

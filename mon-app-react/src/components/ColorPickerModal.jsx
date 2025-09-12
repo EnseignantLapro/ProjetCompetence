@@ -9,46 +9,36 @@ const couleurs = [
   { code: 'vert', label: 'Maîtrisé', hex: '#2ecc71' },
 ]
 
-function ColorPickerModal({ eleve, competenceCode, onClose, ajouterNote, teacherInfo }) {
+function ColorPickerModal({ eleve, competenceCode, devoirs: devoirsProp = [], onClose, ajouterNote, teacherInfo }) {
   const [commentaire, setCommentaire] = useState('')
   const [devoirLabel, setDevoirLabel] = useState('')
   const [devoirExistant, setDevoirExistant] = useState('')
   const [devoirs, setDevoirs] = useState([])
   const [showDevoirInput, setShowDevoirInput] = useState(false)
 
-  // Charger les devoirs existants du professeur
+  // Utiliser les devoirs passés en props au lieu de faire un appel API
   useEffect(() => {
-    const chargerDevoirs = async () => {
-      try {
-        const response = await apiFetch('/devoirs')
-        const devoirsData = await response.json()
-        
-        // Dédoublonner les devoirs par devoirKey
-        const devoirsMap = new Map()
-        devoirsData.forEach(devoir => {
-          if (devoir && devoir.devoirKey) {
-            const existant = devoirsMap.get(devoir.devoirKey)
-            // Garder celui avec le label le plus long ou la date la plus récente
-            if (!existant || 
-                devoir.devoir_label.length > existant.devoir_label.length ||
-                (devoir.devoir_label.length === existant.devoir_label.length && new Date(devoir.date) > new Date(existant.date))) {
-              devoirsMap.set(devoir.devoirKey, devoir)
-            }
+    if (devoirsProp.length > 0) {
+      // Dédoublonner les devoirs par devoirKey (au cas où)
+      const devoirsMap = new Map()
+      devoirsProp.forEach(devoir => {
+        if (devoir && devoir.devoirKey) {
+          const existant = devoirsMap.get(devoir.devoirKey)
+          // Garder celui avec le label le plus long ou la date la plus récente
+          if (!existant || 
+              devoir.devoir_label.length > existant.devoir_label.length ||
+              (devoir.devoir_label.length === existant.devoir_label.length && new Date(devoir.date) > new Date(existant.date))) {
+            devoirsMap.set(devoir.devoirKey, devoir)
           }
-        })
-        
-        const devoirsUniques = Array.from(devoirsMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date))
-        console.log('🔧 ColorPickerModal - devoirs bruts:', devoirsData.length, 'devoirs uniques:', devoirsUniques.length)
-        setDevoirs(devoirsUniques)
-      } catch (error) {
-        console.error('Erreur lors du chargement des devoirs:', error)
-      }
+        }
+      })
+      
+      const devoirsUniques = Array.from(devoirsMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date))
+      setDevoirs(devoirsUniques)
+    } else {
+      setDevoirs([])
     }
-    
-    if (teacherInfo?.id) {
-      chargerDevoirs()
-    }
-  }, [teacherInfo?.id])
+  }, [devoirsProp])
 
   const handleChoixCouleur = async (couleur) => {
     const note = {

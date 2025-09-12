@@ -2239,14 +2239,25 @@ app.get('/devoirs', verifyToken, (req, res) => {
     }
     
     const professorId = req.user.id;
+    const { classe_id } = req.query;
     
-    // Récupérer tous les devoirs distincts du professeur
-    db.all(`
-        SELECT DISTINCT devoirKey, devoir_label, date, competence_code
-        FROM notes 
-        WHERE prof_id = ? AND devoirKey IS NOT NULL AND devoirKey != ''
-        ORDER BY date DESC, devoir_label
-    `, [professorId], (err, rows) => {
+    let sql = `
+        SELECT DISTINCT n.devoirKey, n.devoir_label, n.date, n.competence_code
+        FROM notes n
+        JOIN eleves e ON n.eleve_id = e.id
+        WHERE n.prof_id = ? AND n.devoirKey IS NOT NULL AND n.devoirKey != ''
+    `;
+    let params = [professorId];
+    
+    // Filtrer par classe si spécifiée
+    if (classe_id) {
+        sql += ' AND e.classe_id = ?';
+        params.push(classe_id);
+    }
+    
+    sql += ' ORDER BY n.date DESC, n.devoir_label';
+    
+    db.all(sql, params, (err, rows) => {
         if (err) return res.status(500).json({ error: err.message })
         res.json(rows)
     })
