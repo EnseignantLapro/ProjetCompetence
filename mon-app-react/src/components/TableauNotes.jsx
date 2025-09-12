@@ -276,6 +276,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         }
     }, [devoirSelectionne, isTeacherMode])
 
+    // Ajouter automatiquement la compétence sélectionnée au devoir actif
+    useEffect(() => {
+        if (devoirViewVisible && codeCompetence && devoirViewRef.current) {
+            // Petite temporisation pour s'assurer que le composant DevoirView est monté
+            setTimeout(() => {
+                if (devoirViewRef.current) {
+                    devoirViewRef.current.ajouterCompetence(codeCompetence)
+                }
+            }, 100)
+        }
+    }, [devoirViewVisible, codeCompetence])
+
 
 
   
