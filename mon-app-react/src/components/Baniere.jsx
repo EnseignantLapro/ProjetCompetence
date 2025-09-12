@@ -1,10 +1,14 @@
 // components/Baniere.jsx
+import React, { useState, useEffect } from 'react'
+import { apiFetch } from '../utils/api'
 import '../App.css'
 
 function Baniere({ 
     classes, 
     classeChoisie, 
-    onClasseChange, 
+    onClasseChange,
+    eleveFiltre,
+    onEleveChange,
     isAdmin, 
     adminVisible, 
     onToggleAdmin,
@@ -16,6 +20,22 @@ function Baniere({
     onTeacherLogout = null,
     hasAdminAccess = false
 }) {
+    const [eleves, setEleves] = useState([])
+
+    // Charger les élèves quand la classe change
+    useEffect(() => {
+        if (classeChoisie && !isStudentMode) {
+            apiFetch(`/eleves?classe_id=${classeChoisie}`)
+                .then(res => res.json())
+                .then(setEleves)
+                .catch(err => {
+                    console.error('Erreur lors du chargement des élèves:', err)
+                    setEleves([])
+                })
+        } else {
+            setEleves([])
+        }
+    }, [classeChoisie, isStudentMode])
     const getClasseName = () => {
         if (!classeChoisie) return ''
         const classe = classes.find(c => c.id == classeChoisie)
@@ -91,25 +111,54 @@ function Baniere({
                     
                     {/* Masquer le sélecteur de classe en mode élève */}
                     {!isStudentMode && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <label htmlFor="select-classe" style={{ fontWeight: '500' }}>
-                                Classe :
-                            </label>
-                            <select 
-                                id="select-classe" 
-                                value={classeChoisie} 
-                                onChange={onClasseChange}
-                                style={{
-                                    padding: '5px 10px',
-                                    borderRadius: '4px',
-                                    border: '1px solid #ccc'
-                                }}
-                            >
-                                <option value="">-- Choisir une classe --</option>
-                                {classes.map(c => (
-                                    <option key={c.id} value={c.id}>{c.nom}</option>
-                                ))}
-                            </select>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <label htmlFor="select-classe" style={{ fontWeight: '500' }}>
+                                    Classe :
+                                </label>
+                                <select 
+                                    id="select-classe" 
+                                    value={classeChoisie} 
+                                    onChange={onClasseChange}
+                                    style={{
+                                        padding: '5px 10px',
+                                        borderRadius: '4px',
+                                        border: '1px solid #ccc'
+                                    }}
+                                >
+                                    <option value="">-- Choisir une classe --</option>
+                                    {classes.map(c => (
+                                        <option key={c.id} value={c.id}>{c.nom}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            
+                            {/* Sélecteur d'élèves - affiché seulement si une classe est sélectionnée */}
+                            {classeChoisie && eleves.length > 0 && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <label htmlFor="select-eleve" style={{ fontWeight: '500' }}>
+                                        Élève :
+                                    </label>
+                                    <select 
+                                        id="select-eleve" 
+                                        value={eleveFiltre} 
+                                        onChange={onEleveChange}
+                                        style={{
+                                            padding: '5px 10px',
+                                            borderRadius: '4px',
+                                            border: '1px solid #ccc',
+                                            minWidth: '150px'
+                                        }}
+                                    >
+                                        <option value="">-- Tous les élèves --</option>
+                                        {eleves.map(eleve => (
+                                            <option key={eleve.id} value={eleve.id}>
+                                                {eleve.prenom} {eleve.nom}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

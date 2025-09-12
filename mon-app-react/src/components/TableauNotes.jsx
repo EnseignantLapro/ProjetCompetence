@@ -6,8 +6,9 @@ import NotePastille from './NotePastille'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import { apiFetch } from '../utils/api'
 
-function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false }) {
+function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false }) {
     const [eleves, setEleves] = useState([])
+    const [elevesVisibles, setElevesVisibles] = useState([]) // Les élèves qui doivent être affichés selon le filtre
     const [notes, setNotes] = useState([])
 
     const [modalOuvert, setModalOuvert] = useState(false)
@@ -177,6 +178,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
             }
         }
     }, [eleves, dernieresEvaluationsDirectes, codeCompetence])
+
+    // Filtrer les élèves selon le filtre sélectionné
+    useEffect(() => {
+        if (!eleveFiltre || eleveFiltre === '') {
+            // Aucun filtre : afficher tous les élèves
+            setElevesVisibles(eleves)
+        } else {
+            // Filtre appliqué : afficher seulement l'élève sélectionné
+            const eleveSelectionne = eleves.find(eleve => eleve.id.toString() === eleveFiltre.toString())
+            setElevesVisibles(eleveSelectionne ? [eleveSelectionne] : [])
+        }
+    }, [eleves, eleveFiltre])
 
     // Réinitialiser l'affichage du tableau quand la compétence change
     useEffect(() => {
@@ -1622,7 +1635,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
             )}
             {/* Si mode vue d'ensemble, organiser par élève avec leurs blocs */}
             {!codeCompetence ? (
-                eleves
+                elevesVisibles
                     .filter(eleve => !isStudentMode || eleve.id === studentInfo?.id) // En mode étudiant, afficher seulement l'élève connecté
                     .map(eleve => {
                     const hierarchie = organiserNotesParHierarchie(eleve.id)
@@ -2181,7 +2194,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, isStudentMode
                 })
             ) : (
                 /* Mode compétence spécifique - affichage classique */
-                eleves
+                elevesVisibles
                     .filter(eleve => !isStudentMode || eleve.id === studentInfo?.id) // En mode étudiant, afficher seulement l'élève connecté
                     .map(eleve => {
                     const hierarchie = organiserNotesParHierarchie(eleve.id)

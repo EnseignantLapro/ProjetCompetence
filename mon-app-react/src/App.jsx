@@ -40,6 +40,9 @@ function App() {
   const [classeChoisie, setClasseChoisie] = useState('')
   const [isModifying, setIsModifying] = useState(false) // Pour distinguer modification vs première sélection
   const [modificationKey, setModificationKey] = useState(0) // Pour forcer le rechargement uniquement en mode modification
+  
+  // État pour le filtre d'élèves
+  const [eleveFiltre, setEleveFiltre] = useState('') // ID de l'élève sélectionné, '' = tous les élèves
 
   const [nomNiveau1, setNomNiveau1] = useState('')
   const [nomNiveau2, setNomNiveau2] = useState('')
@@ -309,10 +312,20 @@ function App() {
     const value = e.target.value
     setClasseChoisie(value)
     
+    // Réinitialiser le filtre d'élèves quand on change de classe
+    setEleveFiltre('')
+    
     // Sauvegarder en localStorage seulement en mode normal (pas enseignant connecté)
     if (!isTeacherMode) {
       localStorage.setItem('classe_choisie', value)
     }
+  }
+
+  const handleEleveChange = (e) => {
+    // Empêcher le changement d'élève en mode élève
+    if (isStudentMode) return
+    
+    setEleveFiltre(e.target.value)
   }
 
   const handleToggleAdmin = () => {
@@ -378,6 +391,8 @@ function App() {
         classes={classes}
         classeChoisie={classeChoisie}
         onClasseChange={handleClasseChange}
+        eleveFiltre={eleveFiltre}
+        onEleveChange={handleEleveChange}
         isAdmin={hasAdminAccess()} // Masquer les fonctions admin selon le mode et les permissions
         adminVisible={adminVisible && hasAdminAccess()}
         onToggleAdmin={handleToggleAdmin}
@@ -511,6 +526,7 @@ function App() {
                 competenceChoisie={competenceChoisie} 
                 classeChoisie={classeChoisie} 
                 classes={classes}
+                eleveFiltre={eleveFiltre}
                 isStudentMode={isStudentMode}
                 studentInfo={studentInfo}
                 isTeacherMode={isTeacherMode}
