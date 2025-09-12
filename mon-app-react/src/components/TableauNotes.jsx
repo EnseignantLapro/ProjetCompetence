@@ -235,7 +235,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 console.error('Erreur lors du chargement des enseignants:', error)
                 setEnseignants([]) // Assurer qu'on a un tableau vide en cas d'erreur
             })
-    }, [classeChoisie, isStudentMode, studentInfo, appInitialized, competenceChoisie])
+    }, [classeChoisie, isStudentMode, studentInfo, appInitialized])
 
     // Initialiser les commentaires des élèves avec les valeurs existantes
     useEffect(() => {
@@ -564,10 +564,17 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             
             const tousLesDevoirs = Array.from(devoirsMap.values())
             
-            setDevoirsDisponibles(tousLesDevoirs)
+            // Optimisation: ne pas mettre à jour si c'est identique
+            setDevoirsDisponibles(prev => {
+                if (prev.length === tousLesDevoirs.length && 
+                    prev.every((d, i) => d.devoirKey === tousLesDevoirs[i]?.devoirKey)) {
+                    return prev
+                }
+                return tousLesDevoirs
+            })
             
-            // Notifier App.jsx de la mise à jour des devoirs
-            if (onDevoirsUpdate) {
+            // Notifier App.jsx de la mise à jour des devoirs (éviter les appels redondants)
+            if (onDevoirsUpdate && tousLesDevoirs.length > 0) {
                 onDevoirsUpdate(tousLesDevoirs)
             }
         } catch (error) {
@@ -1924,7 +1931,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                     >
                                                         <option value="">Sélectionner un devoir...</option>
                                                         {devoirsSansDoublons.map((devoir, index) => (
-                                                            <option key={`edit-modal-${devoir.devoirKey}-${index}-${++keyCounter}`} value={devoir.devoirKey}>
+                                                            <option key={`edit-modal-${devoir.devoirKey}-${index}`} value={devoir.devoirKey}>
                                                                 {devoir.devoir_label} ({new Date(devoir.date).toLocaleDateString()})
                                                             </option>
                                                         ))}
@@ -2156,7 +2163,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                     >
                                         <option value="">-- Sélectionner un devoir existant --</option>
                                         {devoirsSansDoublons.map((devoir, index) => (
-                                            <option key={`quick-note-${devoir.devoirKey}-${index}-${++keyCounter}`} value={devoir.devoirKey}>
+                                            <option key={`quick-note-${devoir.devoirKey}-${index}`} value={devoir.devoirKey}>
                                                 {devoir.devoir_label} ({new Date(devoir.date).toLocaleDateString()})
                                             </option>
                                         ))}
