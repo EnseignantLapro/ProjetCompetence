@@ -2252,6 +2252,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 <DevoirView
                     ref={devoirViewRef}
                     devoirKey={devoirKeyVisible}
+                    classeChoisie={classeChoisie}
                     onClose={() => {
                         setDevoirViewVisible(false)
                         setDevoirKeyVisible(null)

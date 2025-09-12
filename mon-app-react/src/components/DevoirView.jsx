@@ -9,7 +9,7 @@ const couleurs = {
   vert: { label: 'Maîtrisé', hex: '#2ecc71' },
 }
 
-const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFiltre, competencesN1N2, competencesN3 }, ref) => {
+const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, teacherInfo, eleveFiltre, competencesN1N2, competencesN3 }, ref) => {
   const [devoirData, setDevoirData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -83,18 +83,26 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
         const data = await response.json()
         setDevoirData(data)
 
+        let classeId = null
+        
         if (data.length > 0) {
           // Récupérer la classe_id depuis les données du devoir
-          const classeId = data[0].classe_id
+          classeId = data[0].classe_id
           
-          // Charger TOUS les élèves de la classe (pas seulement ceux notés)
-          const elevesResponse = await apiFetch(`/eleves?classe_id=${classeId}`)
-          const tousLesEleves = await elevesResponse.json()
-          setEleves(tousLesEleves)
-
           // Extraire les compétences uniques
           const competencesUniques = [...new Set(data.map(note => note.competence_code))]
           setCompetences(competencesUniques)
+        } else if (classeChoisie) {
+          // Si pas de données mais une classe est sélectionnée, utiliser cette classe
+          classeId = classeChoisie.id || classeChoisie
+        }
+        
+        // Charger TOUS les élèves de la classe (même si le devoir est vide)
+        if (classeId) {
+          const elevesResponse = await apiFetch(`/eleves?classe_id=${classeId}`)
+          const tousLesEleves = await elevesResponse.json()
+          setEleves(tousLesEleves)
+          console.log('🎓 DevoirView - Élèves chargés pour classe', classeId, ':', tousLesEleves.length)
         }
       } catch (err) {
         setError(err.message)
@@ -106,7 +114,7 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
     if (devoirKey) {
       chargerDevoir()
     }
-  }, [devoirKey])
+  }, [devoirKey, classeChoisie])
 
   // Effect pour filtrer les élèves selon eleveFiltre
   useEffect(() => {
@@ -236,6 +244,10 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
       return
     }
 
+    console.log('🗑️ Suppression compétence:', competenceCode)
+    console.log('🗑️ Compétences temporaires avant:', Array.from(competencesTemporaires))
+    console.log('🗑️ Compétences permanentes avant:', competences)
+
     try {
       const response = await apiFetch(`/devoirs/${devoirKey}/remove-competence`, {
         method: 'PUT',
@@ -245,16 +257,27 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
 
       if (response.ok) {
         const result = await response.json()
+        console.log('🗑️ Résultat suppression:', result)
         
-        // Si aucun changement en base (changes: 0), c'était une compétence temporaire
+        // Si aucun changement en base (changes: 0), retirer la compétence des listes locales
         if (result.changes === 0) {
-          // Retirer la compétence des compétences temporaires
+          console.log('🗑️ Aucun changement en base - suppression locale')
+          
+          // Retirer de TOUTES les listes locales (temporaires ET permanentes)
           setCompetencesTemporaires(prev => {
             const nouvelles = new Set(prev)
             nouvelles.delete(competenceCode)
+            console.log('🗑️ Nouvelles compétences temporaires:', Array.from(nouvelles))
+            return nouvelles
+          })
+          
+          setCompetences(prev => {
+            const nouvelles = prev.filter(c => c !== competenceCode)
+            console.log('🗑️ Nouvelles compétences permanentes:', nouvelles)
             return nouvelles
           })
         } else {
+          console.log('🗑️ Suppression compétence permanente - rechargement données')
           // Recharger les données si des changements ont été faits en base
           const newResponse = await apiFetch(`/devoirs/${devoirKey}`)
           const newData = await newResponse.json()
@@ -263,6 +286,7 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
           // Mettre à jour les compétences
           const competencesUniques = [...new Set(newData.map(note => note.competence_code))]
           setCompetences(competencesUniques)
+          console.log('🗑️ Nouvelles compétences permanentes:', competencesUniques)
         }
       }
     } catch (err) {
@@ -272,9 +296,13 @@ const DevoirView = React.forwardRef(({ devoirKey, onClose, teacherInfo, eleveFil
 
   if (loading) return <div>Chargement...</div>
   if (error) return <div>Erreur: {error}</div>
-  if (devoirData.length === 0) return <div>Aucune donnée trouvée pour ce devoir</div>
+  
+  // Si aucune donnée ET aucune compétence temporaire, afficher le message
+  if (devoirData.length === 0 && competencesTemporaires.size === 0) {
+    return <div>Aucune donnée trouvée pour ce devoir</div>
+  }
 
-  const devoirInfo = devoirData[0]
+  const devoirInfo = devoirData[0] || { devoir_label: 'Nouveau devoir', date: new Date().toISOString() }
 
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
