@@ -187,7 +187,7 @@ function Baniere({
                                             minWidth: '180px'
                                         }}
                                     >
-                                        <option value="">-- Aucun devoir --</option>
+                                        <option value="">-- Toutes les évaluations --</option>
                                         {devoirsSansDoublons.map(devoir => (
                                             <option key={devoir.devoirKey} value={devoir.devoirKey}>
                                                 {devoir.devoir_label}

@@ -2041,17 +2041,17 @@ app.put('/notes/:id', verifyToken, (req, res) => {
     }
     
     const { id } = req.params
-    const { eleve_id, competence_code, couleur, date, prof_id, commentaire } = req.body
+    const { eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label } = req.body
 
     // Si c'est un super admin, autoriser toutes les modifications
     if (req.user.isSuperAdmin) {
         db.run(
-            'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ? WHERE id = ?',
-            [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, id],
+            'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ?, devoirKey = ?, devoir_label = ? WHERE id = ?',
+            [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, devoirKey || null, devoir_label || null, id],
             function (err) {
                 if (err) return res.status(500).json({ error: err.message })
                 if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
-                res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire })
+                res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label })
             }
         )
         return
@@ -2101,12 +2101,12 @@ app.put('/notes/:id', verifyToken, (req, res) => {
 
                 // Effectuer la modification
                 db.run(
-                    'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ? WHERE id = ?',
-                    [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, id],
+                    'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ?, devoirKey = ?, devoir_label = ? WHERE id = ?',
+                    [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, devoirKey || null, devoir_label || null, id],
                     function (err) {
                         if (err) return res.status(500).json({ error: err.message })
                         if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
-                        res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire })
+                        res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label })
                     }
                 )
             })
@@ -2127,12 +2127,12 @@ app.put('/notes/:id', verifyToken, (req, res) => {
 
             // Effectuer la modification
             db.run(
-                'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ? WHERE id = ?',
-                [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, id],
+                'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ?, devoirKey = ?, devoir_label = ? WHERE id = ?',
+                [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, devoirKey || null, devoir_label || null, id],
                 function (err) {
                     if (err) return res.status(500).json({ error: err.message })
                     if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
-                    res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire })
+                    res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label })
                 }
             )
         }
@@ -3148,6 +3148,49 @@ app.get('/eleves/with-evaluations/:classeId', verifyToken, (req, res) => {
             if (err) return res.status(500).json({ error: err.message })
             if (!classe) return res.status(404).json({ error: 'Classe non trouvée' })
             
+            // Si pas d'établissement via le référent, vérifier via enseignant_classes
+            if (!classe.classe_etablissement) {
+                db.get(`
+                    SELECT 1 FROM enseignant_classes WHERE classe_id = ? AND enseignant_id = ?
+                `, [classeId, req.user.id], (err2, assoc) => {
+                    if (err2) return res.status(500).json({ error: err2.message })
+                    if (!assoc) {
+                        return res.status(403).json({ error: 'Accès interdit à cette classe' })
+                    }
+                    
+                    // Enseignant autorisé via association - exécuter la requête principale
+                    const query = `
+                        SELECT 
+                          e.id,
+                          e.prenom,
+                          e.nom,
+                          e.id_moodle,
+                          e.photo,
+                          e.classe_id,
+                          COUNT(DISTINCT n.id) as evaluations_count,
+                          COUNT(DISTINCT p.id) as positionnements_count
+                        FROM eleves e
+                        LEFT JOIN notes n ON e.id = n.eleve_id 
+                          AND (n.prof_id IS NULL OR n.prof_id IN (SELECT id FROM enseignants WHERE etablissement = ?))
+                        LEFT JOIN positionnements_enseignant p ON e.id = p.eleve_id 
+                          AND (p.prof_id IS NULL OR p.prof_id IN (SELECT id FROM enseignants WHERE etablissement = ?))
+                        WHERE e.classe_id = ?
+                        GROUP BY e.id, e.prenom, e.nom, e.id_moodle, e.photo, e.classe_id
+                        ORDER BY e.nom, e.prenom
+                    `
+                    const params = [req.user.etablissement, req.user.etablissement, classeId]
+
+                    db.all(query, params, (err, rows) => {
+                        if (err) {
+                            console.error('Erreur lors de la récupération des élèves avec évaluations:', err)
+                            return res.status(500).json({ error: err.message })
+                        }
+                        res.json(rows)
+                    })
+                })
+                return
+            }
+            
             if (classe.classe_etablissement !== req.user.etablissement) {
                 return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' })
             }
@@ -3326,6 +3369,38 @@ app.post('/evaluations/import', verifyToken, (req, res) => {
         if (err) return res.status(500).json({ error: err.message })
         if (!classe) return res.status(404).json({ error: 'Classe non trouvée' })
         
+        // Si pas d'établissement via le référent, chercher via un enseignant associé
+        if (!classe.classe_etablissement) {
+            db.get(`
+                SELECT e_ens.etablissement
+                FROM enseignants e_ens
+                JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                WHERE ec.classe_id = ?
+                LIMIT 1
+            `, [classeIdNum], (err2, enseignantAssocie) => {
+                if (err2) return res.status(500).json({ error: err2.message })
+                
+                classe.classe_etablissement = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                
+                // Vérifier les permissions selon le rôle
+                const canImport = req.user.referent 
+                    ? // Référent : peut importer pour toutes les classes de son établissement
+                      classe.classe_etablissement === req.user.etablissement
+                    : // Enseignant normal : seulement pour SES classes (où il enseigne)
+                      classe.is_teacher_of_class !== null
+                
+                if (!canImport) {
+                    const errorMsg = req.user.referent
+                        ? 'Accès refusé : vous ne pouvez importer des évaluations que pour les classes de votre établissement'
+                        : 'Accès refusé : vous ne pouvez importer des évaluations que pour vos classes'
+                    return res.status(403).json({ error: errorMsg })
+                }
+
+                processImport()
+            })
+            return
+        }
+        
         // Vérifier les permissions selon le rôle
         const canImport = req.user.referent 
             ? // Référent : peut importer pour toutes les classes de son établissement
@@ -3437,6 +3512,28 @@ app.get('/evaluations/export/:classeId', verifyToken, (req, res) => {
         `, [classeId], (err, classe) => {
             if (err) return res.status(500).json({ error: err.message })
             if (!classe) return res.status(404).json({ error: 'Classe non trouvée' })
+            
+            // Si pas d'établissement via le référent, vérifier via enseignant_classes
+            if (!classe.classe_etablissement) {
+                db.get(`
+                    SELECT e_ens.etablissement
+                    FROM enseignants e_ens
+                    JOIN enseignant_classes ec ON e_ens.id = ec.enseignant_id
+                    WHERE ec.classe_id = ?
+                    LIMIT 1
+                `, [classeId], (err2, enseignantAssocie) => {
+                    if (err2) return res.status(500).json({ error: err2.message })
+                    
+                    const etablissementClasse = enseignantAssocie ? enseignantAssocie.etablissement : null;
+                    
+                    if (etablissementClasse !== req.user.etablissement) {
+                        return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' })
+                    }
+                    
+                    exportClassEvaluations()
+                })
+                return
+            }
             
             if (classe.classe_etablissement !== req.user.etablissement) {
                 return res.status(403).json({ error: 'ahaha vous n\'avez pas dit le mot magique' })
