@@ -2271,19 +2271,44 @@ app.get('/devoirs/:devoirKey', verifyToken, (req, res) => {
     }
     
     const { devoirKey } = req.params;
-    const professorId = req.user.id;
     
-    // Récupérer toutes les notes et élèves associés à ce devoir
-    db.all(`
-        SELECT n.*, e.prenom, e.nom, e.classe_id
-        FROM notes n
-        JOIN eleves e ON n.eleve_id = e.id
-        WHERE n.devoirKey = ? AND n.prof_id = ?
-        ORDER BY e.nom, e.prenom, n.competence_code
-    `, [devoirKey, professorId], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message })
-        res.json(rows)
-    })
+    if (req.user.isSuperAdmin) {
+        // Super admin : accès à tous les devoirs
+        db.all(`
+            SELECT n.*, e.prenom, e.nom, e.classe_id
+            FROM notes n
+            JOIN eleves e ON n.eleve_id = e.id
+            WHERE n.devoirKey = ?
+            ORDER BY e.nom, e.prenom, n.competence_code
+        `, [devoirKey], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message })
+            res.json(rows)
+        })
+    } else {
+        // Pour les enseignants normaux : vérifier l'établissement
+        db.all(`
+            SELECT n.*, e.prenom, e.nom, e.classe_id
+            FROM notes n
+            JOIN eleves e ON n.eleve_id = e.id
+            JOIN classes c ON e.classe_id = c.id
+            LEFT JOIN enseignants ref ON c.idReferent = ref.id
+            LEFT JOIN enseignants prof_createur ON n.prof_id = prof_createur.id
+            LEFT JOIN (
+                SELECT DISTINCT ec.classe_id, e_ens.etablissement
+                FROM enseignant_classes ec
+                JOIN enseignants e_ens ON ec.enseignant_id = e_ens.id
+            ) ens_etab ON c.id = ens_etab.classe_id
+            WHERE n.devoirKey = ? 
+            AND (
+                prof_createur.etablissement = ? OR 
+                COALESCE(ref.etablissement, ens_etab.etablissement) = ?
+            )
+            ORDER BY e.nom, e.prenom, n.competence_code
+        `, [devoirKey, req.user.etablissement, req.user.etablissement], (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message })
+            res.json(rows)
+        })
+    }
 })
 
 // Route pour retirer une compétence d'un devoir (remettre devoirKey à null)
@@ -2295,21 +2320,48 @@ app.put('/devoirs/:devoirKey/remove-competence', verifyToken, (req, res) => {
     
     const { devoirKey } = req.params;
     const { competence_code } = req.body;
-    const professorId = req.user.id;
     
     if (!competence_code) {
         return res.status(400).json({ error: 'Code de compétence requis' });
     }
     
-    // Mettre à jour toutes les notes de cette compétence pour ce devoir
-    db.run(`
-        UPDATE notes 
-        SET devoirKey = NULL, devoir_label = NULL 
-        WHERE devoirKey = ? AND competence_code = ? AND prof_id = ?
-    `, [devoirKey, competence_code, professorId], function(err) {
-        if (err) return res.status(500).json({ error: err.message })
-        res.json({ message: 'Compétence retirée du devoir', changes: this.changes })
-    })
+    if (req.user.isSuperAdmin) {
+        // Super admin : peut modifier tous les devoirs
+        db.run(`
+            UPDATE notes 
+            SET devoirKey = NULL, devoir_label = NULL 
+            WHERE devoirKey = ? AND competence_code = ?
+        `, [devoirKey, competence_code], function(err) {
+            if (err) return res.status(500).json({ error: err.message })
+            res.json({ message: 'Compétence retirée du devoir', changes: this.changes })
+        })
+    } else {
+        // Pour les enseignants normaux : vérifier l'établissement
+        db.run(`
+            UPDATE notes 
+            SET devoirKey = NULL, devoir_label = NULL 
+            WHERE devoirKey = ? AND competence_code = ? AND EXISTS (
+                SELECT 1 FROM notes n2
+                JOIN eleves e ON n2.eleve_id = e.id
+                JOIN classes c ON e.classe_id = c.id
+                LEFT JOIN enseignants ref ON c.idReferent = ref.id
+                LEFT JOIN enseignants prof_createur ON n2.prof_id = prof_createur.id
+                LEFT JOIN (
+                    SELECT DISTINCT ec.classe_id, e_ens.etablissement
+                    FROM enseignant_classes ec
+                    JOIN enseignants e_ens ON ec.enseignant_id = e_ens.id
+                ) ens_etab ON c.id = ens_etab.classe_id
+                WHERE n2.devoirKey = notes.devoirKey
+                AND (
+                    prof_createur.etablissement = ? OR 
+                    COALESCE(ref.etablissement, ens_etab.etablissement) = ?
+                )
+            )
+        `, [devoirKey, competence_code, req.user.etablissement, req.user.etablissement], function(err) {
+            if (err) return res.status(500).json({ error: err.message })
+            res.json({ message: 'Compétence retirée du devoir', changes: this.changes })
+        })
+    }
 })
 
 // Récupérer toutes les classes
