@@ -6,6 +6,7 @@ import NotePastille from './NotePastille'
 import DevoirView from './DevoirView'
 import DevoirOptions from './DevoirOptions'
 import DevoirSelectionSection from './DevoirSelectionSection'
+import NoteCompetence from './NoteCompetence'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import { apiFetch } from '../utils/api'
 import{getCouleurPourCompetence,isCompetenceInHierarchy,isCompetenceN1,getNotesVisibles,ajouterNoteDirecte,getCommentaireDerniereEvaluation} from './TableauNotesUtils'
@@ -675,6 +676,61 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         const cleEleveCompetence = `${eleveId}-${competenceCode}`
         const derniereEvaluation = dernieresEvaluationsDirectes.get(cleEleveCompetence)
         return derniereEvaluation ? derniereEvaluation.couleur : null
+    }
+
+    // Fonction wrapper qui ajoute le suivi de session à ajouterNoteDirecte
+    const ajouterNoteAvecSuivi = async (eleve, competenceCode, couleur, notes, isStudentMode, dernieresEvaluationsDirectes, commentairesEleves, teacherInfo, devoirSelectionne, devoirs, setDernieresEvaluationsDirectes, nouveauDevoirNom, setNotes) => {
+        console.log('🟡 ajouterNoteAvecSuivi appelé pour:', { eleve: eleve.prenom, competenceCode, couleur })
+        
+        const cleNote = `${eleve.id}-${competenceCode}`
+        
+        // Éviter les ajouts multiples simultanés
+        if (!window.ajoutEnCours) window.ajoutEnCours = new Set()
+        if (window.ajoutEnCours.has(cleNote)) {
+            console.log('⚠️ Ajout déjà en cours pour:', cleNote)
+            return false
+        }
+        
+        window.ajoutEnCours.add(cleNote)
+        
+        try {
+            // Appeler la fonction d'origine
+            const resultat = await ajouterNoteDirecte(
+                eleve, 
+                competenceCode, 
+                couleur,
+                notes,
+                isStudentMode,
+                dernieresEvaluationsDirectes,
+                commentairesEleves,
+                teacherInfo,
+                devoirSelectionne,
+                devoirs,
+                setDernieresEvaluationsDirectes,
+                nouveauDevoirNom,
+                setNotes
+            )
+            
+            // Si l'ajout a réussi, ajouter au tableau de suivi
+            if (resultat) {
+                setNotesSaisiesSession(prev => {
+                    if (!prev.includes(cleNote)) {
+                        console.log('📝 Ajout au tableau de suivi (ajouterNoteAvecSuivi):', cleNote)
+                        console.log('📊 Session actuelle avant ajout:', prev, `(${prev.length})`)
+                        const nouvelle = [...prev, cleNote]
+                        console.log('📊 Session après ajout:', nouvelle, `(${nouvelle.length})`)
+                        return nouvelle
+                    }
+                    console.log('⚠️ Clé déjà présente dans la session:', cleNote, 'Session:', prev)
+                    return prev
+                })
+            }
+            
+            return resultat
+        } finally {
+            // Retirer le marqueur d'ajout en cours
+            window.ajoutEnCours.delete(cleNote)
+        }
     }
 
     // Fonction pour créer un tooltip enrichi pour les pastilles
@@ -2878,150 +2934,27 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                         <p>Classe: {getNomClasse(eleve.classe_id)}</p>
                                     </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                                    {/* Boutons de couleur directs pour éviter la popup - masqués en mode élève */}
-                                    {!isStudentMode && (() => {
-                                        const derniereCouleur = getDerniereCouleurDirecte(eleve.id, codeCompetence)
-                                        return (
-                                            <>
-                                                <button
-                                                    className="btn-noter"
-                                                    style={{
-                                                        backgroundColor: '#e74c3c',
-                                                        color: 'white',
-                                                        fontSize: '11px',
-                                                        height: '50px',
-                                                        padding: '6px 10px',
-                                                        minWidth: '80px',
-                                                        opacity: derniereCouleur && derniereCouleur !== 'rouge' ? 0.4 : 1,
-                                                        boxShadow: derniereCouleur === 'rouge' ? '0 0 8px rgba(231, 76, 60, 0.6)' : 'none',
-                                                        transform: derniereCouleur === 'rouge' ? 'scale(1.05)' : 'scale(1)',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                    onClick={() => {
-                                                        // Si un devoir est ouvert, ajouter la compétence temporairement
-                                                        if (devoirViewVisible && devoirViewRef.current) {
-                                                            devoirViewRef.current.ajouterCompetence(codeCompetence)
-                                                        }
-                                                        ajouterNoteDirecte(eleve, codeCompetence, 'rouge',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirViewVisible ? devoirKeyVisible : devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes)
-                                                    }}
-                                                    disabled={!codeCompetence}
-                                                >
-                                                    Non acquis
-                                                </button>
-                                                <button
-                                                    className="btn-noter"
-                                                    style={{
-                                                        backgroundColor: '#f1c40f',
-                                                        color: 'white',
-                                                        fontSize: '11px',
-                                                         height: '50px',
-                                                        padding: '6px 10px',
-                                                        minWidth: '80px',
-                                                        opacity: derniereCouleur && derniereCouleur !== 'jaune' ? 0.4 : 1,
-                                                        boxShadow: derniereCouleur === 'jaune' ? '0 0 8px rgba(241, 196, 15, 0.6)' : 'none',
-                                                        transform: derniereCouleur === 'jaune' ? 'scale(1.05)' : 'scale(1)',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                    onClick={() => {
-                                                        // Si un devoir est ouvert, ajouter la compétence temporairement
-                                                        if (devoirViewVisible && devoirViewRef.current) {
-                                                            devoirViewRef.current.ajouterCompetence(codeCompetence)
-                                                        }
-                                                        ajouterNoteDirecte(eleve, codeCompetence, 'jaune',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirViewVisible ? devoirKeyVisible : devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes)
-                                                    }}
-                                                    disabled={!codeCompetence}
-                                                >
-                                                    Maîtrise fragile
-                                                </button>
-                                                <button
-                                                    className="btn-noter"
-                                                    style={{
-                                                        backgroundColor: '#3498db',
-                                                        color: 'white',
-                                                        fontSize: '11px',
-                                                         height: '50px',
-                                                        padding: '6px 10px',
-                                                        minWidth: '80px',
-                                                        opacity: derniereCouleur && derniereCouleur !== 'bleu' ? 0.4 : 1,
-                                                        boxShadow: derniereCouleur === 'bleu' ? '0 0 8px rgba(52, 152, 219, 0.6)' : 'none',
-                                                        transform: derniereCouleur === 'bleu' ? 'scale(1.05)' : 'scale(1)',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                    onClick={() => {
-                                                        // Si un devoir est ouvert, ajouter la compétence temporairement
-                                                        if (devoirViewVisible && devoirViewRef.current) {
-                                                            devoirViewRef.current.ajouterCompetence(codeCompetence)
-                                                        }
-                                                        ajouterNoteDirecte(eleve, codeCompetence, 'bleu',notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirViewVisible ? devoirKeyVisible : devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes)
-                                                    }}
-                                                    disabled={!codeCompetence}
-                                                >
-                                                    Maîtrise satisfaisante
-                                                </button>
-                                                <button
-                                                    className="btn-noter"
-                                                    style={{
-                                                        backgroundColor: '#2ecc71',
-                                                        color: 'white',
-                                                        fontSize: '11px',
-                                                         height: '50px',
-                                                        padding: '6px 10px',
-                                                        minWidth: '80px',
-                                                        opacity: derniereCouleur && derniereCouleur !== 'vert' ? 0.4 : 1,
-                                                        boxShadow: derniereCouleur === 'vert' ? '0 0 8px rgba(46, 204, 113, 0.6)' : 'none',
-                                                        transform: derniereCouleur === 'vert' ? 'scale(1.05)' : 'scale(1)',
-                                                        transition: 'all 0.2s ease'
-                                                    }}
-                                                    onClick={() => {
-                                                        // Si un devoir est ouvert, ajouter la compétence temporairement
-                                                        if (devoirViewVisible && devoirViewRef.current) {
-                                                            devoirViewRef.current.ajouterCompetence(codeCompetence)
-                                                        }
-                                                        ajouterNoteDirecte(eleve, codeCompetence, 'vert' ,notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirViewVisible ? devoirKeyVisible : devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes)
-                                                    }}
-                                                    disabled={!codeCompetence}
-                                                >
-                                                    Très bonne maîtrise !
-                                                </button>
-                                            </>
-                                        )
-                                    })()}
-                                    
-                                    {/* Champ de commentaire pour les évaluations directes */}
-                                    {!isStudentMode && (
-                                        <div style={{ width: '100%', marginTop: '10px' }}>
-                                            <textarea
-                                                placeholder="Commentaire / Remédiation (facultatif)..."
-                                                value={(() => {
-                                                    const cleEleveCompetence = `${eleve.id}-${codeCompetence}`
-                                                    return commentairesEleves[cleEleveCompetence] !== undefined 
-                                                        ? commentairesEleves[cleEleveCompetence] 
-                                                        : getCommentaireDerniereEvaluation(eleve.id, codeCompetence,dernieresEvaluationsDirectes)
-                                                })()}
-                                                onChange={(e) => {
-                                                    const cleEleveCompetence = `${eleve.id}-${codeCompetence}`
-                                                    setCommentairesEleves(prev => ({
-                                                        ...prev,
-                                                        [cleEleveCompetence]: e.target.value
-                                                    }))
-                                                }}
-                                                style={{
-                                                    width: '100%',
-                                                    minHeight: '40px',
-                                                    padding: '8px',
-                                                    borderRadius: '4px',
-                                                    border: '1px solid #ccc',
-                                                    fontSize: '12px',
-                                                    fontFamily: 'inherit',
-                                                    resize: 'vertical',
-                                                    boxSizing: 'border-box'
-                                                }}
-                                                rows="2"
-                                            />
-                                        </div>
-                                    )}
-                                </div>
+                                <NoteCompetence
+                                    eleve={eleve}
+                                    codeCompetence={codeCompetence}
+                                    isStudentMode={isStudentMode}
+                                    getDerniereCouleurDirecte={getDerniereCouleurDirecte}
+                                    commentairesEleves={commentairesEleves}
+                                    setCommentairesEleves={setCommentairesEleves}
+                                    getCommentaireDerniereEvaluation={getCommentaireDerniereEvaluation}
+                                    ajouterNoteDirecte={ajouterNoteAvecSuivi}
+                                    devoirViewVisible={devoirViewVisible}
+                                    devoirViewRef={devoirViewRef}
+                                    notes={notes}
+                                    dernieresEvaluationsDirectes={dernieresEvaluationsDirectes}
+                                    teacherInfo={teacherInfo}
+                                    devoirKeyVisible={devoirKeyVisible}
+                                    devoirSelectionne={devoirSelectionne}
+                                    devoirs={devoirs}
+                                    setDernieresEvaluationsDirectes={setDernieresEvaluationsDirectes}
+                                    nouveauDevoirNom={nouveauDevoirNom}
+                                    setNotes={setNotes}
+                                />
                             </div>
 
 
