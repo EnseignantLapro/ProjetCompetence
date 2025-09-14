@@ -78,7 +78,7 @@ const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, teache
       try {
         setLoading(true)
         
-        // Charger les données du devoir
+        // Charger les données du devoir via la route /notes en filtrant par devoirKey
         const response = await apiFetch(`/devoirs/${devoirKey}`)
         const data = await response.json()
         setDevoirData(data)

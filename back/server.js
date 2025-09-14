@@ -2045,13 +2045,61 @@ app.put('/notes/:id', verifyToken, (req, res) => {
 
     // Si c'est un super admin, autoriser toutes les modifications
     if (req.user.isSuperAdmin) {
+        // Ne mettre à jour que les champs fournis
+        const fieldsToUpdate = []
+        const values = []
+        
+        if (eleve_id !== undefined) {
+            fieldsToUpdate.push('eleve_id = ?')
+            values.push(eleve_id)
+        }
+        if (competence_code !== undefined) {
+            fieldsToUpdate.push('competence_code = ?')
+            values.push(competence_code)
+        }
+        if (couleur !== undefined) {
+            fieldsToUpdate.push('couleur = ?')
+            values.push(couleur)
+        }
+        if (date !== undefined) {
+            fieldsToUpdate.push('date = ?')
+            values.push(date)
+        }
+        if (prof_id !== undefined) {
+            fieldsToUpdate.push('prof_id = ?')
+            values.push(prof_id)
+        }
+        if (commentaire !== undefined) {
+            fieldsToUpdate.push('commentaire = ?')
+            values.push(commentaire || null)
+        }
+        if (devoirKey !== undefined) {
+            fieldsToUpdate.push('devoirKey = ?')
+            values.push(devoirKey || null)
+        }
+        if (devoir_label !== undefined) {
+            fieldsToUpdate.push('devoir_label = ?')
+            values.push(devoir_label || null)
+        }
+        
+        if (fieldsToUpdate.length === 0) {
+            return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
+        }
+        
+        values.push(id) // Pour la clause WHERE
+        
         db.run(
-            'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ?, devoirKey = ?, devoir_label = ? WHERE id = ?',
-            [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, devoirKey || null, devoir_label || null, id],
+            `UPDATE notes SET ${fieldsToUpdate.join(', ')} WHERE id = ?`,
+            values,
             function (err) {
                 if (err) return res.status(500).json({ error: err.message })
                 if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
-                res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label })
+                
+                // Récupérer la note mise à jour pour la retourner
+                db.get('SELECT * FROM notes WHERE id = ?', [id], (err, updatedNote) => {
+                    if (err) return res.status(500).json({ error: err.message })
+                    res.json(updatedNote)
+                })
             }
         )
         return
@@ -2099,14 +2147,61 @@ app.put('/notes/:id', verifyToken, (req, res) => {
                     return res.status(403).json({ error: errorMsg })
                 }
 
-                // Effectuer la modification
+                // Effectuer la modification - ne mettre à jour que les champs fournis
+                const fieldsToUpdate = []
+                const values = []
+                
+                if (eleve_id !== undefined) {
+                    fieldsToUpdate.push('eleve_id = ?')
+                    values.push(eleve_id)
+                }
+                if (competence_code !== undefined) {
+                    fieldsToUpdate.push('competence_code = ?')
+                    values.push(competence_code)
+                }
+                if (couleur !== undefined) {
+                    fieldsToUpdate.push('couleur = ?')
+                    values.push(couleur)
+                }
+                if (date !== undefined) {
+                    fieldsToUpdate.push('date = ?')
+                    values.push(date)
+                }
+                if (prof_id !== undefined) {
+                    fieldsToUpdate.push('prof_id = ?')
+                    values.push(prof_id)
+                }
+                if (commentaire !== undefined) {
+                    fieldsToUpdate.push('commentaire = ?')
+                    values.push(commentaire || null)
+                }
+                if (devoirKey !== undefined) {
+                    fieldsToUpdate.push('devoirKey = ?')
+                    values.push(devoirKey || null)
+                }
+                if (devoir_label !== undefined) {
+                    fieldsToUpdate.push('devoir_label = ?')
+                    values.push(devoir_label || null)
+                }
+                
+                if (fieldsToUpdate.length === 0) {
+                    return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
+                }
+                
+                values.push(id) // Pour la clause WHERE
+                
                 db.run(
-                    'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ?, devoirKey = ?, devoir_label = ? WHERE id = ?',
-                    [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, devoirKey || null, devoir_label || null, id],
+                    `UPDATE notes SET ${fieldsToUpdate.join(', ')} WHERE id = ?`,
+                    values,
                     function (err) {
                         if (err) return res.status(500).json({ error: err.message })
                         if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
-                        res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label })
+                        
+                        // Récupérer la note mise à jour pour la retourner
+                        db.get('SELECT * FROM notes WHERE id = ?', [id], (err, updatedNote) => {
+                            if (err) return res.status(500).json({ error: err.message })
+                            res.json(updatedNote)
+                        })
                     }
                 )
             })
@@ -2125,14 +2220,61 @@ app.put('/notes/:id', verifyToken, (req, res) => {
                 return res.status(403).json({ error: errorMsg })
             }
 
-            // Effectuer la modification
+            // Effectuer la modification - ne mettre à jour que les champs fournis
+            const fieldsToUpdate = []
+            const values = []
+            
+            if (eleve_id !== undefined) {
+                fieldsToUpdate.push('eleve_id = ?')
+                values.push(eleve_id)
+            }
+            if (competence_code !== undefined) {
+                fieldsToUpdate.push('competence_code = ?')
+                values.push(competence_code)
+            }
+            if (couleur !== undefined) {
+                fieldsToUpdate.push('couleur = ?')
+                values.push(couleur)
+            }
+            if (date !== undefined) {
+                fieldsToUpdate.push('date = ?')
+                values.push(date)
+            }
+            if (prof_id !== undefined) {
+                fieldsToUpdate.push('prof_id = ?')
+                values.push(prof_id)
+            }
+            if (commentaire !== undefined) {
+                fieldsToUpdate.push('commentaire = ?')
+                values.push(commentaire || null)
+            }
+            if (devoirKey !== undefined) {
+                fieldsToUpdate.push('devoirKey = ?')
+                values.push(devoirKey || null)
+            }
+            if (devoir_label !== undefined) {
+                fieldsToUpdate.push('devoir_label = ?')
+                values.push(devoir_label || null)
+            }
+            
+            if (fieldsToUpdate.length === 0) {
+                return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
+            }
+            
+            values.push(id) // Pour la clause WHERE
+            
             db.run(
-                'UPDATE notes SET eleve_id = ?, competence_code = ?, couleur = ?, date = ?, prof_id = ?, commentaire = ?, devoirKey = ?, devoir_label = ? WHERE id = ?',
-                [eleve_id, competence_code, couleur, date, prof_id, commentaire || null, devoirKey || null, devoir_label || null, id],
+                `UPDATE notes SET ${fieldsToUpdate.join(', ')} WHERE id = ?`,
+                values,
                 function (err) {
                     if (err) return res.status(500).json({ error: err.message })
                     if (this.changes === 0) return res.status(404).json({ error: 'Note non trouvée' })
-                    res.json({ id: parseInt(id), eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label })
+                    
+                    // Récupérer la note mise à jour pour la retourner
+                    db.get('SELECT * FROM notes WHERE id = ?', [id], (err, updatedNote) => {
+                        if (err) return res.status(500).json({ error: err.message })
+                        res.json(updatedNote)
+                    })
                 }
             )
         }

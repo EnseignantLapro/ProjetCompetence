@@ -4,140 +4,11 @@ import ColorPickerModal from './ColorPickerModal'
 import PositionnementModal from './PositionnementModal'
 import NotePastille from './NotePastille'
 import DevoirView from './DevoirView'
+import DevoirOptions from './DevoirOptions'
+import DevoirSelectionSection from './DevoirSelectionSection'
 import { competencesN1N2, tachesProfessionelles } from '../data/competences'
 import { apiFetch } from '../utils/api'
 import{getCouleurPourCompetence,isCompetenceInHierarchy,isCompetenceN1,getNotesVisibles,ajouterNoteDirecte,getCommentaireDerniereEvaluation} from './TableauNotesUtils'
-
-// Composant séparé pour la section de sélection des devoirs - pour éviter les re-renders
-const DevoirSelectionSection = React.memo(({ 
-    devoirsSansDoublons, 
-    devoirSelectionne, 
-    setDevoirSelectionne,
-    nouveauDevoirNom,
-    setNouveauDevoirNom,
-    hasNotesForCurrentDevoir,
-    hasNotesForCompetence,
-    devoirViewVisible 
-}) => {
-   
-    
-    const [showDevoirSelection, setShowDevoirSelection] = useState(false)
-    
-    const devoirOptions = useMemo(() => {
-       
-        return devoirsSansDoublons.map((devoir, index) => (
-            <option key={`component-${devoir.devoirKey}-${index}`} value={devoir.devoirKey}>
-                {devoir.devoir_label} ({new Date(devoir.date).toLocaleDateString()})
-            </option>
-        ))
-    }, [devoirsSansDoublons])
-
-    return (
-        <div style={{
-            padding: '15px',
-            border: '2px solid #e0e0e0',
-            borderRadius: '8px',
-            backgroundColor: '#f9f9f9',
-            marginBottom: '20px'
-        }}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
-                <h4 style={{ margin: 0, marginRight: '15px' }}>
-                    📋 Associer à un devoir (facultatif)
-                </h4>
-                <button
-                    type="button"
-                    onClick={() => setShowDevoirSelection(prev => !prev)}
-                    style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#007bff',
-                        cursor: 'pointer',
-                        textDecoration: 'underline',
-                        fontSize: '14px'
-                    }}
-                >
-                    {showDevoirSelection ? 'Masquer' : 'Afficher les options'}
-                </button>
-            </div>
-
-            {showDevoirSelection && !devoirViewVisible && !hasNotesForCurrentDevoir() && (
-                <div>
-                    {/* Devoir existant */}
-                    {devoirsSansDoublons.length > 0 && (
-                        <div style={{ marginBottom: '15px' }}>
-                            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                                Associer à un devoir existant :
-                            </label>
-                            <select
-                                key="devoir-select-main"
-                                value={devoirSelectionne || ''}
-                                onChange={(e) => {
-                                    const nouveauDevoir = e.target.value
-                                    
-                                    // Vérifier si des notes ont été saisies avec le devoir actuel
-                                    if (hasNotesForCurrentDevoir()) {
-                                        alert('Impossible de changer de devoir : des notes ont déjà été saisies.')
-                                        return
-                                    }
-                                    
-                                    // Vérifier s'il y a des notes existantes pour cette compétence
-                                    if (hasNotesForCompetence() && devoirSelectionne && nouveauDevoir !== devoirSelectionne) {
-                                        alert('Impossible de changer l\'association au devoir : des notes ont déjà été saisies pour cette compétence.')
-                                        return
-                                    }
-                                    
-                                    setDevoirSelectionne(nouveauDevoir)
-                                    if (nouveauDevoir) setNouveauDevoirNom('') // Effacer le nouveau devoir si on sélectionne un existant
-                                }}
-                                disabled={hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)}
-                                style={{
-                                    width: '100%',
-                                    padding: '8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid #ccc',
-                                    fontSize: '14px',
-                                    backgroundColor: (hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)) ? '#f8f9fa' : 'white',
-                                    cursor: (hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)) ? 'not-allowed' : 'pointer'
-                                }}
-                            >
-                                <option value="">-- Sélectionner un devoir existant --</option>
-                                {devoirOptions}
-                            </select>
-                        </div>
-                    )}
-
-                    {/* OU nouveau devoir */}
-                    <div style={{ marginBottom: '10px' }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                            {devoirsSansDoublons.length > 0 ? 'OU créer un nouveau devoir :' : 'Créer un nouveau devoir :'}
-                        </label>
-                        <input
-                            type="text"
-                            value={nouveauDevoirNom}
-                            onChange={(e) => {
-                                setNouveauDevoirNom(e.target.value)
-                                if (e.target.value.trim() && devoirSelectionne) {
-                                    setDevoirSelectionne(null) // Effacer la sélection si on tape un nouveau nom
-                                }
-                            }}
-                            placeholder="Nom du nouveau devoir"
-                            disabled={hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                borderRadius: '4px',
-                                border: '1px solid #ccc',
-                                fontSize: '14px',
-                                backgroundColor: (hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)) ? '#f8f9fa' : 'white',
-                                cursor: (hasNotesForCurrentDevoir() || (hasNotesForCompetence() && devoirSelectionne)) ? 'not-allowed' : 'text'
-                            }}
-                        />
-                    </div>
-                </div>
-            )}
-        </div>
-    )
-})
 
 function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false, devoirSelectionne = null, onDevoirChange = null, onDevoirsUpdate = null }) {
    
@@ -209,7 +80,49 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             )
         }
         
-        // Si un nouveau devoir est en cours de création, vérifier les notes avec ce nom
+        // AMÉLIORÉ: Si un nouveau devoir est en cours de création (même sans notes encore)
+        // Considérer qu'on est "en cours de notation" si le nom du devoir est saisi
+        if (nouveauDevoirNom.trim()) {
+            // D'abord vérifier s'il y a déjà des notes avec ce nom
+            const aNotesAvecCeNom = notes.some(note => 
+                note.competence_code === codeCompetence && 
+                note.devoir_label === nouveauDevoirNom.trim()
+            )
+            // Retourner true même s'il n'y a pas encore de notes - le devoir est en cours de création
+            return true
+        }
+        
+        return false
+    }
+
+    // Fonction spécifique pour déterminer si les champs doivent être désactivés
+    // Plus restrictive que isEnCoursDeNotation pour éviter le verrouillage prématuré
+    const shouldDisableFields = () => {
+        if (!codeCompetence) return false
+        
+        // Désactiver seulement s'il y a des notes réellement sauvegardées
+        // Vérifier le mode d'évaluation depuis localStorage
+        const modeEvaluation = localStorage.getItem('mode_evaluation')
+        
+        // Si on est en mode "nouvelle évaluation" ET qu'il y a des évaluations trackées
+        if (modeEvaluation === 'nouvelle' && dernieresEvaluationsDirectes.size > 0) {
+            // Vérifier si il y a des évaluations pour la compétence actuelle
+            for (let [key, evaluation] of dernieresEvaluationsDirectes) {
+                if (key.includes(codeCompetence)) {
+                    return true
+                }
+            }
+        }
+        
+        // Si un devoir existant est sélectionné ET qu'il y a des notes sauvegardées
+        if (devoirSelectionne) {
+            return notes.some(note => 
+                note.competence_code === codeCompetence && 
+                note.devoirKey === devoirSelectionne
+            )
+        }
+        
+        // Si un nouveau devoir est nommé ET qu'il y a des notes sauvegardées avec ce nom
         if (nouveauDevoirNom.trim()) {
             return notes.some(note => 
                 note.competence_code === codeCompetence && 
@@ -220,11 +133,54 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         return false
     }
 
+    // Fonction pour déterminer si on doit afficher le mode devoir actif (mémoire)
+    // Ne s'affiche que quand il y a une vraie activité d'évaluation en cours
+    const shouldShowDevoirActifMemoire = () => {
+        if (!codeCompetence) return false
+        
+        // Mode 1: Un devoir existant est sélectionné
+        if (devoirSelectionne) return true
+        
+        // Mode 2: Un nouveau devoir est nommé ET il y a des évaluations en cours ou sauvegardées
+        if (nouveauDevoirNom.trim()) {
+            // Vérifier s'il y a des évaluations trackées pour cette compétence
+            const modeEvaluation = localStorage.getItem('mode_evaluation')
+            if (modeEvaluation === 'nouvelle' && dernieresEvaluationsDirectes.size > 0) {
+                for (let [key, evaluation] of dernieresEvaluationsDirectes) {
+                    if (key.includes(codeCompetence)) {
+                        return true // Il y a des évaluations en cours
+                    }
+                }
+            }
+            
+            // OU vérifier s'il y a des notes déjà sauvegardées avec ce nom de devoir
+            const hasNotesWithThisDevoir = notes.some(note => 
+                note.competence_code === codeCompetence && 
+                note.devoir_label === nouveauDevoirNom.trim()
+            )
+            
+            if (hasNotesWithThisDevoir) {
+                return true // Il y a des notes sauvegardées pour ce devoir
+            }
+            
+            // NOUVEAU: Mode 3 - Afficher dès qu'on a un nom de devoir ET qu'on est en mode évaluation
+            // Cela permet d'informer l'utilisateur que le devoir sera associé aux futures évaluations
+            if (modeEvaluation === 'nouvelle') {
+                return true
+            }
+        }
+        
+        return false
+    }
+
     // Alias pour compatibilité avec le code existant
     const hasNotesForCurrentDevoir = isEnCoursDeNotation
 
     // État pour gérer les blocs fermés/ouverts (par défaut fermés en mode enseignant normal, ouverts en mode élève et enseignant connecté)
     const [blocsFermes, setBlocsFermes] = useState(isStudentMode ? new Set() : new Set([1, 2, 3]))
+    
+    // Ref pour tracker la compétence précédente et éviter les re-renders inutiles
+    const previousCompetenceRef = useRef(null)
 
     // État pour gérer l'affichage du tableau en mode filtré (visible par défaut en mode élève et enseignant connecté)
     const [tableauVisible, setTableauVisible] = useState(isStudentMode || isTeacherMode)
@@ -471,15 +427,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     }, [devoirs])
 
     // Handler optimisé pour éviter les re-renders
-    // Memoize les options pour éviter les re-renders coûteux
-    const devoirOptions = useMemo(() => {
-        
-        return devoirsSansDoublons.map((devoir, index) => (
-            <option key={`main-${devoir.devoirKey}-${index}`} value={devoir.devoirKey}>
-                {devoir.devoir_label} ({new Date(devoir.date).toLocaleDateString()})
-            </option>
-        ))
-    }, [devoirsSansDoublons])
 
     // Réinitialiser l'affichage du tableau quand la compétence change
     useEffect(() => {
@@ -536,18 +483,87 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
     // Réinitialiser l'affichage des options de devoir quand la compétence change
     useEffect(() => {
-        if (!codeCompetence) return
-        
-        // Utiliser la nouvelle fonction pour détecter si la compétence est en cours de notation
-        const estEnCoursDeNotation = isEnCoursDeNotation()
-        
-        // Si la compétence n'est pas en cours de notation, réinitialiser les champs
-        if (!estEnCoursDeNotation) {
-            // Vider le champ nouveau devoir seulement si pas de notes en cours
-            setNouveauDevoirNom('')
+        // Vérifier si c'est un vrai changement de compétence
+        if (!codeCompetence) {
+            previousCompetenceRef.current = null
+            return
         }
-        // Pour une compétence en cours de notation, les états du devoir sont gérés dans le composant isolé
-    }, [codeCompetence, devoirSelectionne, dernieresEvaluationsDirectes])
+        
+        if (codeCompetence === previousCompetenceRef.current) {
+            return // Pas de changement réel
+        }
+        
+        console.log('VRAI changement de compétence:', { 
+            previous: previousCompetenceRef.current, 
+            current: codeCompetence 
+        })
+        
+        // Capturer les valeurs actuelles au moment du changement de compétence
+        const currentNouveauDevoir = nouveauDevoirNom.trim()
+        const currentDevoirSelectionne = devoirSelectionne
+        const currentNotes = [...notes] // Copie pour éviter les changements de référence
+        const currentEvaluations = new Map(dernieresEvaluationsDirectes) // Copie
+        
+        // Vérifier si cette compétence est déjà en cours de notation avec le devoir actuel
+        const competenceEnCoursDeNotation = () => {
+            const modeEvaluation = localStorage.getItem('mode_evaluation')
+            
+            if (modeEvaluation === 'nouvelle' && currentEvaluations.size > 0) {
+                for (let [key, evaluation] of currentEvaluations) {
+                    if (key.includes(codeCompetence)) {
+                        if (currentNouveauDevoir && key.includes(currentNouveauDevoir)) {
+                            return true
+                        }
+                        if (currentDevoirSelectionne && key.includes(currentDevoirSelectionne)) {
+                            return true
+                        }
+                    }
+                }
+            }
+            
+            return false
+        }
+        
+        // Vérifier également si cette compétence a des notes avec le devoir actuel
+        const competenceANotesAvecDevoirActuel = () => {
+            if (currentNouveauDevoir) {
+                return currentNotes.some(note => 
+                    note.competence_code === codeCompetence && 
+                    note.devoir_label === currentNouveauDevoir
+                )
+            }
+            if (currentDevoirSelectionne) {
+                return currentNotes.some(note => 
+                    note.competence_code === codeCompetence && 
+                    note.devoirKey === currentDevoirSelectionne
+                )
+            }
+            return false
+        }
+        
+        const enCoursNotation = competenceEnCoursDeNotation()
+        const aNotesAvecDevoirActuel = competenceANotesAvecDevoirActuel()
+        
+        console.log('useEffect competence change:', {
+            codeCompetence,
+            nouveauDevoirNom: currentNouveauDevoir,
+            devoirSelectionne: currentDevoirSelectionne,
+            enCoursNotation,
+            aNotesAvecDevoirActuel,
+            willClear: !enCoursNotation && !aNotesAvecDevoirActuel
+        })
+        
+        // RÈGLE PRINCIPALE : Vider automatiquement sauf si on revient sur une compétence en cours de notation
+        if (!enCoursNotation && !aNotesAvecDevoirActuel) {
+            console.log('CLEARING devoir state')
+            setNouveauDevoirNom('')
+            setDevoirSelectionne(null)
+        }
+        
+        // Mettre à jour la référence APRÈS avoir fait les vérifications
+        previousCompetenceRef.current = codeCompetence
+        
+    }, [codeCompetence]) // Seulement codeCompetence dans les dépendances
 
 
 
@@ -2057,11 +2073,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                         }}
                                                     >
                                                         <option value="">Sélectionner un devoir...</option>
-                                                        {devoirsSansDoublons.map((devoir, index) => (
-                                                            <option key={`edit-modal-${devoir.devoirKey}-${index}`} value={devoir.devoirKey}>
-                                                                {devoir.devoir_label} ({new Date(devoir.date).toLocaleDateString()})
-                                                            </option>
-                                                        ))}
+                                                        <DevoirOptions devoirsSansDoublons={devoirsSansDoublons} keyPrefix="edit-modal" />
                                                     </select>
                                                 ) : (
                                                     <div style={{
@@ -2209,17 +2221,30 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 </div>
             )}
 
-{/* Message quand un devoir est en cours de visualisation */}
-                    {devoirViewVisible && devoirKeyVisible ? (
+{/* Message quand un devoir est en cours de visualisation OU en mémoire */}
+                    {(devoirViewVisible && devoirKeyVisible) || shouldShowDevoirActifMemoire() ? (
                         <div style={{ 
                             padding: '10px', 
-                            backgroundColor: '#e3f2fd', 
+                            backgroundColor: devoirViewVisible ? '#e3f2fd' : '#fff3cd', 
                             borderRadius: '4px',
                             fontSize: '14px',
-                            color: '#1976d2',
-                            marginTop: '10px'
+                            color: devoirViewVisible ? '#1976d2' : '#856404',
+                            marginTop: '10px',
+                            border: devoirViewVisible ? '1px solid #2196f3' : '1px solid #ffc107'
                         }}>
-                            📋 <strong>Mode devoir actif</strong> : Les nouvelles compétences saisies seront automatiquement ajoutées au devoir en cours de visualisation.
+                            📋 <strong>
+                                {devoirViewVisible ? 
+                                    'Mode devoir actif (visualisation)' : 
+                                    'Mode devoir actif (mémoire)'
+                                }
+                            </strong> : 
+                            {devoirViewVisible ? 
+                                ' Les nouvelles compétences saisies seront automatiquement ajoutées au devoir en cours de visualisation.' :
+                                ` Les nouvelles évaluations seront associées au devoir "${nouveauDevoirNom.trim() || 
+                                    (devoirSelectionne ? devoirsSansDoublons.find(d => d.devoirKey === devoirSelectionne)?.devoir_label || 'Devoir sélectionné' : '')
+                                }".`
+                            }
+                            
                         </div>
                     ):(<> {codeCompetence && isTeacherMode && !isStudentMode && eleves.length > 0 && (
                 <DevoirSelectionSection
@@ -2231,6 +2256,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     hasNotesForCurrentDevoir={hasNotesForCurrentDevoir}
                     hasNotesForCompetence={hasNotesForCompetence}
                     devoirViewVisible={devoirViewVisible}
+                    codeCompetence={codeCompetence}
+                    shouldDisableFields={shouldDisableFields}
                 />
             )}</>)}
 
@@ -2955,7 +2982,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                     }}
                                                     disabled={!codeCompetence}
                                                 >
-                                                    Très bonne maîtrise
+                                                    Très bonne maîtrise !
                                                 </button>
                                             </>
                                         )

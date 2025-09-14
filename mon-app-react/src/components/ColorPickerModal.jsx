@@ -125,6 +125,8 @@ function ColorPickerModal({ eleve, competenceCode, devoirs: devoirsProp = [], on
             </button>
           </div>
 
+          {/* Zone d'information devoir - en dehors de showDevoirInput pour être toujours visible */}
+
           {showDevoirInput && (
             <div>
               {/* Devoir existant */}
@@ -166,6 +168,7 @@ function ColorPickerModal({ eleve, competenceCode, devoirs: devoirsProp = [], on
                   type="text"
                   value={devoirLabel}
                   onChange={(e) => {
+                    
                     setDevoirLabel(e.target.value)
                     if (e.target.value) setDevoirExistant('') // Effacer la sélection existante si on tape un nouveau
                   }}
@@ -178,6 +181,22 @@ function ColorPickerModal({ eleve, competenceCode, devoirs: devoirsProp = [], on
                     fontSize: '14px'
                   }}
                 />
+                
+                {/* Zone d'information quand on saisit un nouveau devoir - maintenant au bon endroit */}
+              
+                {devoirLabel.trim().length >= 1 && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '10px',
+                    backgroundColor: '#e8f5e8',
+                    border: '1px solid #4caf50',
+                    borderRadius: '4px',
+                    fontSize: '14px',
+                    color: '#2e7d32'
+                  }}>
+                    ✅ <strong>Vous positionnez la compétence "{competenceCode}" sur le devoir "{devoirLabel.trim()}"</strong>
+                  </div>
+                )}
               </div>
             </div>
           )}
