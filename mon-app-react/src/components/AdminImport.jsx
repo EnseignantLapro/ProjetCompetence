@@ -1,8 +1,32 @@
 import React, { useState } from 'react'
 import { apiFetch } from '../utils/api'
+import AlertDialog from './AlertDialog'
 
 function AdminImport({ classeChoisie, getClasseName }) {
   const [csvFile, setCsvFile] = useState(null)
+
+  // État pour AlertDialog
+  const [alertDialog, setAlertDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info',
+    onOk: null
+  })
+
+  // Fonction utilitaire pour afficher une alert modale
+  const showAlert = (message, type = 'info', title = '', onOk = null) => {
+    setAlertDialog({
+      isOpen: true,
+      title: title || (type === 'error' ? 'Erreur' : type === 'success' ? 'Succès' : type === 'warning' ? 'Attention' : 'Information'),
+      message,
+      type,
+      onOk: () => {
+        setAlertDialog(prev => ({ ...prev, isOpen: false }))
+        if (onOk) onOk()
+      }
+    })
+  }
 
   const handleCSVChange = (e) => {
     setCsvFile(e.target.files[0])
@@ -10,7 +34,7 @@ function AdminImport({ classeChoisie, getClasseName }) {
 
   const handleCSVUpload = () => {
     if (!csvFile || !classeChoisie) {
-      alert('Sélectionnez une classe et un fichier CSV.')
+      showAlert('Sélectionnez une classe et un fichier CSV.', 'warning')
       return
     }
 
@@ -54,13 +78,13 @@ function AdminImport({ classeChoisie, getClasseName }) {
           }
         }
 
-        alert(`Import terminé ! ${successCount} élèves ajoutés, ${errorCount} erreurs.`)
+        showAlert(`Import terminé ! ${successCount} élèves ajoutés, ${errorCount} erreurs.`, 'success')
         // Réinitialiser les champs
         setCsvFile(null)
         document.querySelector('input[type="file"]').value = ''
       } catch (error) {
         console.error('Erreur lors de la lecture du fichier:', error)
-        alert('Erreur lors de la lecture du fichier CSV')
+        showAlert('Erreur lors de la lecture du fichier CSV', 'error')
       }
     }
     reader.readAsText(csvFile)
@@ -133,6 +157,15 @@ function AdminImport({ classeChoisie, getClasseName }) {
           La première ligne doit contenir les en-têtes de colonnes.
         </p>
       </div>
+
+      {/* Dialog d'alerte pour les messages informatifs */}
+      <AlertDialog
+        isOpen={alertDialog.isOpen}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        type={alertDialog.type}
+        onOk={alertDialog.onOk}
+      />
     </div>
   )
 }

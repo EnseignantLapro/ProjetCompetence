@@ -9,7 +9,7 @@ const couleurs = {
   vert: { label: 'Maîtrisé', hex: '#2ecc71' },
 }
 
-const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, teacherInfo, eleveFiltre, competencesN1N2, competencesN3 }, ref) => {
+const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, onDataChange, teacherInfo, eleveFiltre, competencesN1N2, competencesN3, competenceInitiale }, ref) => {
   const [devoirData, setDevoirData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -18,6 +18,7 @@ const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, teache
   const [commentairesLocaux, setCommentairesLocaux] = useState({})
   const [elevesFiltres, setElevesFiltres] = useState([])
   const [competencesTemporaires, setCompetencesTemporaires] = useState(new Set())
+  const [enseignantCreateur, setEnseignantCreateur] = useState(null)
 
   // Fonction pour obtenir le nom complet d'une compétence
   function getNomCompetence(code) {
@@ -89,9 +90,25 @@ const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, teache
           // Récupérer la classe_id depuis les données du devoir
           classeId = data[0].classe_id
           
-          // Extraire les compétences uniques
-          const competencesUniques = [...new Set(data.map(note => note.competence_code))]
-          setCompetences(competencesUniques)
+          // Extraire les compétences uniques des notes existantes
+          const competencesExistantes = [...new Set(data.map(note => note.competence_code))]
+          
+          // Préserver les compétences temporaires et ne mettre à jour que les permanentes
+          setCompetences(competencesExistantes)
+          
+          // Récupérer les informations de l'enseignant créateur du devoir
+          const profId = data[0].prof_id
+          if (profId) {
+            try {
+              const enseignantResponse = await apiFetch(`/enseignants/${profId}`)
+              const enseignantData = await enseignantResponse.json()
+              setEnseignantCreateur(enseignantData)
+            } catch (err) {
+              console.log('Impossible de récupérer les infos de l\'enseignant:', err)
+            }
+          }
+          
+          // NOTE: Les compétences temporaires restent dans competencesTemporaires
         } else if (classeChoisie) {
           // Si pas de données mais une classe est sélectionnée, utiliser cette classe
           classeId = classeChoisie.id || classeChoisie
@@ -102,7 +119,7 @@ const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, teache
           const elevesResponse = await apiFetch(`/eleves?classe_id=${classeId}`)
           const tousLesEleves = await elevesResponse.json()
           setEleves(tousLesEleves)
-          console.log('🎓 DevoirView - Élèves chargés pour classe', classeId, ':', tousLesEleves.length)
+          
         }
       } catch (err) {
         setError(err.message)
@@ -115,6 +132,24 @@ const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, teache
       chargerDevoir()
     }
   }, [devoirKey, classeChoisie])
+
+  // État pour tracker les compétences supprimées manuellement
+  const [competencesSupprimees, setCompetencesSupprimees] = useState(new Set())
+
+  // Effect pour ajouter automatiquement la compétence initiale comme temporaire
+  useEffect(() => {
+    // Attendre que le chargement soit terminé et que les compétences soient définies
+    if (loading) return
+    
+    // Ne pas ajouter automatiquement si la compétence a été supprimée manuellement
+    if (competenceInitiale && 
+        !competences.includes(competenceInitiale) && 
+        !competencesTemporaires.has(competenceInitiale) &&
+        !competencesSupprimees.has(competenceInitiale)) {
+     
+      setCompetencesTemporaires(prev => new Set([...prev, competenceInitiale]))
+    } 
+  }, [competenceInitiale, competences, competencesTemporaires, loading, competencesSupprimees])
 
   // Effect pour filtrer les élèves selon eleveFiltre
   useEffect(() => {
@@ -138,8 +173,8 @@ const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, teache
     ajouterCompetence: ajouterCompetenceTemporaire
   }))
 
-  // Combiner les compétences permanentes et temporaires pour l'affichage
-  const toutesLesCompetences = [...competences, ...Array.from(competencesTemporaires)]
+  // Combiner les compétences permanentes et temporaires pour l'affichage (en évitant les doublons)
+  const toutesLesCompetences = [...new Set([...competences, ...Array.from(competencesTemporaires)])]
 
   const obtenirNote = (eleveId, competenceCode) => {
     return devoirData.find(note => note.eleve_id === eleveId && note.competence_code === competenceCode)
@@ -244,49 +279,86 @@ const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, teache
       return
     }
 
-    console.log('🗑️ Suppression compétence:', competenceCode)
-    console.log('🗑️ Compétences temporaires avant:', Array.from(competencesTemporaires))
-    console.log('🗑️ Compétences permanentes avant:', competences)
+  
+
+    // Marquer la compétence comme supprimée manuellement
+    setCompetencesSupprimees(prev => new Set([...prev, competenceCode]))
 
     try {
+      // Récupérer le devoir_label depuis les données du devoir
+      const devoirLabel = devoirData.length > 0 ? devoirData[0].devoir_label : null
+      
+      if (!devoirLabel) {
+       
+        return
+      }
+
       const response = await apiFetch(`/devoirs/${devoirKey}/remove-competence`, {
-        method: 'PUT',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ competence_code: competenceCode })
+        body: JSON.stringify({ 
+          competence_code: competenceCode,
+          devoir_label: devoirLabel
+        })
       })
 
       if (response.ok) {
         const result = await response.json()
-        console.log('🗑️ Résultat suppression:', result)
+       
         
         // Si aucun changement en base (changes: 0), retirer la compétence des listes locales
         if (result.changes === 0) {
-          console.log('🗑️ Aucun changement en base - suppression locale')
-          
+         
           // Retirer de TOUTES les listes locales (temporaires ET permanentes)
           setCompetencesTemporaires(prev => {
             const nouvelles = new Set(prev)
             nouvelles.delete(competenceCode)
-            console.log('🗑️ Nouvelles compétences temporaires:', Array.from(nouvelles))
+            
             return nouvelles
           })
           
           setCompetences(prev => {
             const nouvelles = prev.filter(c => c !== competenceCode)
-            console.log('🗑️ Nouvelles compétences permanentes:', nouvelles)
+            
             return nouvelles
           })
+          
+          // Notifier le parent que les données ont changé (même pour les compétences temporaires)
+          if (onDataChange) {
+            
+            onDataChange()
+          }
         } else {
-          console.log('🗑️ Suppression compétence permanente - rechargement données')
+          
           // Recharger les données si des changements ont été faits en base
           const newResponse = await apiFetch(`/devoirs/${devoirKey}`)
-          const newData = await newResponse.json()
-          setDevoirData(newData)
           
-          // Mettre à jour les compétences
-          const competencesUniques = [...new Set(newData.map(note => note.competence_code))]
-          setCompetences(competencesUniques)
-          console.log('🗑️ Nouvelles compétences permanentes:', competencesUniques)
+          if (newResponse.ok) {
+            const newData = await newResponse.json()
+           
+            setDevoirData(newData)
+            
+            // Mettre à jour les compétences
+            const competencesUniques = [...new Set(newData.map(note => note.competence_code))]
+            
+            setCompetences(competencesUniques)
+            
+            // Aussi retirer de la liste des compétences temporaires au cas où
+            setCompetencesTemporaires(prev => {
+              const nouvelles = new Set(prev)
+              nouvelles.delete(competenceCode)
+              
+              return nouvelles
+            })
+            
+            // Notifier le parent que les données ont changé
+            if (onDataChange) {
+              
+              onDataChange()
+            }
+          } else {
+            console.error('🗑️ Erreur lors du rechargement des données')
+          }
         }
       }
     } catch (err) {
@@ -322,6 +394,28 @@ const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, teache
         >
           ← Retour
         </button>
+      </div>
+
+      {/* Informations du devoir */}
+      <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#e3f2fd', borderRadius: '4px', border: '1px solid #2196f3' }}>
+        <h3 style={{ margin: '0 0 10px 0', color: '#1976d2' }}>
+          📋 {devoirData.length > 0 ? devoirData[0].devoir_label : 'Devoir'}
+        </h3>
+        {enseignantCreateur && (
+          <div style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
+            👨‍🏫 <strong>Enseignant :</strong> {enseignantCreateur.prenom} {enseignantCreateur.nom}
+            {enseignantCreateur.etablissement && (
+              <span style={{ marginLeft: '10px', fontStyle: 'italic' }}>
+                ({enseignantCreateur.etablissement})
+              </span>
+            )}
+          </div>
+        )}
+        {devoirData.length > 0 && (
+          <div style={{ fontSize: '14px', color: '#666' }}>
+            📅 <strong>Date :</strong> {new Date(devoirData[0].date).toLocaleDateString('fr-FR')}
+          </div>
+        )}
       </div>
 
       <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>

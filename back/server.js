@@ -7,6 +7,7 @@ const sqlite3 = require('sqlite3').verbose()
 const cors = require('cors')
 const app = express()
 const PORT = 3000
+const SUPER_ADMIN_TOKEN = 'dujkenjxt5kcjme2ppe8pc'
 
 app.set('trust proxy', true); // derrière Apache/Nginx
 app.use(cors())
@@ -118,7 +119,7 @@ function verifyStudentToken(token, req, res, next) {
 }
 
 function verifyTeacherToken(token, req, res, next) {
-    const SUPER_ADMIN_TOKEN = 'wyj4zi9yan5qktoby5alm';
+ 
     
     if (token === SUPER_ADMIN_TOKEN) {
         // Super admin
@@ -1691,7 +1692,7 @@ app.post('/auth/verify-teacher-token', (req, res) => {
     }
 
     // Vérifier si c'est le token super admin
-    const SUPER_ADMIN_TOKEN = 'wyj4zi9yan5qktoby5alm'
+    
     if (token === SUPER_ADMIN_TOKEN) {
         // Récupérer les données de l'enseignant ID 1 pour le super admin
         db.get(
@@ -1801,8 +1802,11 @@ app.post('/notes', verifyToken, (req, res) => {
     const { eleve_id, competence_code, couleur, date, prof_id, commentaire, devoir_label, devoirKey } = req.body
 
     // Fonction pour générer une clé de devoir
-    const generateDevoirKey = (date, competence_code, prof_id, classe_id) => {
-        return `${date}_${competence_code}_${prof_id}_${classe_id}`;
+    const generateDevoirKey = (date, prof_id, classe_id, devoir_label) => {
+        // Générer une clé basée sur la date, prof, classe et nom du devoir
+        // SANS la compétence pour que toutes les compétences d'un même devoir aient la même clé
+        const labelSafe = devoir_label.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50)
+        return `${date}_${prof_id}_${classe_id}_${labelSafe}`;
     }
 
     // Si c'est un super admin, autoriser toutes les créations
@@ -1814,7 +1818,7 @@ app.post('/notes', verifyToken, (req, res) => {
                 if (err) return res.status(500).json({ error: err.message })
                 if (!eleveData) return res.status(404).json({ error: 'Élève non trouvé' })
                 
-                const newDevoirKey = generateDevoirKey(date, competence_code, prof_id, eleveData.classe_id);
+                const newDevoirKey = generateDevoirKey(date, prof_id, eleveData.classe_id, devoir_label);
                 
                 db.run(
                     'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1883,7 +1887,7 @@ app.post('/notes', verifyToken, (req, res) => {
                 // Créer la note avec gestion de devoir
                 if (devoir_label && !devoirKey) {
                     // Générer la clé de devoir
-                    const newDevoirKey = generateDevoirKey(date, competence_code, prof_id, eleve.classe_id);
+                    const newDevoirKey = generateDevoirKey(date, prof_id, eleve.classe_id, devoir_label);
                     
                     db.run(
                         'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1922,7 +1926,7 @@ app.post('/notes', verifyToken, (req, res) => {
             // Créer la note avec gestion de devoir
             if (devoir_label && !devoirKey) {
                 // Générer la clé de devoir
-                const newDevoirKey = generateDevoirKey(date, competence_code, prof_id, eleve.classe_id);
+                const newDevoirKey = generateDevoirKey(date, prof_id, eleve.classe_id, devoir_label);
                 
                 db.run(
                     'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -2453,57 +2457,101 @@ app.get('/devoirs/:devoirKey', verifyToken, (req, res) => {
     }
 })
 
-// Route pour retirer une compétence d'un devoir (remettre devoirKey à null)
-app.put('/devoirs/:devoirKey/remove-competence', verifyToken, (req, res) => {
-    // Seuls les enseignants peuvent modifier leurs devoirs
+// Route pour retirer une compétence d'un devoir (remettre devoirKey à null ou supprimer les notes)
+app.delete('/devoirs/:devoirKey/remove-competence', verifyToken, (req, res) => {
+
+    
+    // Seuls les enseignants peuvent supprimer des notes de devoirs
     if (req.user.type !== 'teacher') {
+       
         return res.status(403).json({ error: 'Accès refusé' });
     }
     
     const { devoirKey } = req.params;
-    const { competence_code } = req.body;
+    const { competence_code, devoir_label } = req.body;
     
-    if (!competence_code) {
-        return res.status(400).json({ error: 'Code de compétence requis' });
+    
+    
+    if (!competence_code || !devoir_label) {
+        
+        return res.status(400).json({ error: 'Code de compétence et libellé du devoir requis' });
     }
     
-    if (req.user.isSuperAdmin) {
-        // Super admin : peut modifier tous les devoirs
-        db.run(`
-            UPDATE notes 
-            SET devoirKey = NULL, devoir_label = NULL 
-            WHERE devoirKey = ? AND competence_code = ?
-        `, [devoirKey, competence_code], function(err) {
-            if (err) return res.status(500).json({ error: err.message })
-            res.json({ message: 'Compétence retirée du devoir', changes: this.changes })
-        })
-    } else {
-        // Pour les enseignants normaux : vérifier l'établissement
-        db.run(`
-            UPDATE notes 
-            SET devoirKey = NULL, devoir_label = NULL 
-            WHERE devoirKey = ? AND competence_code = ? AND EXISTS (
-                SELECT 1 FROM notes n2
-                JOIN eleves e ON n2.eleve_id = e.id
-                JOIN classes c ON e.classe_id = c.id
-                LEFT JOIN enseignants ref ON c.idReferent = ref.id
-                LEFT JOIN enseignants prof_createur ON n2.prof_id = prof_createur.id
-                LEFT JOIN (
-                    SELECT DISTINCT ec.classe_id, e_ens.etablissement
-                    FROM enseignant_classes ec
-                    JOIN enseignants e_ens ON ec.enseignant_id = e_ens.id
-                ) ens_etab ON c.id = ens_etab.classe_id
-                WHERE n2.devoirKey = notes.devoirKey
-                AND (
-                    prof_createur.etablissement = ? OR 
-                    COALESCE(ref.etablissement, ens_etab.etablissement) = ?
+    // D'abord, récupérer les notes correspondantes pour vérifier les permissions
+   
+    db.all(`
+        SELECT n.*, e.id as prof_id, e.etablissement as prof_etablissement
+        FROM notes n
+        JOIN enseignants e ON n.prof_id = e.id
+        WHERE n.devoirKey = ? AND n.competence_code = ? AND n.devoir_label = ?
+    `, [devoirKey, competence_code, devoir_label], (err, notes) => {
+        if (err) {
+            
+            return res.status(500).json({ error: err.message });
+        }
+        
+       
+        
+        if (notes.length === 0) {
+            return res.status(404).json({ error: 'Aucune note trouvée pour ce devoir et cette compétence' });
+        }
+        
+        // Vérifier que toutes les notes appartiennent à des professeurs du même établissement
+        const etablissements = [...new Set(notes.map(note => note.prof_etablissement))];
+      
+        
+        if (req.user.isSuperAdmin) {
+            
+            // Super admin : peut supprimer toutes les notes
+            db.run(`
+                DELETE FROM notes 
+                WHERE devoirKey = ? AND competence_code = ? AND devoir_label = ?
+            `, [devoirKey, competence_code, devoir_label], function(err) {
+                if (err) {
+                    
+                    return res.status(500).json({ error: err.message })
+                }
+                
+                res.json({ 
+                    message: 'Notes supprimées pour cette compétence', 
+                    changes: this.changes,
+                    deletedCount: this.changes
+                })
+            })
+        } else {
+            // Vérifier que l'enseignant connecté fait partie du même établissement
+            const canDelete = etablissements.every(etab => etab === req.user.etablissement);
+            
+            
+            if (!canDelete) {
+                
+                return res.status(403).json({ 
+                    error: 'Vous ne pouvez supprimer que les notes de votre établissement' 
+                });
+            }
+            
+            
+            // Supprimer les notes
+            db.run(`
+                DELETE FROM notes 
+                WHERE devoirKey = ? AND competence_code = ? AND devoir_label = ?
+                AND prof_id IN (
+                    SELECT id FROM enseignants WHERE etablissement = ?
                 )
-            )
-        `, [devoirKey, competence_code, req.user.etablissement, req.user.etablissement], function(err) {
-            if (err) return res.status(500).json({ error: err.message })
-            res.json({ message: 'Compétence retirée du devoir', changes: this.changes })
-        })
-    }
+            `, [devoirKey, competence_code, devoir_label, req.user.etablissement], function(err) {
+                if (err) {
+                    
+                    return res.status(500).json({ error: err.message })
+                }
+                
+                res.json({ 
+                    message: 'Notes supprimées pour cette compétence', 
+                    changes: this.changes,
+                    deletedCount: this.changes
+                })
+            })
+        }
+    });
 })
 
 // Récupérer toutes les classes

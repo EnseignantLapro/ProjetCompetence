@@ -7,13 +7,16 @@ import DevoirView from './DevoirView'
 import DevoirOptions from './DevoirOptions'
 import DevoirSelectionSection from './DevoirSelectionSection'
 import NoteCompetence from './NoteCompetence'
-import { competencesN1N2, tachesProfessionelles } from '../data/competences'
+import SaisieNoteEtDevoir from './SaisieNoteEtDevoir'
+import ConfirmationDialog from './ConfirmationDialog'
+import AlertDialog from './AlertDialog'
 import { apiFetch } from '../utils/api'
-import{getCouleurPourCompetence,isCompetenceInHierarchy,isCompetenceN1,getNotesVisibles,ajouterNoteDirecte,getCommentaireDerniereEvaluation} from './TableauNotesUtils'
+import { competencesN1N2, tachesProfessionelles } from '../data/competences'
+import { getCouleurPourCompetence, isCompetenceInHierarchy, isCompetenceN1, getNotesVisibles, ajouterNoteDirecte, getCommentaireDerniereEvaluation, generateDevoirKey } from './TableauNotesUtils'
 
 function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, isStudentMode = false, studentInfo = null, isTeacherMode = false, teacherInfo = null, appInitialized = false, devoirSelectionne = null, onDevoirChange = null, onDevoirsUpdate = null }) {
-   
-    
+
+
     const [eleves, setEleves] = useState([])
     const [elevesVisibles, setElevesVisibles] = useState([]) // Les élèves qui doivent être affichés selon le filtre
     const [notes, setNotes] = useState([])
@@ -31,10 +34,43 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // État pour la vue devoir
     const [devoirViewVisible, setDevoirViewVisible] = useState(false)
     const [devoirKeyVisible, setDevoirKeyVisible] = useState(null)
+    
+    // État pour la popup de confirmation des doublons
+    const [confirmationDialog, setConfirmationDialog] = useState({
+        isVisible: false,
+        elevesAvecNotes: '',
+        nomDevoir: '',
+        onConfirmCallback: null
+    })
+    
+    // État pour AlertDialog
+    const [alertDialog, setAlertDialog] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        onOk: null
+    })
+    
+    const [competenceAjouter, setCompetenceAjouter] = useState(null)
 
     // États pour la gestion du devoir en cours de saisie
     const [nouveauDevoirNom, setNouveauDevoirNom] = useState('')
     const [devoirs, setDevoirs] = useState([])
+
+    // Fonction utilitaire pour afficher une alert modale
+    const showAlert = (message, type = 'info', title = '', onOk = null) => {
+        setAlertDialog({
+            isOpen: true,
+            title: title || (type === 'error' ? 'Erreur' : type === 'success' ? 'Succès' : type === 'warning' ? 'Attention' : 'Information'),
+            message,
+            type,
+            onOk: () => {
+                setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                if (onOk) onOk()
+            }
+        })
+    }
 
     // Fonction pour changer le devoir sélectionné (communication avec le parent)
     const setDevoirSelectionne = (devoirKey) => {
@@ -43,12 +79,221 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         }
     }
 
+    // Fonction pour afficher la popup des notes déjà saisies avec option d'attachement
+    const afficherPopupNotesEclaircie = () => {
+        if (window.debugNotes && codeCompetence) {
+            const notesDejasSaisiesInfo = []
+            const notesAAttacher = []
+            let totalNotes = 0
+            
+            // Filtrer uniquement les clés qui correspondent à la compétence en cours
+            Object.keys(window.debugNotes).forEach(key => {
+                const [eleveId, competence] = key.split('-')
+                
+                // Ne considérer que la compétence actuellement sélectionnée
+                if (competence === codeCompetence) {
+                    const notesAvecIds = window.debugNotes[key]()
+                    if (notesAvecIds.length > 0) {
+                        notesAvecIds.forEach(note => {
+                            const idsNotes = `ID: ${note.id}`
+                            notesDejasSaisiesInfo.push(`Élève ${eleveId}: ${idsNotes}`)
+                            notesAAttacher.push(note.id)
+                            totalNotes += 1
+                        })
+                    }
+                }
+            })
+            
+            if (totalNotes > 0) {
+                let nomDevoir
+                if (nouveauDevoirNom.trim()) {
+                    nomDevoir = nouveauDevoirNom.trim()
+                } else if (devoirSelectionne) {
+                    const devoirTrouve = devoirs.find(d => d.devoirKey === devoirSelectionne)
+                    if (devoirTrouve) {
+                        nomDevoir = devoirTrouve.devoir_label
+                    } else {
+                        console.error('Devoir non trouvé pour devoirKey:', devoirSelectionne)
+                        showAlert('Devoir sélectionné introuvable.', 'error')
+                        return
+                    }
+                } else {
+                    showAlert('Aucun devoir spécifié.', 'error')
+                    return
+                }
+
+                // Vérifier s'il y a déjà des notes pour cette compétence dans ce devoir
+                if (devoirSelectionne) {
+                    const notesExistantesDansDevoir = notes.filter(note => 
+                        note.devoir_key === devoirSelectionne && 
+                        note.competence_code === codeCompetence
+                    )
+                    
+                    console.log('Vérification doublons (TableauNotes):', {
+                        devoirSelectionne,
+                        codeCompetence,
+                        notesExistantes: notesExistantesDansDevoir,
+                        totalNotes: notes.length
+                    })
+                    
+                    if (notesExistantesDansDevoir.length > 0) {
+                        const elevesAvecNotes = notesExistantesDansDevoir.map(note => {
+                            const eleve = eleves.find(e => e.id === note.eleve_id)
+                            return eleve ? `${eleve.prenom} ${eleve.nom}` : `Élève ${note.eleve_id}`
+                        }).join(', ')
+                        
+                        // Afficher la popup de confirmation pour les doublons
+                        setConfirmationDialog({
+                            isOpen: true,
+                            title: 'Doublons détectés',
+                            message: `⚠️ ATTENTION ! Des notes existent déjà pour la compétence ${codeCompetence} dans le devoir "${nomDevoir}" :\n\n${elevesAvecNotes}\n\nVoulez-vous continuer et attacher les autres notes ?`,
+                            type: 'warning',
+                            confirmText: 'Continuer',
+                            cancelText: 'Annuler',
+                            onConfirm: () => {
+                                setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+                                // Afficher la deuxième confirmation pour l'attachement
+                                setConfirmationDialog({
+                                    isOpen: true,
+                                    title: 'Notes déjà saisies',
+                                    message: `Il y a ${totalNotes} note(s) déjà saisie(s) pour la compétence ${codeCompetence} :\n\n${notesDejasSaisiesInfo.join('\n')}\n\n🔗 Voulez-vous les attacher au devoir "${nomDevoir}" ?`,
+                                    type: 'warning',
+                                    confirmText: 'Attacher au devoir',
+                                    cancelText: 'Laisser sans devoir',
+                                    onConfirm: () => {
+                                        setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+                                        attacherNotesAuDevoirTableau(notesAAttacher, nomDevoir)
+                                    },
+                                    onCancel: () => {
+                                        setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+                                    }
+                                })
+                            },
+                            onCancel: () => {
+                                setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+                            }
+                        })
+                        return // Sortir de la fonction, la popup gère la suite
+                    }
+                }
+                
+                // Utiliser notre dialog de confirmation personnalisé
+                setConfirmationDialog({
+                    isOpen: true,
+                    title: 'Notes déjà saisies',
+                    message: `⚠️ ATTENTION ! Il y a ${totalNotes} note(s) déjà saisie(s) pour la compétence ${codeCompetence} :\n\n${notesDejasSaisiesInfo.join('\n')}\n\n🔗 Voulez-vous les attacher au devoir "${nomDevoir}" ?`,
+                    type: 'warning',
+                    confirmText: 'Attacher au devoir',
+                    cancelText: 'Laisser sans devoir',
+                    onConfirm: () => {
+                        setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+                        attacherNotesAuDevoirTableau(notesAAttacher, nomDevoir)
+                    },
+                    onCancel: () => {
+                        setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+                    }
+                })
+            } else {
+                showAlert(`Aucune note déjà saisie pour la compétence ${codeCompetence}.`, 'info')
+            }
+        } else {
+            showAlert('Système de debug des notes non initialisé ou compétence non sélectionnée.', 'warning')
+        }
+    }
+
+    // Fonction pour attacher les notes au devoir (version TableauNotes)
+    const attacherNotesAuDevoirTableau = async (idsNotes, nomDevoir) => {
+        try {
+            console.log('🔗 Attachement des notes au devoir (TableauNotes):', { idsNotes, nomDevoir })
+            
+            // Déterminer la devoirKey pour le devoir
+            let devoirKey
+            if (nouveauDevoirNom.trim()) {
+                // Nouveau devoir - générer une devoirKey
+                devoirKey = generateDevoirKey(eleves[0]?.classe_id, teacherInfo.id, codeCompetence)
+            } else if (devoirSelectionne) {
+                // Devoir existant sélectionné - utiliser sa devoirKey
+                devoirKey = devoirSelectionne
+            } else {
+                // Essayer de trouver le devoir par son nom dans la liste des devoirs existants
+                const devoirExistant = devoirs.find(d => d.devoir_label === nomDevoir)
+                if (devoirExistant) {
+                    devoirKey = devoirExistant.devoirKey
+                } else {
+                    console.error('Impossible de déterminer la devoirKey pour:', nomDevoir)
+                    showAlert('Impossible de déterminer la clé du devoir.', 'error')
+                    return
+                }
+            }
+            
+            console.log('🔑 DevoirKey générée (TableauNotes):', devoirKey)
+            
+            // Mettre à jour chaque note
+            for (const noteId of idsNotes) {
+                const response = await apiFetch(`/notes/${noteId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        devoirKey: devoirKey,
+                        devoir_label: nomDevoir,
+                        date: new Date().toISOString().split('T')[0]
+                    })
+                })
+                
+                if (!response.ok) {
+                    console.error(`Erreur lors de la mise à jour de la note ${noteId}`)
+                } else {
+                    console.log(`✅ Note ${noteId} mise à jour avec succès`)
+                }
+            }
+            
+            // Au lieu de recharger toutes les notes, mettre à jour seulement les notes modifiées
+            setNotes(prevNotes => {
+                return prevNotes.map(note => {
+                    if (idsNotes.includes(note.id)) {
+                        return {
+                            ...note,
+                            devoir_key: devoirKey,
+                            devoir_label: nomDevoir
+                        }
+                    }
+                    return note
+                })
+            })
+            
+            // Mettre à jour dernieresEvaluationsDirectes pour les notes modifiées
+            setDernieresEvaluationsDirectes(prevMap => {
+                const newMap = new Map(prevMap)
+                idsNotes.forEach(noteId => {
+                    // Chercher la note dans dernieresEvaluationsDirectes plutôt que dans notes
+                    for (const [cle, noteExistante] of prevMap.entries()) {
+                        if (noteExistante.id === noteId) {
+                            newMap.set(cle, {
+                                ...noteExistante,
+                                devoir_key: devoirKey,
+                                devoir_label: nomDevoir
+                            })
+                            break
+                        }
+                    }
+                })
+                return newMap
+            })
+            
+            showAlert(`${idsNotes.length} note(s) attachée(s) au devoir "${nomDevoir}" avec succès !`, 'success')
+            
+        } catch (error) {
+            console.error('Erreur lors de l\'attachement des notes:', error)
+            showAlert('Erreur lors de l\'attachement des notes au devoir.', 'error')
+        }
+    }
+
     // Vérifier si des notes existent déjà pour cette compétence avec un devoir
     const hasNotesForCompetence = () => {
         if (!codeCompetence) return false
-        return notes.some(note => 
-            note.competence_code === codeCompetence && 
-            note.devoirKey && 
+        return notes.some(note =>
+            note.competence_code === codeCompetence &&
+            note.devoirKey &&
             note.devoirKey.trim() !== ''
         )
     }
@@ -58,10 +303,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // Utilise les flags existants pour une meilleure intégration
     const isEnCoursDeNotation = () => {
         if (!codeCompetence) return false
-        
+
         // Vérifier le mode d'évaluation depuis localStorage
         const modeEvaluation = localStorage.getItem('mode_evaluation')
-        
+
         // Si on est en mode "nouvelle évaluation" ET qu'il y a des évaluations trackées
         if (modeEvaluation === 'nouvelle' && dernieresEvaluationsDirectes.size > 0) {
             // Vérifier si il y a des évaluations pour la compétence actuelle
@@ -71,28 +316,28 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 }
             }
         }
-        
+
         // Fallback vers l'ancienne logique pour compatibilité
         // Si un devoir existant est sélectionné, vérifier les notes pour ce devoir
         if (devoirSelectionne) {
-            return notes.some(note => 
-                note.competence_code === codeCompetence && 
+            return notes.some(note =>
+                note.competence_code === codeCompetence &&
                 note.devoirKey === devoirSelectionne
             )
         }
-        
+
         // AMÉLIORÉ: Si un nouveau devoir est en cours de création (même sans notes encore)
         // Considérer qu'on est "en cours de notation" si le nom du devoir est saisi
         if (nouveauDevoirNom.trim()) {
             // D'abord vérifier s'il y a déjà des notes avec ce nom
-            const aNotesAvecCeNom = notes.some(note => 
-                note.competence_code === codeCompetence && 
+            const aNotesAvecCeNom = notes.some(note =>
+                note.competence_code === codeCompetence &&
                 note.devoir_label === nouveauDevoirNom.trim()
             )
             // Retourner true même s'il n'y a pas encore de notes - le devoir est en cours de création
             return true
         }
-        
+
         return false
     }
 
@@ -100,11 +345,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // Plus restrictive que isEnCoursDeNotation pour éviter le verrouillage prématuré
     const shouldDisableFields = () => {
         if (!codeCompetence) return false
-        
+
         // Désactiver seulement s'il y a des notes réellement sauvegardées
         // Vérifier le mode d'évaluation depuis localStorage
         const modeEvaluation = localStorage.getItem('mode_evaluation')
-        
+
         // Si on est en mode "nouvelle évaluation" ET qu'il y a des évaluations trackées
         if (modeEvaluation === 'nouvelle' && dernieresEvaluationsDirectes.size > 0) {
             // Vérifier si il y a des évaluations pour la compétence actuelle
@@ -114,23 +359,23 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 }
             }
         }
-        
+
         // Si un devoir existant est sélectionné ET qu'il y a des notes sauvegardées
         if (devoirSelectionne) {
-            return notes.some(note => 
-                note.competence_code === codeCompetence && 
+            return notes.some(note =>
+                note.competence_code === codeCompetence &&
                 note.devoirKey === devoirSelectionne
             )
         }
-        
+
         // Si un nouveau devoir est nommé ET qu'il y a des notes sauvegardées avec ce nom
         if (nouveauDevoirNom.trim()) {
-            return notes.some(note => 
-                note.competence_code === codeCompetence && 
+            return notes.some(note =>
+                note.competence_code === codeCompetence &&
                 note.devoir_label === nouveauDevoirNom.trim()
             )
         }
-        
+
         return false
     }
 
@@ -138,10 +383,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // Ne s'affiche que quand il y a une vraie activité d'évaluation en cours
     const shouldShowDevoirActifMemoire = () => {
         if (!codeCompetence) return false
-        
+
         // Mode 1: Un devoir existant est sélectionné
         if (devoirSelectionne) return true
-        
+
         // Mode 2: Un nouveau devoir est nommé ET il y a des évaluations en cours ou sauvegardées
         if (nouveauDevoirNom.trim()) {
             // Vérifier s'il y a des évaluations trackées pour cette compétence
@@ -153,24 +398,24 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     }
                 }
             }
-            
+
             // OU vérifier s'il y a des notes déjà sauvegardées avec ce nom de devoir
-            const hasNotesWithThisDevoir = notes.some(note => 
-                note.competence_code === codeCompetence && 
+            const hasNotesWithThisDevoir = notes.some(note =>
+                note.competence_code === codeCompetence &&
                 note.devoir_label === nouveauDevoirNom.trim()
             )
-            
+
             if (hasNotesWithThisDevoir) {
                 return true // Il y a des notes sauvegardées pour ce devoir
             }
-            
-            // NOUVEAU: Mode 3 - Afficher dès qu'on a un nom de devoir ET qu'on est en mode évaluation
-            // Cela permet d'informer l'utilisateur que le devoir sera associé aux futures évaluations
-            if (modeEvaluation === 'nouvelle') {
+
+            // NOUVEAU: Mode 3 - Afficher seulement si on a un nom de devoir ET qu'il y a des évaluations en cours
+            // Pas juste le mode évaluation activé
+            if (modeEvaluation === 'nouvelle' && dernieresEvaluationsDirectes.size > 0) {
                 return true
             }
         }
-        
+
         return false
     }
 
@@ -179,7 +424,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
     // État pour gérer les blocs fermés/ouverts (par défaut fermés en mode enseignant normal, ouverts en mode élève et enseignant connecté)
     const [blocsFermes, setBlocsFermes] = useState(isStudentMode ? new Set() : new Set([1, 2, 3]))
-    
+
     // Ref pour tracker la compétence précédente et éviter les re-renders inutiles
     const previousCompetenceRef = useRef(null)
 
@@ -207,15 +452,15 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     const [editingNoteData, setEditingNoteData] = useState({ couleur: '', commentaire: '', devoirKey: '', nouveauDevoirNom: '' })
     const [editError, setEditError] = useState('')
     const [devoirOption, setDevoirOption] = useState('aucun') // 'aucun', 'existant', 'nouveau'
-    
-    // Utiliser l'état 'devoirs' pour tous les cas (plus besoin de devoirsDisponibles)
+
+   
 
     useEffect(() => {
         // Ne pas charger tant que l'app n'est pas initialisée
         if (!appInitialized) return
-        
+
         const idClasse = classeChoisie
-        
+
         // En mode élève, charger tous les élèves de la classe pour la comparaison des notes de progression
         // mais on n'affichera que l'élève connecté
         if (isStudentMode && studentInfo) {
@@ -226,18 +471,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     // Garder tous les élèves pour les calculs de comparaison
                     setEleves(allStudents)
                 })
-            
+
             // Charger toutes les notes de la classe pour permettre la comparaison
             apiFetch(`/notes`)
                 .then(res => res.json())
                 .then(allNotes => {
                     // Filtrer les notes pour tous les élèves de cette classe
-                    const classNotes = allNotes.filter(note => 
+                    const classNotes = allNotes.filter(note =>
                         allNotes.some(n => n.eleve_id === studentInfo.id) // Au moins une note de l'élève connecté
                     )
                     setNotes(allNotes) // Garder toutes les notes pour les calculs
                 })
-            
+
             // Charger les positionnements de cet élève seulement
             apiFetch(`/positionnements?eleve_id=${studentInfo.id}`)
                 .then(res => res.json())
@@ -250,75 +495,72 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         } else {
             // Mode normal (enseignant)
             let classeIdAUtiliser = idClasse
-            
-            // Si pas de classe choisie, utiliser la première classe disponible
-            if (!classeIdAUtiliser && classes && classes.length > 0) {
-                classeIdAUtiliser = classes[0].id
-                console.log('📚 Aucune classe sélectionnée - utilisation de la première classe:', classes[0].nom)
-            }
-            
+
+            // Si pas de classe choisie, ne rien charger - attendre que l'utilisateur sélectionne une classe
             if (!classeIdAUtiliser) {
-                console.log('⚠️ Aucune classe disponible')
+                
                 setEleves([])
+                setNotes([])
+                setPositionnementsEnseignant([])
                 return
             }
 
-            console.log('📚 Chargement élèves pour classe ID:', classeIdAUtiliser)
+            
             apiFetch(`/eleves?classe_id=${classeIdAUtiliser}`)
                 .then(res => res.json())
                 .then(data => {
-                    console.log('👥 Élèves chargés:', data.length)
+                    
                     setEleves(data)
                 })
             apiFetch(`/notes`).then(res => res.json()).then(setNotes)
             apiFetch(`/positionnements`).then(res => res.json()).then(setPositionnementsEnseignant)
         }
-        
+
         // Charger les competences N3 de la BDD + les tâches professionnelles (commun aux deux modes)
         // En mode vue d'ensemble : charger toutes les compétences N3
         // En mode compétence spécifique : charger seulement celles du parent sélectionné
-        const competenceN3Url = competenceChoisie?.niveau2 
+        const competenceN3Url = competenceChoisie?.niveau2
             ? `/competences-n3?parent_code=${competenceChoisie.niveau2}`
             : `/competences-n3` // Charger toutes les compétences N3 en mode vue d'ensemble
-            
+
         apiFetch(competenceN3Url)
             .then(res => res.json())
             .then(competencesBDD => {
-             
-                    // Ajouter toutes les tâches professionnelles comme compétences N3
-                    const tachesN3 = []
-                    
-                    // Pour chaque compétence N2, ajouter les tâches compatibles
-                    competencesN1N2.forEach(compN1 => {
-                        compN1.enfants.forEach(compN2 => {
-                            // Filtrer les tâches professionnelles compatibles avec cette N1
-                            const tachesCompatibles = tachesProfessionelles.filter(tache => 
-                                tache.competences.includes(compN1.code)
-                            )
-                            
-                            // Ajouter chaque tâche associée
-                            tachesCompatibles.forEach(tacheProf => {
-                                tacheProf.TacheAssociees.forEach(tache => {
-                                    tachesN3.push({
-                                        code: `${compN2.code}.${tacheProf.code}.${tache.code}`,
-                                        nom: `${tacheProf.nom} — ${tache.nom}`,
-                                        parent_code: compN2.code,
-                                        source: 'fichier'
-                                    })
+
+                // Ajouter toutes les tâches professionnelles comme compétences N3
+                const tachesN3 = []
+
+                // Pour chaque compétence N2, ajouter les tâches compatibles
+                competencesN1N2.forEach(compN1 => {
+                    compN1.enfants.forEach(compN2 => {
+                        // Filtrer les tâches professionnelles compatibles avec cette N1
+                        const tachesCompatibles = tachesProfessionelles.filter(tache =>
+                            tache.competences.includes(compN1.code)
+                        )
+
+                        // Ajouter chaque tâche associée
+                        tachesCompatibles.forEach(tacheProf => {
+                            tacheProf.TacheAssociees.forEach(tache => {
+                                tachesN3.push({
+                                    code: `${compN2.code}.${tacheProf.code}.${tache.code}`,
+                                    nom: `${tacheProf.nom} — ${tache.nom}`,
+                                    parent_code: compN2.code,
+                                    source: 'fichier'
                                 })
                             })
                         })
                     })
-                    
-                    // Combiner BDD + tâches professionnelles
-                    const toutesCompetencesN3 = [
-                        ...competencesBDD.map(comp => ({ ...comp, source: 'bdd' })),
-                        ...tachesN3
-                    ]
-                    
-                    setCompetencesN3(toutesCompetencesN3)
                 })
-        
+
+                // Combiner BDD + tâches professionnelles
+                const toutesCompetencesN3 = [
+                    ...competencesBDD.map(comp => ({ ...comp, source: 'bdd' })),
+                    ...tachesN3
+                ]
+
+                setCompetencesN3(toutesCompetencesN3)
+            })
+
         // Charger les enseignants (nécessaire dans tous les modes pour afficher les noms dans les détails de note)
         apiFetch(`/enseignants`)
             .then(res => {
@@ -342,13 +584,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             const nouveauxCommentaires = {}
             eleves.forEach(eleve => {
                 const cleEleveCompetence = `${eleve.id}-${codeCompetence}`
-                const commentaireExistant = getCommentaireDerniereEvaluation(eleve.id, codeCompetence,dernieresEvaluationsDirectes)
+                const commentaireExistant = getCommentaireDerniereEvaluation(eleve.id, codeCompetence, dernieresEvaluationsDirectes)
                 if (commentaireExistant && !commentairesEleves[cleEleveCompetence]) {
                     nouveauxCommentaires[cleEleveCompetence] = commentaireExistant
                 }
             })
             if (Object.keys(nouveauxCommentaires).length > 0) {
-                setCommentairesEleves(prev => ({...prev, ...nouveauxCommentaires}))
+                setCommentairesEleves(prev => ({ ...prev, ...nouveauxCommentaires }))
             }
         }
     }, [eleves, dernieresEvaluationsDirectes, codeCompetence])
@@ -370,20 +612,20 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         if (isTeacherMode && teacherInfo?.id && classeChoisie && notes.length > 0) {
             // Extraire tous les devoirs uniques depuis les notes chargées (sans dépendre de codeCompetence)
             const devoirsMap = new Map()
-            
+
             notes.forEach(note => {
                 // FILTRE IMPORTANT : seulement les notes de l'enseignant connecté et de la classe sélectionnée
                 // Récupérer classe_id via l'élève pour le filtrage
                 const eleve = eleves.find(e => e.id === note.eleve_id);
                 const classe_id_via_eleve = eleve ? eleve.classe_id : null;
-                
-                if (note.devoirKey && note.devoir_label && 
-                    note.prof_id === teacherInfo.id && 
+
+                if (note.devoirKey && note.devoir_label &&
+                    note.prof_id === teacherInfo.id &&
                     classeChoisie && classe_id_via_eleve == parseInt(classeChoisie)) { // Utiliser classe via élève
-                    
+
                     const existant = devoirsMap.get(note.devoirKey)
                     // Si le devoir existe déjà, garder celui avec le label le plus long ou la date la plus récente
-                    if (!existant || 
+                    if (!existant ||
                         note.devoir_label.length > existant.devoir_label.length ||
                         (note.devoir_label.length === existant.devoir_label.length && new Date(note.date) > new Date(existant.date))) {
                         devoirsMap.set(note.devoirKey, {
@@ -395,10 +637,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     }
                 }
             })
-            
+
             const devoirsData = Array.from(devoirsMap.values())
             setDevoirs(devoirsData)
-            
+
             // Notifier App.jsx pour mettre à jour la Baniere
             if (onDevoirsUpdate) {
                 onDevoirsUpdate(devoirsData)
@@ -416,7 +658,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     const devoirsSansDoublons = useMemo(() => {
         // Utiliser la liste des devoirs extraits et filtrés
         if (!devoirs.length) return []
-        
+
         const devoirsMap = new Map()
         devoirs.forEach(devoir => {
             if (devoir && devoir.devoirKey) {
@@ -432,12 +674,12 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // Réinitialiser l'affichage du tableau quand la compétence change
     useEffect(() => {
         setTableauVisible(false)
-        
+
         // Si on est en mode "nouvelle évaluation", réinitialiser le tracking
-        const modeEvaluation = localStorage.getItem('mode_evaluation')
-        if (modeEvaluation === 'nouvelle') {
-            setDernieresEvaluationsDirectes(new Map())
-        }
+        setNouveauDevoirNom('')
+        setDevoirOption('aucun')
+        setDernieresEvaluationsDirectes(new Map())
+        setCommentairesEleves({})
     }, [competenceChoisie])
 
     // Effet pour maintenir la position de l'élève après un changement d'affichage
@@ -450,7 +692,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 })
                 setEleveAMaintenir(null) // Reset après le scroll
             }, 100) // Petit délai pour s'assurer que le rendu est terminé
-            
+
             return () => clearTimeout(timeout)
         }
     }, [eleveAMaintenir, tableauVisible, blocsFermes])
@@ -461,131 +703,45 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             // Activer la vue devoir
             setDevoirViewVisible(true)
             setDevoirKeyVisible(devoirSelectionne)
+            
+            // Si une compétence était en cours d'ajout, l'ajouter temporairement au devoir
+            if (competenceAjouter && devoirViewRef.current) {
+                setTimeout(() => {
+                    devoirViewRef.current.ajouterCompetence(competenceAjouter)
+                    setCompetenceAjouter(null) // Reset après ajout
+                }, 100)
+            }
         } else if (!devoirSelectionne) {
             // Désactiver la vue devoir si aucun devoir n'est sélectionné
             setDevoirViewVisible(false)
             setDevoirKeyVisible(null)
+            setCompetenceAjouter(null) // Reset aussi
         }
-    }, [devoirSelectionne, isTeacherMode])
+    }, [devoirSelectionne, isTeacherMode, competenceAjouter])
 
-    // Plus besoin de charger les devoirs séparément - ils sont extraits automatiquement des notes
-
-    // Ajouter automatiquement la compétence sélectionnée au devoir actif
+    // Réinitialiser nouveauDevoirNom quand on change de compétence
     useEffect(() => {
-        if (devoirViewVisible && codeCompetence && devoirViewRef.current) {
-            // Petite temporisation pour s'assurer que le composant DevoirView est monté
-            setTimeout(() => {
-                if (devoirViewRef.current) {
-                    devoirViewRef.current.ajouterCompetence(codeCompetence)
-                }
-            }, 100)
+        setNouveauDevoirNom('')
+        // Aussi réinitialiser le devoir sélectionné pour éviter le conflit
+        if (onDevoirChange) {
+            onDevoirChange(null)
         }
-    }, [devoirViewVisible, codeCompetence])
-
-    // Réinitialiser l'affichage des options de devoir quand la compétence change
-    useEffect(() => {
-        // Vérifier si c'est un vrai changement de compétence
-        if (!codeCompetence) {
-            previousCompetenceRef.current = null
-            return
-        }
-        
-        if (codeCompetence === previousCompetenceRef.current) {
-            return // Pas de changement réel
-        }
-        
-        console.log('VRAI changement de compétence:', { 
-            previous: previousCompetenceRef.current, 
-            current: codeCompetence 
-        })
-        
-        // Capturer les valeurs actuelles au moment du changement de compétence
-        const currentNouveauDevoir = nouveauDevoirNom.trim()
-        const currentDevoirSelectionne = devoirSelectionne
-        const currentNotes = [...notes] // Copie pour éviter les changements de référence
-        const currentEvaluations = new Map(dernieresEvaluationsDirectes) // Copie
-        
-        // Vérifier si cette compétence est déjà en cours de notation avec le devoir actuel
-        const competenceEnCoursDeNotation = () => {
-            const modeEvaluation = localStorage.getItem('mode_evaluation')
-            
-            if (modeEvaluation === 'nouvelle' && currentEvaluations.size > 0) {
-                for (let [key, evaluation] of currentEvaluations) {
-                    if (key.includes(codeCompetence)) {
-                        if (currentNouveauDevoir && key.includes(currentNouveauDevoir)) {
-                            return true
-                        }
-                        if (currentDevoirSelectionne && key.includes(currentDevoirSelectionne)) {
-                            return true
-                        }
-                    }
-                }
-            }
-            
-            return false
-        }
-        
-        // Vérifier également si cette compétence a des notes avec le devoir actuel
-        const competenceANotesAvecDevoirActuel = () => {
-            if (currentNouveauDevoir) {
-                return currentNotes.some(note => 
-                    note.competence_code === codeCompetence && 
-                    note.devoir_label === currentNouveauDevoir
-                )
-            }
-            if (currentDevoirSelectionne) {
-                return currentNotes.some(note => 
-                    note.competence_code === codeCompetence && 
-                    note.devoirKey === currentDevoirSelectionne
-                )
-            }
-            return false
-        }
-        
-        const enCoursNotation = competenceEnCoursDeNotation()
-        const aNotesAvecDevoirActuel = competenceANotesAvecDevoirActuel()
-        
-        console.log('useEffect competence change:', {
-            codeCompetence,
-            nouveauDevoirNom: currentNouveauDevoir,
-            devoirSelectionne: currentDevoirSelectionne,
-            enCoursNotation,
-            aNotesAvecDevoirActuel,
-            willClear: !enCoursNotation && !aNotesAvecDevoirActuel
-        })
-        
-        // RÈGLE PRINCIPALE : Vider automatiquement sauf si on revient sur une compétence en cours de notation
-        if (!enCoursNotation && !aNotesAvecDevoirActuel) {
-            console.log('CLEARING devoir state')
-            setNouveauDevoirNom('')
-            setDevoirSelectionne(null)
-        }
-        
-        // Mettre à jour la référence APRÈS avoir fait les vérifications
-        previousCompetenceRef.current = codeCompetence
-        
-    }, [codeCompetence]) // Seulement codeCompetence dans les dépendances
+    }, [codeCompetence, onDevoirChange])
 
 
-
-  
-
-
-
- 
 
     const handleClickEleve = (eleve, competenceCodeSpecifique = null) => {
         // Désactiver les interactions en mode élève
         if (isStudentMode) {
             return
         }
-        
+
         // Utiliser la compétence spécifique passée en paramètre ou celle du state global
         const competenceAUtiliser = competenceCodeSpecifique || codeCompetence
 
         // Si aucune compétence n'est disponible, on ne peut pas ajouter de note
         if (!competenceAUtiliser) {
-            alert('Impossible de déterminer la compétence à évaluer.')
+            showAlert('Impossible de déterminer la compétence à évaluer.', 'warning')
             return
         }
 
@@ -597,7 +753,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             setNoteDetail({
                 eleve_id: eleve.id,
                 competence_code: competenceCodeSpecifique,
-                couleur: getCouleurPourCompetence(eleve.id, competenceCodeSpecifique,notes)  // Récupérer la couleur actuelle pour cette compétence
+                couleur: getCouleurPourCompetence(eleve.id, competenceCodeSpecifique, notes)  // Récupérer la couleur actuelle pour cette compétence
             })
         }
         setModalOuvert(true)
@@ -609,9 +765,6 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         setNotes([...autres, nouvelleNote])
     }
 
- 
-
-
     // Fonction pour calculer la note de progression basée sur le nombre de pastilles
     const calculerNoteProgression = (eleveId, numeroBloc) => {
         // Obtenir les compétences du bloc
@@ -622,10 +775,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         const notesEleveBloc = notes.filter(note => {
             if (note.eleve_id !== eleveId) return false
             if (!note.competence_code) return false
-            
+
             // Vérifier si cette évaluation appartient à CE bloc
             // Bidirectionnel : C04 appartient au bloc C04.1, et C04.1 appartient au bloc C04
-            return codesCompetencesBloc.some(code => 
+            return codesCompetencesBloc.some(code =>
                 note.competence_code.startsWith(code) || code.startsWith(note.competence_code)
             )
         })
@@ -637,18 +790,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
         // Créer une liste des IDs des élèves de cette classe seulement
         const elevesClasseIds = eleves.map(eleve => eleve.id)
-        
+
         // Compter les pastilles SEULEMENT des élèves de cette classe POUR CE BLOC SEULEMENT
         const pastillesParEleveCeBloc = {}
         notes.forEach(note => {
             if (!note.competence_code) return
-            
+
             // CRUCIAL: Vérifier que cet élève appartient à la classe actuelle
             if (!elevesClasseIds.includes(note.eleve_id)) return
-            
+
             // Vérifier si cette note appartient à CE bloc
             // Bidirectionnel : C04 appartient au bloc C04.1, et C04.1 appartient au bloc C04
-            const matchCeBloc = codesCompetencesBloc.some(code => 
+            const matchCeBloc = codesCompetencesBloc.some(code =>
                 note.competence_code.startsWith(code) || code.startsWith(note.competence_code)
             )
             if (matchCeBloc) {
@@ -661,13 +814,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
         // Trouver le maximum pour CE bloc seulement
         const nombreMaxPastillesCeBloc = Math.max(...Object.values(pastillesParEleveCeBloc), 1)
-        
-    
-        
+
+
+
         // Calculer la note de progression sur 20 par rapport au meilleur DE CE BLOC
         const note = (pastillesEleve / nombreMaxPastillesCeBloc) * 20
         const noteFinale = Math.round(note * 10) / 10
-        
+
         return noteFinale
     }
 
@@ -680,24 +833,28 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
     // Fonction wrapper qui ajoute le suivi de session à ajouterNoteDirecte
     const ajouterNoteAvecSuivi = async (eleve, competenceCode, couleur, notes, isStudentMode, dernieresEvaluationsDirectes, commentairesEleves, teacherInfo, devoirSelectionne, devoirs, setDernieresEvaluationsDirectes, nouveauDevoirNom, setNotes) => {
-        console.log('🟡 ajouterNoteAvecSuivi appelé pour:', { eleve: eleve.prenom, competenceCode, couleur })
-        
+       
+        // Si on associe cette compétence à un nouveau devoir, la tracker pour l'affichage temporaire
+        if ((nouveauDevoirNom.trim() || devoirSelectionne) && !notes.some(n => n.eleve_id === eleve.id && n.competence_code === competenceCode)) {
+            setCompetenceAjouter(competenceCode)
+        }
+
         const cleNote = `${eleve.id}-${competenceCode}`
-        
+
         // Éviter les ajouts multiples simultanés
         if (!window.ajoutEnCours) window.ajoutEnCours = new Set()
         if (window.ajoutEnCours.has(cleNote)) {
-            console.log('⚠️ Ajout déjà en cours pour:', cleNote)
+           
             return false
         }
-        
+
         window.ajoutEnCours.add(cleNote)
-        
+
         try {
             // Appeler la fonction d'origine
             const resultat = await ajouterNoteDirecte(
-                eleve, 
-                competenceCode, 
+                eleve,
+                competenceCode,
                 couleur,
                 notes,
                 isStudentMode,
@@ -710,22 +867,21 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 nouveauDevoirNom,
                 setNotes
             )
-            
+
             // Si l'ajout a réussi, ajouter au tableau de suivi
             if (resultat) {
                 setNotesSaisiesSession(prev => {
                     if (!prev.includes(cleNote)) {
-                        console.log('📝 Ajout au tableau de suivi (ajouterNoteAvecSuivi):', cleNote)
-                        console.log('📊 Session actuelle avant ajout:', prev, `(${prev.length})`)
+                       
                         const nouvelle = [...prev, cleNote]
-                        console.log('📊 Session après ajout:', nouvelle, `(${nouvelle.length})`)
+                        
                         return nouvelle
                     }
-                    console.log('⚠️ Clé déjà présente dans la session:', cleNote, 'Session:', prev)
+                    
                     return prev
                 })
             }
-            
+
             return resultat
         } finally {
             // Retirer le marqueur d'ajout en cours
@@ -738,20 +894,20 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         // Obtenir les initiales du professeur
         const prof = enseignants.find(e => e.id === note.prof_id)
         const initialesProf = prof ? `${prof.prenom?.[0] || ''}${prof.nom?.[0] || ''}` : 'XX'
-        
+
         // Obtenir le code de compétence (gérer les deux propriétés possibles)
         const codeCompetence = note.competence_code || note.competenceCode
-        
+
         // Obtenir le libellé de la compétence de plus bas niveau
         const labelleCompetence = getNomCompetence(codeCompetence)
-        
+
         // Construire le tooltip
         let tooltip = ``
         if (note.commentaire && note.commentaire.trim()) {
             tooltip += `Commentaire: ${note.commentaire}\n`
         }
         const dateObj = new Date(note.date)
-        const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}/${(dateObj.getMonth()+1).toString().padStart(2, '0')}`
+        const dateStr = `${dateObj.getDate().toString().padStart(2, '0')}/${(dateObj.getMonth() + 1).toString().padStart(2, '0')}`
         tooltip += `Date: ${dateStr} - `
         tooltip += `Prof: ${initialesProf}\n`
         tooltip += `Compétence: ${labelleCompetence}\n`
@@ -759,9 +915,25 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     }
 
     const handleDeleteNote = async (noteId) => {
-        if (!confirm('Êtes-vous sûr de vouloir supprimer cette note ?')) {
-            return
-        }
+        // Utiliser notre dialog de confirmation personnalisé
+        setConfirmationDialog({
+            isOpen: true,
+            title: 'Supprimer la note',
+            message: 'Êtes-vous sûr de vouloir supprimer cette note ?',
+            type: 'danger',
+            confirmText: 'Supprimer',
+            cancelText: 'Annuler',
+            onConfirm: async () => {
+                setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+                await deleteNote(noteId)
+            },
+            onCancel: () => {
+                setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+            }
+        })
+    }
+    
+    const deleteNote = async (noteId) => {
 
         try {
             const res = await apiFetch(`/notes/${noteId}`, {
@@ -774,23 +946,23 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 // Ferme la modal
                 setNoteDetail(null)
             } else {
-                alert('Erreur lors de la suppression de la note')
+                showAlert('Erreur lors de la suppression de la note', 'error')
             }
         } catch (error) {
             console.error('Erreur:', error)
-            alert('Erreur lors de la suppression de la note')
+            showAlert('Erreur lors de la suppression de la note', 'error')
         }
     }
 
     const handleEditNote = () => {
         // Utiliser les devoirs déjà extraits au lieu de les recharger
-        
+
         // Déterminer l'option de devoir actuelle
         let optionDevoir = 'aucun'
         if (noteDetail.devoirKey) {
             optionDevoir = 'existant'
         }
-        
+
         setEditingNoteData({
             couleur: noteDetail.couleur,
             commentaire: noteDetail.commentaire || '',
@@ -812,22 +984,23 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
     const handleSaveEditedNote = async () => {
         setEditError('') // Réinitialiser l'erreur avant la tentative
-        
+
         try {
             // Déterminer les informations de devoir à sauvegarder
             let devoirKey = editingNoteData.devoirKey
             let devoirLabel = ''
-            
+
             if (editingNoteData.nouveauDevoirNom.trim()) {
-                // Créer un nouveau devoir
-                devoirKey = `${classeChoisie.id}_${teacherInfo.id}_${Date.now()}`
+                // Créer un nouveau devoir avec le bon format: idClass_idProf_CodeCompetence_JJMM
+                devoirKey = generateDevoirKey(classeChoisie.id, teacherInfo.id, noteDetail.competence_code)
                 devoirLabel = editingNoteData.nouveauDevoirNom.trim()
+                console.log('🔑 Génération devoirKey dans TableauNotes:', devoirKey)
             } else if (editingNoteData.devoirKey) {
                 // Utiliser un devoir existant
                 const devoirExistant = devoirs.find(d => d.devoirKey === editingNoteData.devoirKey)
                 devoirLabel = devoirExistant?.devoir_label || ''
             }
-            
+
             const res = await apiFetch(`/notes/${noteDetail.id}`, {
                 method: 'PUT',
                 headers: {
@@ -847,18 +1020,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
             if (res.ok) {
                 // Met à jour la note dans l'état local
-                setNotes(prev => prev.map(n => 
-                    n.id === noteDetail.id 
-                        ? { 
-                            ...n, 
-                            couleur: editingNoteData.couleur, 
+                setNotes(prev => prev.map(n =>
+                    n.id === noteDetail.id
+                        ? {
+                            ...n,
+                            couleur: editingNoteData.couleur,
                             commentaire: editingNoteData.commentaire,
                             devoirKey: devoirKey || null,
                             devoir_label: devoirLabel || null
                         }
                         : n
                 ))
-                
+
                 // Fermer la popup après sauvegarde réussie
                 setIsEditingNote(false)
                 setEditingNoteData({ couleur: '', commentaire: '', devoirKey: '', nouveauDevoirNom: '' })
@@ -911,11 +1084,11 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 setElevePositionnement(null)
                 setCompetencePositionnement(null)
             } else {
-                alert('Erreur lors de la sauvegarde du positionnement')
+                showAlert('Erreur lors de la sauvegarde du positionnement', 'error')
             }
         } catch (error) {
             console.error('Erreur:', error)
-            alert('Erreur lors de la sauvegarde du positionnement')
+            showAlert('Erreur lors de la sauvegarde du positionnement', 'error')
         }
     }
 
@@ -928,16 +1101,16 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
     const getNomEnseignant = (profId) => {
         if (!profId) return 'Non défini'
-        
+
         // Si les enseignants ne sont pas encore chargés, retourner un placeholder
         if (!enseignants || enseignants.length === 0) {
             return 'Chargement...'
         }
-        
+
         // Convertir profId en nombre pour la comparaison (au cas où ce serait une chaîne)
         const profIdNum = parseInt(profId)
         const enseignant = enseignants.find(e => e.id === profIdNum || e.id === profId)
-        
+
         return enseignant ? `${enseignant.prenom} ${enseignant.nom}` : `Enseignant ID ${profId}`
     }
 
@@ -967,18 +1140,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // Fonction pour récupérer les évaluations N3 d'une compétence N2 pour un élève
     const getEvaluationsN3PourN2 = (eleveId, codeCompetenceN2) => {
         if (!codeCompetenceN2 || !codeCompetenceN2.includes('.')) return []
-        
+
         // Trouver toutes les compétences N3 rattachées à cette N2
         const competencesN3Enfants = competencesN3.filter(c3 => c3.parent_code === codeCompetenceN2)
-        
+
         // Pour chaque N3, récupérer ses évaluations
         const evaluationsN3 = []
         competencesN3Enfants.forEach(compN3 => {
-            const notesN3 = notes.filter(note => 
-                note.eleve_id === eleveId && 
+            const notesN3 = notes.filter(note =>
+                note.eleve_id === eleveId &&
                 note.competence_code === compN3.code
             )
-            
+
             notesN3.forEach(note => {
                 evaluationsN3.push({
                     ...note,
@@ -987,20 +1160,20 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 })
             })
         })
-        
+
         return evaluationsN3
     }
 
     // Fonction pour récupérer les évaluations N1 d'une compétence N1 pour un élève
     const getEvaluationsN1PourN1 = (eleveId, codeCompetenceN1) => {
         if (!codeCompetenceN1 || codeCompetenceN1.includes('.')) return []
-        
+
         // Récupérer les évaluations directes sur cette compétence N1
-        const evaluationsN1 = notes.filter(note => 
-            note.eleve_id === eleveId && 
+        const evaluationsN1 = notes.filter(note =>
+            note.eleve_id === eleveId &&
             note.competence_code === codeCompetenceN1
         )
-        
+
         return evaluationsN1.map(note => ({
             ...note,
             competenceNom: getNomCompetence(codeCompetenceN1),
@@ -1019,13 +1192,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // Fonction pour récupérer les évaluations N2 d'une compétence N2 pour un élève
     const getEvaluationsN2PourN2 = (eleveId, codeCompetenceN2) => {
         if (!codeCompetenceN2 || !codeCompetenceN2.includes('.')) return []
-        
+
         // Récupérer les évaluations directes sur cette compétence N2
-        const evaluationsN2 = notes.filter(note => 
-            note.eleve_id === eleveId && 
+        const evaluationsN2 = notes.filter(note =>
+            note.eleve_id === eleveId &&
             note.competence_code === codeCompetenceN2
         )
-        
+
         return evaluationsN2.map(note => ({
             ...note,
             competenceNom: getNomCompetence(codeCompetenceN2),
@@ -1035,7 +1208,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
     // Fonction pour organiser les notes par hiérarchie pour un élève
     const organiserNotesParHierarchie = (eleveId) => {
-        const notesEleve = getNotesVisibles(eleveId,codeCompetence,notes)
+        const notesEleve = getNotesVisibles(eleveId, codeCompetence, notes)
         const hierarchie = {}
 
         notesEleve.forEach(note => {
@@ -1231,7 +1404,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         // Parcourir toutes les compétences du référentiel
         competencesN1N2.forEach(comp1 => {
             // En mode filtré, ne traiter que la compétence N1 sélectionnée ou toutes si aucune sélection
-            if (codeCompetence && !isCompetenceInHierarchy(comp1.code,codeCompetence)) {
+            if (codeCompetence && !isCompetenceInHierarchy(comp1.code, codeCompetence)) {
                 return // Ignorer cette compétence N1 si elle ne correspond pas au filtre
             }
 
@@ -1246,7 +1419,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             // Ajouter les compétences de niveau 2
             comp1.enfants.forEach(comp2 => {
                 // En mode filtré, vérifier si cette N2 doit être incluse
-                if (codeCompetence && !isCompetenceInHierarchy(comp2.code,codeCompetence)) {
+                if (codeCompetence && !isCompetenceInHierarchy(comp2.code, codeCompetence)) {
                     return // Ignorer cette compétence N2 si elle ne correspond pas au filtre
                 }
 
@@ -1269,14 +1442,14 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // Fonction modifiée pour inclure les lignes de bilan
     const genererLignesTableauAvecBilan = (hierarchie, eleveId, modeComplet = false) => {
         // En mode complet, vérifier que les compétences N3 sont chargées SEULEMENT si une compétence spécifique est sélectionnée
-       
-        
+
+
         // Ne vérifier competencesN3 que si une compétence niveau2 est sélectionnée
         if (modeComplet && competenceChoisie?.niveau2 && competencesN3.length === 0) {
-          
+
             return [] // Retourner un tableau vide si les données ne sont pas encore chargées
         }
-        
+
 
 
         // En mode complet (vue d'ensemble), construire la hiérarchie complète
@@ -1288,10 +1461,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         const lignesEnrichies = lignesBase.map(ligne => {
             // Le positionnement automatique est TOUJOURS calculé sur les N2 uniquement
             const codeCompetenceN2 = ligne.niveau2?.code
-            
+
             // Ajouter la référence de compétence pour le filtrage par bloc
             let competenceRef = null
-            
+
             if (ligne.niveau2?.code) {
                 // Pour N2, trouver la compétence dans le référentiel N1N2
                 const parts = ligne.niveau2.code.split('.')
@@ -1307,7 +1480,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 const comp1 = competencesN1N2.find(c => c.code === parts[0])
                 competenceRef = comp1?.enfants?.find(c => c.code === codeN2Parent)
             }
-            
+
             return {
                 ...ligne,
                 competence: competenceRef, // Ajouter la référence de compétence
@@ -1377,12 +1550,12 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // Fonction pour gérer correctement les URLs de photos
     const getPhotoUrl = (photoPath) => {
         if (!photoPath) return '/default.jpg'
-        
+
         // Si c'est déjà une URL complète (http:// ou https://), la retourner telle quelle
         if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
             return photoPath
         }
-        
+
         // Sinon, c'est un chemin relatif, ajouter le / devant
         return `/${photoPath}`
     }
@@ -1714,7 +1887,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             if (parts.length === 2) { // C'est une N2 (ex: C01.1)
                 // Chercher les compétences N3 rattachées à cette N2
                 const competencesN3Enfant = competencesN3.filter(c3 => c3.parent_code === codeCompetence)
-                
+
                 // Pour chaque N3, calculer sa moyenne et l'ajouter avec un poids équitable
                 competencesN3Enfant.forEach(compN3 => {
                     const notesN3 = notes.filter(note =>
@@ -1736,7 +1909,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                             }
                             totalPointsN3 += pointsNote
                         })
-                        
+
                         // Chaque N3 contribue de manière équitable (moyenne de ses notes)
                         const moyenneN3 = totalPointsN3 / notesN3.length
                         totalPoints += moyenneN3
@@ -1927,18 +2100,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     }, [])
 
 
-   
+
 
     return (
         <div className="tableau-container">
 
-            { eleves.length === 0 && (
+            {eleves.length === 0 && (
                 <div className="aucune-note alert">
                     <p>Aucun Élève est ajouté à votre classe.</p>
                 </div>
             )}
 
-           
+
 
             {modalOuvert && eleveActuel && (
                 <ColorPickerModal
@@ -1979,7 +2152,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     <div className="modal-content">
                         <h4>{isEditingNote ? 'Modifier la note' : 'Détail de la note'}</h4>
                         <p><strong>Compétence :</strong> {getNomCompetence(noteDetail.competence_code)}</p>
-                        
+
                         {!isEditingNote ? (
                             <>
                                 <p><strong>Couleur :</strong> {noteDetail.couleur}</p>
@@ -1988,9 +2161,9 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                 {noteDetail.commentaire && (
                                     <div style={{ marginTop: '10px' }}>
                                         <p><strong>Commentaire/Remédiation :</strong></p>
-                                        <div style={{ 
-                                            backgroundColor: '#f8f9fa', 
-                                            padding: '10px', 
+                                        <div style={{
+                                            backgroundColor: '#f8f9fa',
+                                            padding: '10px',
                                             borderRadius: '4px',
                                             border: '1px solid #dee2e6',
                                             fontStyle: 'italic',
@@ -2005,9 +2178,9 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                 {noteDetail.devoir_label && noteDetail.devoirKey && (
                                     <div style={{ marginTop: '10px' }}>
                                         <p><strong>Devoir associé :</strong></p>
-                                        <div style={{ 
-                                            backgroundColor: '#e3f2fd', 
-                                            padding: '10px', 
+                                        <div style={{
+                                            backgroundColor: '#e3f2fd',
+                                            padding: '10px',
                                             borderRadius: '4px',
                                             border: '1px solid #2196f3',
                                             color: '#1565c0'
@@ -2021,13 +2194,13 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                             <>
                                 <p><strong>Date :</strong> {new Date(noteDetail.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</p>
                                 <p><strong>Prof :</strong> {getNomEnseignant(noteDetail.prof_id)}</p>
-                                
+
                                 <div style={{ marginTop: '15px' }}>
                                     <label><strong>Couleur :</strong></label>
-                                    <div style={{ 
-                                        marginTop: '10px', 
-                                        display: 'flex', 
-                                        gap: '10px', 
+                                    <div style={{
+                                        marginTop: '10px',
+                                        display: 'flex',
+                                        gap: '10px',
                                         flexWrap: 'wrap',
                                         justifyContent: 'center'
                                     }}>
@@ -2083,7 +2256,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                 {/* Section association au devoir */}
                                 <div style={{ marginTop: '15px' }}>
                                     <label><strong>Association au devoir :</strong></label>
-                                    
+
                                     {/* Option 1: Aucun devoir */}
                                     <div style={{ marginTop: '10px' }}>
                                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
@@ -2196,12 +2369,12 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                 )}
                             </>
                         )}
-                        
+
                         <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
                             {!isEditingNote ? (
                                 <>
                                     <button onClick={() => setNoteDetail(null)}>Fermer</button>
-                                    
+
                                     {/* Bouton pour afficher le devoir associé */}
                                     {noteDetail.devoirKey && !isStudentMode && (
                                         <button
@@ -2222,7 +2395,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                             📋 Voir le devoir
                                         </button>
                                     )}
-                                    
+
                                     {!isStudentMode && (
                                         <>
                                             <button
@@ -2277,32 +2450,26 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 </div>
             )}
 
-{/* Message quand un devoir est en cours de visualisation OU en mémoire */}
-                    {(devoirViewVisible && devoirKeyVisible) || shouldShowDevoirActifMemoire() ? (
-                        <div style={{ 
-                            padding: '10px', 
-                            backgroundColor: devoirViewVisible ? '#e3f2fd' : '#fff3cd', 
-                            borderRadius: '4px',
-                            fontSize: '14px',
-                            color: devoirViewVisible ? '#1976d2' : '#856404',
-                            marginTop: '10px',
-                            border: devoirViewVisible ? '1px solid #2196f3' : '1px solid #ffc107'
-                        }}>
-                            📋 <strong>
-                                {devoirViewVisible ? 
-                                    'Mode devoir actif (visualisation)' : 
-                                    'Mode devoir actif (mémoire)'
-                                }
-                            </strong> : 
-                            {devoirViewVisible ? 
-                                ' Les nouvelles compétences saisies seront automatiquement ajoutées au devoir en cours de visualisation.' :
-                                ` Les nouvelles évaluations seront associées au devoir "${nouveauDevoirNom.trim() || 
-                                    (devoirSelectionne ? devoirsSansDoublons.find(d => d.devoirKey === devoirSelectionne)?.devoir_label || 'Devoir sélectionné' : '')
-                                }".`
-                            }
-                            
-                        </div>
-                    ):(<> {codeCompetence && isTeacherMode && !isStudentMode && eleves.length > 0 && (
+            {/* Message quand un devoir est en cours de visualisation OU en mémoire */}
+            {(devoirViewVisible && devoirKeyVisible) || shouldShowDevoirActifMemoire() ? (
+                <div style={{
+                    padding: '10px',
+                    backgroundColor: devoirViewVisible ? '#e3f2fd' : '#fff3cd',
+                    borderRadius: '4px',
+                    fontSize: '14px',
+                    color: devoirViewVisible ? '#1976d2' : '#856404',
+                    marginTop: '10px',
+                    border: devoirViewVisible ? '1px solid #2196f3' : '1px solid #ffc107'
+                }}>
+                    📋 <strong>
+                        Devoir associé  
+                    </strong> :
+
+                       "{nouveauDevoirNom.trim() || (devoirSelectionne ? devoirsSansDoublons.find(d => d.devoirKey === devoirSelectionne)?.devoir_label || 'Devoir sélectionné' : '')
+                       }".
+
+                </div>
+            ) : (<> {codeCompetence && isTeacherMode && !isStudentMode && eleves.length > 0 && (
                 <DevoirSelectionSection
                     devoirsSansDoublons={devoirsSansDoublons}
                     devoirSelectionne={devoirSelectionne}
@@ -2314,13 +2481,22 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     devoirViewVisible={devoirViewVisible}
                     codeCompetence={codeCompetence}
                     shouldDisableFields={shouldDisableFields}
+                    teacherInfo={teacherInfo}
+                    classeId={eleves[0]?.classe_id}
+                    devoirs={devoirs}
+                    notes={notes} // Ajout de la prop notes
+                    eleves={eleves} // Ajout de la prop eleves
+                    setNotes={setNotes}
+                    dernieresEvaluationsDirectes={dernieresEvaluationsDirectes}
+                    setDernieresEvaluationsDirectes={setDernieresEvaluationsDirectes}
                 />
-            )}</>)}
+            )}</>
+            )}
 
 
             {/* Vue devoir */}
-            {devoirViewVisible && devoirKeyVisible ? (<>
-               
+            {devoirViewVisible && devoirKeyVisible ? (
+
                 <DevoirView
                     ref={devoirViewRef}
                     devoirKey={devoirKeyVisible}
@@ -2331,359 +2507,409 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                         // Remettre "Aucun devoir" sélectionné dans la bannière
                         setDevoirSelectionne(null)
                     }}
+                    onDataChange={() => {
+                        // Recharger les notes quand des données changent dans DevoirView
+                        
+                        apiFetch(`/notes`).then(res => res.json()).then(setNotes)
+                    }}
                     teacherInfo={teacherInfo}
                     eleveFiltre={eleveFiltre}
                     competencesN1N2={competencesN1N2}
                     competencesN3={competencesN3}
-                /></>
-            ):(<> {/* Section de sélection de devoir - affiché seulement si une compétence est sélectionnée et en mode enseignant */}
+                    competenceInitiale={codeCompetence}
+                />
+
+            ) : (<>
+
+                {/* Section de sélection de devoir - affiché seulement si une compétence est sélectionnée et en mode enseignant */ }
             
-            {/* Si mode vue d'ensemble, organiser par élève avec leurs blocs */}
-            {!codeCompetence ? (
-                elevesVisibles
-                    .filter(eleve => !isStudentMode || eleve.id === studentInfo?.id) // En mode étudiant, afficher seulement l'élève connecté
-                    .map(eleve => {
-                    const hierarchie = organiserNotesParHierarchie(eleve.id)
-                    const lignes = genererLignesTableauAvecBilan(hierarchie, eleve.id, true) // Mode complet activé
-                    
-               
+                {/* Si mode vue d'ensemble, organiser par élève avec leurs blocs */}
+                {!codeCompetence ? (
+                    elevesVisibles
+                        .filter(eleve => !isStudentMode || eleve.id === studentInfo?.id) // En mode étudiant, afficher seulement l'élève connecté
+                        .map(eleve => {
+                            const hierarchie = organiserNotesParHierarchie(eleve.id)
+                            const lignes = genererLignesTableauAvecBilan(hierarchie, eleve.id, true) // Mode complet activé
 
-                    // En mode complet, on affiche toujours l'élève même sans notes
+                            // En mode complet, on affiche toujours l'élève même sans notes
 
-                    // Organiser les lignes par bloc
-                    const competencesParBloc = organiserParBloc(competencesN1N2)
-                    const blocsOrdonnes = Object.keys(competencesParBloc).sort((a, b) => parseInt(a) - parseInt(b))
+                            // Organiser les lignes par bloc
+                            const competencesParBloc = organiserParBloc(competencesN1N2)
+                            const blocsOrdonnes = Object.keys(competencesParBloc).sort((a, b) => parseInt(a) - parseInt(b))
 
-                    return (
-                        <div key={eleve.id} className="eleve-card" ref={el => eleveRefs.current[eleve.id] = el}>
-                            <div className="eleve-header">
-                                <div className="eleve-info">
+                            return (
+                                <div key={eleve.id} className="eleve-card" ref={el => eleveRefs.current[eleve.id] = el}>
+                                    <div className="eleve-header">
+                                        <div className="eleve-info">
 
-                                    <img
-                                        src={getPhotoUrl(eleve.photo)}
-                                        alt={eleve.prenom}
-                                        className="photo-eleve"
-                                        onError={(e) => {
-                                            e.target.onerror = null
-                                            e.target.src = '/default.jpg'
-                                        }}
-                                    />
-
-                                    <div>
-                                        <h3>{eleve.prenom} {eleve.nom}</h3>
-                                        <p>Classe: {getNomClasse(eleve.classe_id)}</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Afficher les 3 blocs pour cet élève */}
-                            {blocsOrdonnes.map(numeroBloc => {
-                                // Filtrer les lignes pour ce bloc
-                                const lignesBloc = lignes.filter(ligne => {
-                                    if (ligne.estBilan) {
-                                        // Vérifier si le bilan appartient à ce bloc
-                                        const competenceParent = competencesN1N2.find(c => c.code === ligne.codeCompetence)
-                                        return competenceParent?.enfants.some(enfant => enfant.bloc === parseInt(numeroBloc))
-                                    }
-
-                                    // Utiliser la référence competence pour vérifier le bloc
-                                    if (ligne.competence) {
-                                        return ligne.competence.bloc === parseInt(numeroBloc)
-                                    }
-
-                                    if (ligne.niveau3) {
-                                        // Vérifier si la compétence niveau 3 appartient à ce bloc
-                                        // Trouver la compétence niveau 2 parent
-                                        const codeNiveau2 = ligne.niveau3.code.split('.').slice(0, 2).join('.')
-                                        return competencesParBloc[numeroBloc].some(comp => comp.code === codeNiveau2)
-                                    }
-
-                                    if (ligne.niveau2) {
-                                        // Vérifier si la compétence niveau 2 appartient à ce bloc
-                                        return competencesParBloc[numeroBloc].some(comp => comp.code === ligne.niveau2.code)
-                                    }
-
-                                    if (ligne.niveau1) {
-                                        // Vérifier si le niveau 1 a des enfants dans ce bloc
-                                        const competenceParent = competencesN1N2.find(c => c.code === ligne.niveau1.code)
-                                        return competenceParent?.enfants.some(enfant => enfant.bloc === parseInt(numeroBloc))
-                                    }
-
-                                    return false
-                                })
-
-                                if (lignesBloc.length === 0) {
-                                    // Afficher un bloc vide si pas de notes
-                                    return (
-                                        <div key={numeroBloc} className="bloc-section-eleve" >
-                                            <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <span>{getNomBloc(parseInt(numeroBloc))}</span>
-                                                <button
-                                                    onClick={() => toggleBloc(parseInt(numeroBloc), eleve.id)}
-                                                    style={{
-                                                        backgroundColor: 'white',
-                                                        border: 'none',
-                                                        cursor: 'pointer',
-                                                        padding: '4px 8px',
-                                                        borderRadius: '4px',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        gap: '2px',
-                                                        width: '24px',
-                                                        height: '24px'
-                                                    }}
-                                                    title={blocsFermes.has(parseInt(numeroBloc)) ? 'Ouvrir le bloc' : 'Fermer le bloc'}
-                                                >
-                                                    <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                                    <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                                    <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                                </button>
-                                            </h4>
-                                            {!blocsFermes.has(parseInt(numeroBloc)) && (
-                                                <div className="aucune-note-bloc">
-                                                    <em>Aucune évaluation pour ce bloc</em>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )
-                                }
-
-                                return (
-                                    <div key={numeroBloc} className="bloc-section-eleve">
-                                        <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span>{getNomBloc(parseInt(numeroBloc))}</span>
-                                            <button
-                                                onClick={() => toggleBloc(parseInt(numeroBloc), eleve.id)}
-                                                style={{
-                                                    backgroundColor: 'white',
-                                                    border: 'none',
-                                                    cursor: 'pointer',
-                                                    padding: '4px 8px',
-                                                    borderRadius: '4px',
-                                                    display: 'flex',
-                                                    flexDirection: 'column',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    gap: '2px',
-                                                    width: '24px',
-                                                    height: '24px'
+                                            <img
+                                                src={getPhotoUrl(eleve.photo)}
+                                                alt={eleve.prenom}
+                                                className="photo-eleve"
+                                                onError={(e) => {
+                                                    e.target.onerror = null
+                                                    e.target.src = '/default.jpg'
                                                 }}
-                                                title={blocsFermes.has(parseInt(numeroBloc)) ? 'Ouvrir le bloc' : 'Fermer le bloc'}
-                                            >
-                                                <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                                <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                                <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                            </button>
-                                        </h4>
+                                            />
 
-                                        {!blocsFermes.has(parseInt(numeroBloc)) && (
-                                            <table className="tableau-hierarchique">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Compétence principale</th>
-                                                        <th>Compétence secondaire</th>
-                                                        <th>Critères d'évaluations / Tâches professionnelles</th>
-                                                        <th>Evaluations</th>
-                                                        <th>Positionnement Auto / Enseignant</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {/* Afficher les lignes normales (sans les bilans par compétence) */}
-                                                    {lignesBloc.filter(ligne => !ligne.estBilan).map((ligne, index) => (
-                                                        <tr key={index}
+                                            <div>
+                                                <h3>{eleve.prenom} {eleve.nom}</h3>
+                                                <p>Classe: {getNomClasse(eleve.classe_id)}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Afficher les 3 blocs pour cet élève */}
+                                    {blocsOrdonnes.map(numeroBloc => {
+                                        // Filtrer les lignes pour ce bloc
+                                        const lignesBloc = lignes.filter(ligne => {
+                                            if (ligne.estBilan) {
+                                                // Vérifier si le bilan appartient à ce bloc
+                                                const competenceParent = competencesN1N2.find(c => c.code === ligne.codeCompetence)
+                                                return competenceParent?.enfants.some(enfant => enfant.bloc === parseInt(numeroBloc))
+                                            }
+
+                                            // Utiliser la référence competence pour vérifier le bloc
+                                            if (ligne.competence) {
+                                                return ligne.competence.bloc === parseInt(numeroBloc)
+                                            }
+
+                                            if (ligne.niveau3) {
+                                                // Vérifier si la compétence niveau 3 appartient à ce bloc
+                                                // Trouver la compétence niveau 2 parent
+                                                const codeNiveau2 = ligne.niveau3.code.split('.').slice(0, 2).join('.')
+                                                return competencesParBloc[numeroBloc].some(comp => comp.code === codeNiveau2)
+                                            }
+
+                                            if (ligne.niveau2) {
+                                                // Vérifier si la compétence niveau 2 appartient à ce bloc
+                                                return competencesParBloc[numeroBloc].some(comp => comp.code === ligne.niveau2.code)
+                                            }
+
+                                            if (ligne.niveau1) {
+                                                // Vérifier si le niveau 1 a des enfants dans ce bloc
+                                                const competenceParent = competencesN1N2.find(c => c.code === ligne.niveau1.code)
+                                                return competenceParent?.enfants.some(enfant => enfant.bloc === parseInt(numeroBloc))
+                                            }
+
+                                            return false
+                                        })
+
+                                        if (lignesBloc.length === 0) {
+                                            // Afficher un bloc vide si pas de notes
+                                            return (
+                                                <div key={numeroBloc} className="bloc-section-eleve" >
+                                                    <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <span>{getNomBloc(parseInt(numeroBloc))}</span>
+                                                        <button
+                                                            onClick={() => toggleBloc(parseInt(numeroBloc), eleve.id)}
                                                             style={{
-                                                                backgroundColor: ligne.niveau1 ? getCouleurFondCompetence(ligne.niveau1.code) : 'transparent'
-                                                            }}>
-                                                            <td className="cell-niveau1">
-                                                                {ligne.niveau1 && (
-                                                                    <div>
-                                                                        <strong>{ligne.niveau1.code}</strong>
-                                                                        <br />
-                                                                        <small>{ligne.niveau1.nom}</small>
-                                                                        
-                                                                        {/* Petites pastilles pour les évaluations N1 */}
-                                                                        {(() => {
-                                                                            // Ne pas afficher les pastilles N1 en mode vue d'ensemble
-                                                                            if (!codeCompetence) return null
-                                                                            
-                                                                            // Ne pas afficher les pastilles N1 si on a sélectionné cette même compétence N1
-                                                                            if (codeCompetence === ligne.niveau1.code) return null
-                                                                            
-                                                                            // Ne pas afficher les pastilles N1 dans les bilans car on voit déjà les N1 dans les évaluations
-                                                                            if (ligne.estBilan) return null
-                                                                            
-                                                                            const evaluationsN1 = getEvaluationsN1PourN1(eleve.id, ligne.niveau1.code)
-                                                                            if (evaluationsN1.length === 0) return null
-                                                                            
-                                                                            return (
-                                                                                <div style={{ 
-                                                                                    marginTop: '5px',
-                                                                                    display: 'flex', 
-                                                                                    gap: '2px', 
-                                                                                    flexWrap: 'wrap', 
-                                                                                    alignItems: 'center' 
-                                                                                }}>
-                                                                                   
-                                                                                    {evaluationsN1.map((note, i) => (
+                                                                backgroundColor: 'white',
+                                                                border: 'none',
+                                                                cursor: 'pointer',
+                                                                padding: '4px 8px',
+                                                                borderRadius: '4px',
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                gap: '2px',
+                                                                width: '24px',
+                                                                height: '24px'
+                                                            }}
+                                                            title={blocsFermes.has(parseInt(numeroBloc)) ? 'Ouvrir le bloc' : 'Fermer le bloc'}
+                                                        >
+                                                            <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                            <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                            <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                        </button>
+                                                    </h4>
+                                                    {!blocsFermes.has(parseInt(numeroBloc)) && (
+                                                        <div className="aucune-note-bloc">
+                                                            <em>Aucune évaluation pour ce bloc</em>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )
+                                        }
+
+                                        return (
+                                            <div key={numeroBloc} className="bloc-section-eleve">
+                                                <h4 className={`bloc-titre-eleve bloc-titre-eleve${parseInt(numeroBloc)}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <span>{getNomBloc(parseInt(numeroBloc))}</span>
+                                                    <button
+                                                        onClick={() => toggleBloc(parseInt(numeroBloc), eleve.id)}
+                                                        style={{
+                                                            backgroundColor: 'white',
+                                                            border: 'none',
+                                                            cursor: 'pointer',
+                                                            padding: '4px 8px',
+                                                            borderRadius: '4px',
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            gap: '2px',
+                                                            width: '24px',
+                                                            height: '24px'
+                                                        }}
+                                                        title={blocsFermes.has(parseInt(numeroBloc)) ? 'Ouvrir le bloc' : 'Fermer le bloc'}
+                                                    >
+                                                        <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                        <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                        <div style={{ width: '12px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
+                                                    </button>
+                                                </h4>
+
+                                                {!blocsFermes.has(parseInt(numeroBloc)) && (
+                                                    <table className="tableau-hierarchique">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Compétence principale</th>
+                                                                <th>Compétence secondaire</th>
+                                                                <th>Critères d'évaluations / Tâches professionnelles</th>
+                                                                <th>Evaluations</th>
+                                                                <th>Positionnement Auto / Enseignant</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {/* Afficher les lignes normales (sans les bilans par compétence) */}
+                                                            {lignesBloc.filter(ligne => !ligne.estBilan).map((ligne, index) => (
+                                                                <tr key={index}
+                                                                    style={{
+                                                                        backgroundColor: ligne.niveau1 ? getCouleurFondCompetence(ligne.niveau1.code) : 'transparent'
+                                                                    }}>
+                                                                    <td className="cell-niveau1">
+                                                                        {ligne.niveau1 && (
+                                                                            <div>
+                                                                                <strong>{ligne.niveau1.code}</strong>
+                                                                                <br />
+                                                                                <small>{ligne.niveau1.nom}</small>
+
+                                                                                {/* Petites pastilles pour les évaluations N1 */}
+                                                                                {(() => {
+                                                                                    // Ne pas afficher les pastilles N1 en mode vue d'ensemble
+                                                                                    if (!codeCompetence) return null
+
+                                                                                    // Ne pas afficher les pastilles N1 si on a sélectionné cette même compétence N1
+                                                                                    if (codeCompetence === ligne.niveau1.code) return null
+
+                                                                                    // Ne pas afficher les pastilles N1 dans les bilans car on voit déjà les N1 dans les évaluations
+                                                                                    if (ligne.estBilan) return null
+
+                                                                                    const evaluationsN1 = getEvaluationsN1PourN1(eleve.id, ligne.niveau1.code)
+                                                                                    if (evaluationsN1.length === 0) return null
+
+                                                                                    return (
+                                                                                        <div style={{
+                                                                                            marginTop: '5px',
+                                                                                            display: 'flex',
+                                                                                            gap: '2px',
+                                                                                            flexWrap: 'wrap',
+                                                                                            alignItems: 'center'
+                                                                                        }}>
+
+                                                                                            {evaluationsN1.map((note, i) => (
+                                                                                                <NotePastille
+                                                                                                    key={i}
+                                                                                                    note={note}
+                                                                                                    disabled={ouvertureModalEnCours}
+                                                                                                    tooltip={creerTooltipEnrichi(note)}
+                                                                                                    size="small"
+                                                                                                    onClick={(note) => {
+                                                                                                        if (!ouvertureModalEnCours) {
+                                                                                                            setNoteDetail(note);
+                                                                                                        }
+                                                                                                    }}
+                                                                                                />
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )
+                                                                                })()}
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="cell-niveau2">
+                                                                        {ligne.niveau2 && (
+                                                                            <div>
+                                                                                <strong>{ligne.niveau2.code}</strong>
+                                                                                <br />
+                                                                                <small>{ligne.niveau2.nom}</small>
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="cell-niveau3">
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                                            {ligne.niveau3 && (
+                                                                                <div>
+                                                                                    <strong>{ligne.niveau3.code}</strong>
+                                                                                    <br />
+                                                                                    <small>{ligne.niveau3.nom}</small>
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* Afficher les évaluations N3 si on est sur une ligne N2 - en mode filtré N1 OU en mode vue d'ensemble */}
+                                                                            {ligne.niveau2?.code && (
+                                                                                (!codeCompetence) || // Mode vue d'ensemble
+                                                                                (codeCompetence && isCompetenceN1(codeCompetence)) // Mode filtré N1
+                                                                            ) && (() => {
+                                                                                const evaluationsN3 = getEvaluationsN3PourN2(eleve.id, ligne.niveau2.code);
+                                                                                if (evaluationsN3.length > 0) {
+                                                                                    return (
+                                                                                        <div style={{
+                                                                                            display: 'flex',
+                                                                                            gap: '2px',
+                                                                                            alignItems: 'center',
+                                                                                            flexWrap: 'wrap',
+                                                                                            paddingTop: '4px',
+                                                                                            marginTop: '4px'
+                                                                                        }}>
+
+                                                                                            {(() => {
+                                                                                                // Regrouper les évaluations par code de compétence
+                                                                                                const evaluationsGroupees = evaluationsN3.reduce((acc, note) => {
+                                                                                                    if (!acc[note.competenceCode]) {
+                                                                                                        acc[note.competenceCode] = [];
+                                                                                                    }
+                                                                                                    acc[note.competenceCode].push(note);
+                                                                                                    return acc;
+                                                                                                }, {});
+
+                                                                                                // Afficher chaque groupe
+                                                                                                return Object.entries(evaluationsGroupees).map(([competenceCode, notes]) => (
+                                                                                                    <div key={competenceCode} style={{
+                                                                                                        display: 'flex',
+                                                                                                        alignItems: 'center',
+                                                                                                        gap: '3px',
+                                                                                                        marginRight: '8px',
+                                                                                                        marginBottom: '2px',
+                                                                                                        flexWrap: 'wrap'
+                                                                                                    }}>
+                                                                                                        <span style={{ fontSize: '10px', color: '#666', marginRight: '3px', flexShrink: 0 }}>
+                                                                                                            {competenceCode}
+                                                                                                        </span>
+                                                                                                        <div style={{
+                                                                                                            display: 'flex',
+                                                                                                            gap: '2px',
+                                                                                                            flexWrap: 'wrap',
+                                                                                                            alignItems: 'center'
+                                                                                                        }}>
+                                                                                                            {notes.map((note, i) => (
+                                                                                                                <NotePastille
+                                                                                                                    key={i}
+                                                                                                                    note={note}
+                                                                                                                    disabled={ouvertureModalEnCours}
+                                                                                                                    tooltip={creerTooltipEnrichi(note)}
+                                                                                                                    size="small"
+                                                                                                                    onClick={(note) => {
+                                                                                                                        if (!ouvertureModalEnCours) {
+                                                                                                                            setNoteDetail(note);
+                                                                                                                        }
+                                                                                                                    }}
+                                                                                                                />
+                                                                                                            ))}
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                ));
+                                                                                            })()}
+                                                                                        </div>
+                                                                                    );
+                                                                                }
+                                                                                return null;
+                                                                            })()}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="cell-notes-hierarchique">
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                                            {/* Évaluations directes de cette ligne */}
+                                                                            {ligne.notes.length > 0 ? (
+                                                                                <div style={{ display: 'flex', gap: '3px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                                                    {ligne.notes.map((note, i) => (
                                                                                         <NotePastille
                                                                                             key={i}
                                                                                             note={note}
                                                                                             disabled={ouvertureModalEnCours}
                                                                                             tooltip={creerTooltipEnrichi(note)}
-                                                                                            size="small"
                                                                                             onClick={(note) => {
-                                                                                                if (!ouvertureModalEnCours) {
-                                                                                                    setNoteDetail(note);
-                                                                                                }
+                                                                                                // Ne pas ouvrir la popup si on est en train d'ouvrir une modal
+                                                                                                if (ouvertureModalEnCours) return;
+                                                                                                // Fermer d'abord toute popup existante avant d'en ouvrir une nouvelle
+                                                                                                setNoteDetail(null);
+                                                                                                setTimeout(() => {
+                                                                                                    // Vérifier encore une fois au moment de l'exécution
+                                                                                                    if (!ouvertureModalEnCours) {
+                                                                                                        setNoteDetail(note);
+                                                                                                    }
+                                                                                                }, 10);
                                                                                             }}
                                                                                         />
                                                                                     ))}
-                                                                                </div>
-                                                                            )
-                                                                        })()}
-                                                                    </div>
-                                                                )}
-                                                            </td>
-                                                            <td className="cell-niveau2">
-                                                                {ligne.niveau2 && (
-                                                                    <div>
-                                                                        <strong>{ligne.niveau2.code}</strong>
-                                                                        <br />
-                                                                        <small>{ligne.niveau2.nom}</small>
-                                                                    </div>
-                                                                )}
-                                                            </td>
-                                                            <td className="cell-niveau3">
-                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                                    {ligne.niveau3 && (
-                                                                        <div>
-                                                                            <strong>{ligne.niveau3.code}</strong>
-                                                                            <br />
-                                                                            <small>{ligne.niveau3.nom}</small>
-                                                                        </div>
-                                                                    )}
-                                                                    
-                                                                    {/* Afficher les évaluations N3 si on est sur une ligne N2 - en mode filtré N1 OU en mode vue d'ensemble */}
-                                                                    {ligne.niveau2?.code && (
-                                                                        (!codeCompetence) || // Mode vue d'ensemble
-                                                                        (codeCompetence && isCompetenceN1(codeCompetence)) // Mode filtré N1
-                                                                    ) && (() => {
-                                                                        const evaluationsN3 = getEvaluationsN3PourN2(eleve.id, ligne.niveau2.code);
-                                                                        if (evaluationsN3.length > 0) {
-                                                                            return (
-                                                                                <div style={{ 
-                                                                                    display: 'flex', 
-                                                                                    gap: '2px', 
-                                                                                    alignItems: 'center', 
-                                                                                    flexWrap: 'wrap',
-                                                                                    paddingTop: '4px',
-                                                                                    marginTop: '4px'
-                                                                                }}>
-                                                                                    
-                                                                                    {(() => {
-                                                                                        // Regrouper les évaluations par code de compétence
-                                                                                        const evaluationsGroupees = evaluationsN3.reduce((acc, note) => {
-                                                                                            if (!acc[note.competenceCode]) {
-                                                                                                acc[note.competenceCode] = [];
-                                                                                            }
-                                                                                            acc[note.competenceCode].push(note);
-                                                                                            return acc;
-                                                                                        }, {});
+                                                                                    {/* Bouton + pour ajouter une nouvelle évaluation - maintenant pour tous les niveaux - masqué en mode élève */}
+                                                                                    {!isStudentMode && (
+                                                                                        <button
+                                                                                            style={{
+                                                                                                display: 'inline-block',
+                                                                                                width: '20px',
+                                                                                                height: '20px',
+                                                                                                borderRadius: '50%',
+                                                                                                backgroundColor: '#f0f0f0',
+                                                                                                border: '1px solid #999',
+                                                                                                cursor: 'pointer',
+                                                                                                fontSize: '12px',
+                                                                                                fontWeight: 'bold',
+                                                                                                color: '#666',
 
-                                                                                        // Afficher chaque groupe
-                                                                                        return Object.entries(evaluationsGroupees).map(([competenceCode, notes]) => (
-                                                                                            <div key={competenceCode} style={{ 
-                                                                                                display: 'flex', 
-                                                                                                alignItems: 'center', 
-                                                                                                gap: '3px', 
-                                                                                                marginRight: '8px',
-                                                                                                marginBottom: '2px',
-                                                                                                flexWrap: 'wrap'
-                                                                                            }}>
-                                                                                                <span style={{ fontSize: '10px', color: '#666', marginRight: '3px', flexShrink: 0 }}>
-                                                                                                    {competenceCode}
-                                                                                                </span>
-                                                                                                <div style={{ 
-                                                                                                    display: 'flex', 
-                                                                                                    gap: '2px', 
-                                                                                                    flexWrap: 'wrap', 
-                                                                                                    alignItems: 'center' 
-                                                                                                }}>
-                                                                                                    {notes.map((note, i) => (
-                                                                                                        <NotePastille
-                                                                                                            key={i}
-                                                                                                            note={note}
-                                                                                                            disabled={ouvertureModalEnCours}
-                                                                                                            tooltip={creerTooltipEnrichi(note)}
-                                                                                                            size="small"
-                                                                                                            onClick={(note) => {
-                                                                                                                if (!ouvertureModalEnCours) {
-                                                                                                                    setNoteDetail(note);
-                                                                                                                }
-                                                                                                            }}
-                                                                                                        />
-                                                                                                    ))}
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        ));
-                                                                                    })()}
+                                                                                                alignItems: 'center',
+                                                                                                justifyContent: 'center',
+                                                                                                padding: '0',
+                                                                                                lineHeight: '1',
+                                                                                                marginLeft: '2px'
+                                                                                            }}
+                                                                                            title="Ajouter une nouvelle évaluation"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                setOuvertureModalEnCours(true); // Bloquer les popups
+                                                                                                setNoteDetail(null); // Fermer toute popup d'info
+                                                                                                // Déterminer le code de compétence selon le niveau
+                                                                                                let codeCompetence;
+                                                                                                if (ligne.niveau3) {
+                                                                                                    codeCompetence = ligne.niveau3.code;
+                                                                                                } else if (ligne.niveau2) {
+                                                                                                    codeCompetence = ligne.niveau2.code;
+                                                                                                } else if (ligne.niveau1) {
+                                                                                                    codeCompetence = ligne.niveau1.code;
+                                                                                                }
+                                                                                                if (codeCompetence) {
+                                                                                                    // Délai pour s'assurer que la popup se ferme avant d'ouvrir la modal
+                                                                                                    setTimeout(() => {
+                                                                                                        handleClickEleve(eleve, codeCompetence);
+                                                                                                        // Remettre à false après un délai pour permettre les futures popups
+                                                                                                        setTimeout(() => setOuvertureModalEnCours(false), 100);
+                                                                                                    }, 50);
+                                                                                                }
+                                                                                            }}
+                                                                                        >+</button>
+                                                                                    )}
                                                                                 </div>
-                                                                            );
-                                                                        }
-                                                                        return null;
-                                                                    })()}
-                                                                </div>
-                                                            </td>
-                                                            <td className="cell-notes-hierarchique">
-                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                                    {/* Évaluations directes de cette ligne */}
-                                                                    {ligne.notes.length > 0 ? (
-                                                                        <div style={{ display: 'flex', gap: '3px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                                            {ligne.notes.map((note, i) => (
-                                                                                <NotePastille
-                                                                                    key={i}
-                                                                                    note={note}
-                                                                                    disabled={ouvertureModalEnCours}
-                                                                                    tooltip={creerTooltipEnrichi(note)}
-                                                                                    onClick={(note) => {
-                                                                                        // Ne pas ouvrir la popup si on est en train d'ouvrir une modal
-                                                                                        if (ouvertureModalEnCours) return;
-                                                                                        // Fermer d'abord toute popup existante avant d'en ouvrir une nouvelle
-                                                                                        setNoteDetail(null);
-                                                                                        setTimeout(() => {
-                                                                                            // Vérifier encore une fois au moment de l'exécution
-                                                                                            if (!ouvertureModalEnCours) {
-                                                                                                setNoteDetail(note);
-                                                                                            }
-                                                                                        }, 10);
-                                                                                    }}
-                                                                                />
-                                                                            ))}
-                                                                            {/* Bouton + pour ajouter une nouvelle évaluation - maintenant pour tous les niveaux - masqué en mode élève */}
-                                                                            {!isStudentMode && (
-                                                                                <button
+                                                                            ) : (
+                                                                                // Afficher pastille grise pour tous les niveaux - non cliquable en mode élève
+                                                                                <div
                                                                                     style={{
-                                                                                        display: 'inline-block',
+                                                                                        display: 'inline-flex',
+                                                                                        alignItems: 'center',
+                                                                                        justifyContent: 'center',
                                                                                         width: '20px',
                                                                                         height: '20px',
                                                                                         borderRadius: '50%',
-                                                                                        backgroundColor: '#f0f0f0',
-                                                                                        border: '1px solid #999',
-                                                                                        cursor: 'pointer',
+                                                                                        backgroundColor: '#cccccc',
+                                                                                        border: '2px solid #999',
+                                                                                        cursor: isStudentMode ? 'default' : 'pointer',
                                                                                         fontSize: '12px',
                                                                                         fontWeight: 'bold',
-                                                                                        color: '#666',
-
-                                                                                        alignItems: 'center',
-                                                                                        justifyContent: 'center',
-                                                                                        padding: '0',
-                                                                                        lineHeight: '1',
-                                                                                        marginLeft: '2px'
+                                                                                        color: '#666'
                                                                                     }}
-                                                                                    title="Ajouter une nouvelle évaluation"
-                                                                                    onClick={(e) => {
+                                                                                    title={isStudentMode ? "Non évalué" : "Non évalué - Cliquer pour évaluer"}
+                                                                                    onClick={!isStudentMode ? (e) => {
                                                                                         e.stopPropagation();
                                                                                         setOuvertureModalEnCours(true); // Bloquer les popups
                                                                                         setNoteDetail(null); // Fermer toute popup d'info
@@ -2704,696 +2930,248 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                                                                                                 setTimeout(() => setOuvertureModalEnCours(false), 100);
                                                                                             }, 50);
                                                                                         }
-                                                                                    }}
-                                                                                >+</button>
+                                                                                    } : undefined}
+                                                                                >+</div>
                                                                             )}
                                                                         </div>
-                                                                    ) : (
-                                                                        // Afficher pastille grise pour tous les niveaux - non cliquable en mode élève
-                                                                        <div
-                                                                            style={{
-                                                                                display: 'inline-flex',
-                                                                                alignItems: 'center',
-                                                                                justifyContent: 'center',
-                                                                                width: '20px',
-                                                                                height: '20px',
-                                                                                borderRadius: '50%',
-                                                                                backgroundColor: '#cccccc',
-                                                                                border: '2px solid #999',
-                                                                                cursor: isStudentMode ? 'default' : 'pointer',
-                                                                                fontSize: '12px',
-                                                                                fontWeight: 'bold',
-                                                                                color: '#666'
-                                                                            }}
-                                                                            title={isStudentMode ? "Non évalué" : "Non évalué - Cliquer pour évaluer"}
-                                                                            onClick={!isStudentMode ? (e) => {
-                                                                                e.stopPropagation();
-                                                                                setOuvertureModalEnCours(true); // Bloquer les popups
-                                                                                setNoteDetail(null); // Fermer toute popup d'info
-                                                                                // Déterminer le code de compétence selon le niveau
-                                                                                let codeCompetence;
-                                                                                if (ligne.niveau3) {
-                                                                                    codeCompetence = ligne.niveau3.code;
-                                                                                } else if (ligne.niveau2) {
-                                                                                    codeCompetence = ligne.niveau2.code;
-                                                                                } else if (ligne.niveau1) {
-                                                                                    codeCompetence = ligne.niveau1.code;
-                                                                                }
-                                                                                if (codeCompetence) {
-                                                                                    // Délai pour s'assurer que la popup se ferme avant d'ouvrir la modal
-                                                                                    setTimeout(() => {
-                                                                                        handleClickEleve(eleve, codeCompetence);
-                                                                                        // Remettre à false après un délai pour permettre les futures popups
-                                                                                        setTimeout(() => setOuvertureModalEnCours(false), 100);
-                                                                                    }, 50);
-                                                                                }
-                                                                            } : undefined}
-                                                                        >+</div>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="cell-positionnement">
-                                                                <div style={{ display: 'flex', gap: '5px', alignItems: 'center', justifyContent: 'center' }}>
-                                                                    {ligne.niveau2?.code && (
-                                                                        <>
-                                                                            {/* En mode enseignant, toujours afficher d'abord le positionnement automatique */}
-                                                                            {/* En mode élève, l'afficher seulement s'il n'y a pas de positionnement enseignant */}
-                                                                            {((!ligne.positionnementEnseignant && isStudentMode) || (!isStudentMode)) && (
-                                                                                <div
-                                                                                    className="pastille-auto"
-                                                                                    style={{
-                                                                                        backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris')
-                                                                                    }}
-                                                                                    title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                    }}
-                                                                                >
-                                                                                    {isStudentMode ? 'P' : 'A'}
-                                                                                </div>
-                                                                            )}
-
-                                                                            {/* Afficher ensuite le positionnement enseignant s'il existe */}
-                                                                            {ligne.positionnementEnseignant && (
-                                                                                <div
-                                                                                    style={{
-                                                                                        width: '20px',
-                                                                                        height: '20px',
-                                                                                        borderRadius: '50%',
-                                                                                        backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
-                                                                                        border: '2px solid #333',
-                                                                                        cursor: isStudentMode ? 'default' : 'pointer',
-                                                                                        fontSize: '10px',
-                                                                                        color: 'white',
-                                                                                        fontWeight: 'bold',
-                                                                                        display: 'flex',
-                                                                                        alignItems: 'center',
-                                                                                        justifyContent: 'center',
-                                                                                        marginLeft: !isStudentMode && ligne.positionnementAuto ? '5px' : '0'
-                                                                                    }}
-                                                                                    title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        if (isStudentMode || ouvertureModalEnCours) return;
-                                                                                        const codeCompetence = ligne.niveau2?.code
-                                                                                        if (codeCompetence) {
-                                                                                            handleClickPositionnement(eleve, codeCompetence)
-                                                                                        }
-                                                                                    }}
-                                                                                >
-                                                                                    {isStudentMode ? 'P' : 'E'}
-                                                                                </div>
-                                                                            )}
-
-                                                                            {/* Bouton pour créer un positionnement enseignant (seulement si pas déjà existant et pas en mode élève) */}
-                                                                            {!ligne.positionnementEnseignant && !isStudentMode && (
-                                                                                <button
-                                                                                    className="btn-positionner"
-                                                                                    style={{ marginLeft: '5px' }}
-                                                                                    title="Cliquer pour définir un positionnement enseignant"
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        handleClickPositionnement(eleve, ligne.niveau2.code)
-                                                                                    }}
-                                                                                >
-                                                                                    + Positionner
-                                                                                </button>
-                                                                            )}
-                                                                        </>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        )}
-
-                                        {/* Bilan du bloc - toujours affiché */}
-                                        {(() => {
-                                            const bilanBloc = calculerBilanBloc(parseInt(numeroBloc), eleve.id)
-                                            if (!bilanBloc) return null
-
-                                            return (
-                                                <div className={`bloc-section-bilan bloc-section-bilan${parseInt(numeroBloc)}`}
-                                                >
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                        <span>🏆 BILAN {getNomBloc(parseInt(numeroBloc))}</span>
-
-                                                    </div>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        {/* Pastille note principale */}
-                                                        <div
-                                                            style={{
-                                                                display: 'inline-block',
-                                                                width: '35px',
-                                                                height: '35px',
-                                                                padding: '2px',
-                                                                borderRadius: '50%',
-                                                                backgroundColor: getCouleurCss(bilanBloc.couleur),
-                                                                border: `3px solid white`,
-                                                                cursor: 'pointer',
-                                                                color: 'white',
-                                                                fontSize: '13px',
-                                                                fontWeight: 'bold',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center'
-                                                            }}
-                                                            title={`Positionnement bloc: ${bilanBloc.couleur} (${(bilanBloc.moyenne * 20 / 3).toFixed(1)}/20)`}
-                                                        >
-                                                            {(bilanBloc.moyenne * 20 / 3).toFixed(1)}
-                                                        </div>
-                                                        
-                                                        {/* Pastille note de progression */}
-                                                        <div
-                                                            style={{
-                                                                display: 'inline-block',
-                                                                width: '35px',
-                                                                height: '35px',
-                                                                padding: '2px',
-                                                                borderRadius: '50%',
-                                                                backgroundColor: '#6c757d',
-                                                                border: `3px solid white`,
-                                                                cursor: 'pointer',
-                                                                color: 'white',
-                                                                fontSize: '13px',
-                                                                fontWeight: 'bold',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center'
-                                                            }}
-                                                            title={`Note de progression: ${calculerNoteProgression(eleve.id, numeroBloc)}/20 (basée sur les pastilles par rapport au meilleur)`}
-                                                        >
-                                                            {calculerNoteProgression(eleve.id, numeroBloc)}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )
-                                        })()}
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    )
-                })
-            ) : (
-                /* Mode compétence spécifique - affichage classique */
-                elevesVisibles
-                    .filter(eleve => !isStudentMode || eleve.id === studentInfo?.id) // En mode étudiant, afficher seulement l'élève connecté
-                    .map(eleve => {
-                    const hierarchie = organiserNotesParHierarchie(eleve.id)
-                    // Activer le mode complet si on sélectionne une compétence N1 pour voir toutes les N2
-                    const modeComplet = isCompetenceN1(codeCompetence)
-                    const lignes = genererLignesTableauAvecBilan(hierarchie, eleve.id, modeComplet)
-
-
-                    // Afficher l'élève même s'il n'a pas de notes pour la compétence sélectionnée
-
-
-
-                    //if (lignes.length === 0) return null // En mode vue d'ensemble, ne pas afficher les élèves sans notes
-
-                    return (
-                        <div key={eleve.id} className="eleve-card" ref={el => eleveRefs.current[eleve.id] = el}>
-                            <div className="eleve-header">
-                                <div className="eleve-info">
-                                    {eleve && (
-                                        <img
-                                            src={getPhotoUrl(eleve.photo)}
-                                            alt={eleve.prenom}
-                                            className="photo-eleve"
-                                            onError={(e) => {
-                                                e.target.onerror = null
-                                                e.target.src = '/default.jpg'
-                                            }}
-                                        />
-                                    )}
-                                    <div>
-                                        <h3> <span>{eleve.nom} {eleve.prenom}</span></h3>
-                                        <p>Classe: {getNomClasse(eleve.classe_id)}</p>
-                                    </div>
-                                </div>
-                                <NoteCompetence
-                                    eleve={eleve}
-                                    codeCompetence={codeCompetence}
-                                    isStudentMode={isStudentMode}
-                                    getDerniereCouleurDirecte={getDerniereCouleurDirecte}
-                                    commentairesEleves={commentairesEleves}
-                                    setCommentairesEleves={setCommentairesEleves}
-                                    getCommentaireDerniereEvaluation={getCommentaireDerniereEvaluation}
-                                    ajouterNoteDirecte={ajouterNoteAvecSuivi}
-                                    devoirViewVisible={devoirViewVisible}
-                                    devoirViewRef={devoirViewRef}
-                                    notes={notes}
-                                    dernieresEvaluationsDirectes={dernieresEvaluationsDirectes}
-                                    teacherInfo={teacherInfo}
-                                    devoirKeyVisible={devoirKeyVisible}
-                                    devoirSelectionne={devoirSelectionne}
-                                    devoirs={devoirs}
-                                    setDernieresEvaluationsDirectes={setDernieresEvaluationsDirectes}
-                                    nouveauDevoirNom={nouveauDevoirNom}
-                                    setNotes={setNotes}
-                                />
-                            </div>
-
-
-
-                            {/** Affichage conditionnel : message si pas d'évaluations, sinon tableau */}
-                            {lignes.length === 0 && codeCompetence ? (
-                                <div className="aucune-note">
-                                    <em>Aucune évaluation pour cette compétence</em>
-                                </div>
-                            ) : (<> <div style={{ textAlign: 'right', margin: '15px 20px 15px 0' }}>
-                                <button
-                                    style={{
-                                        backgroundColor: 'white',
-                                        border: '1px solid #ddd',
-                                        color: '#666',
-                                        fontSize: '14px',
-                                        padding: '8px',
-                                        borderRadius: '6px',
-                                        cursor: 'pointer',
-                                        fontWeight: 'normal',
-                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                        width: '36px',
-                                        height: '36px',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '3px',
-                                        marginLeft: '20px',
-                                    }}
-                                    onClick={() => toggleTableauVisible(eleve.id)}
-                                    title={tableauVisible ? 'Masquer les autres évaluations' : 'Voir les autres évaluations'}
-                                >
-                                    <div style={{ width: '18px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                    <div style={{ width: '18px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                    <div style={{ width: '18px', height: '2px', backgroundColor: '#666', borderRadius: '1px' }}></div>
-                                </button>
-                            </div>
-
-                            {tableauVisible && (
-                                <table className="tableau-hierarchique">
-                                    <thead>
-                                        <tr>
-                                            <th>Compétence principale</th>
-                                            <th>Compétence secondaire</th>
-                                            <th>Critères d'évaluations / Tâches professionnelles</th>
-                                            <th>Evaluations</th>
-                                            <th>Positionnement Auto/Prof</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {lignes.filter(ligne => !ligne.estBilan).map((ligne, index) => {
-                                            // En mode filtré, on n'affiche pas les lignes de bilan
-                                            // Cas normal pour toutes les lignes
-                                            return (
-                                                <tr key={index}
-                                                    style={{
-                                                        backgroundColor: ligne.niveau1 ? getCouleurFondCompetence(ligne.niveau1.code) : 'transparent'
-                                                    }}>
-                                                    <td className="cell-niveau1">
-                                                        {ligne.niveau1 && (
-                                                            <div>
-                                                                <strong>{ligne.niveau1.code}</strong>
-                                                                <br />
-                                                                <small>{ligne.niveau1.nom}</small>
-                                                                
-                                                                {/* Petites pastilles pour les évaluations N1 */}
-                                                                {(() => {
-                                                                    // Ne pas afficher les pastilles N1 en mode vue d'ensemble
-                                                                    if (!codeCompetence) return null
-                                                                    
-                                                                    // Ne pas afficher les pastilles N1 si on a sélectionné cette même compétence N1
-                                                                    if (codeCompetence === ligne.niveau1.code) return null
-                                                                    
-                                                                    // Ne pas afficher les pastilles N1 dans les bilans car on voit déjà les N1 dans les évaluations
-                                                                    if (ligne.estBilan) return null
-                                                                    
-                                                                    const evaluationsN1 = getEvaluationsN1PourN1(eleve.id, ligne.niveau1.code)
-                                                                    if (evaluationsN1.length === 0) return null
-                                                                    
-                                                                    return (
-                                                                        <div style={{ 
-                                                                            marginTop: '5px',
-                                                                            display: 'flex', 
-                                                                            gap: '2px', 
-                                                                            flexWrap: 'wrap', 
-                                                                            alignItems: 'center' 
-                                                                        }}>
-                                                                           
-                                                                            {evaluationsN1.map((note, i) => (
-                                                                                <NotePastille
-                                                                                    key={i}
-                                                                                    note={note}
-                                                                                    disabled={ouvertureModalEnCours}
-                                                                                    tooltip={creerTooltipEnrichi(note)}
-                                                                                    size="small"
-                                                                                    onClick={(note) => {
-                                                                                        if (!ouvertureModalEnCours) {
-                                                                                            setNoteDetail(note);
-                                                                                        }
-                                                                                    }}
-                                                                                />
-                                                                            ))}
-                                                                        </div>
-                                                                    )
-                                                                })()}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="cell-niveau2">
-                                                        {ligne.niveau2 && (
-                                                            <div>
-                                                                <strong>{ligne.niveau2.code}</strong>
-                                                                <br />
-                                                                <small>{ligne.niveau2.nom}</small>
-                                                                
-                                                                {/* Petites pastilles pour les évaluations N2 en mode filtré N3 */}
-                                                                {(() => {
-                                                                    // Afficher les pastilles N2 uniquement en mode filtré N3
-                                                                    if (!codeCompetence || !isCompetenceN3(codeCompetence)) return null
-                                                                    
-                                                                    // Ne pas afficher les pastilles N2 si on a sélectionné cette même compétence N2
-                                                                    if (codeCompetence === ligne.niveau2.code) return null
-                                                                    
-                                                                    // Ne pas afficher les pastilles N2 dans les bilans car on voit déjà les N2 dans les évaluations
-                                                                    if (ligne.estBilan) return null
-                                                                    
-                                                                    const evaluationsN2 = getEvaluationsN2PourN2(eleve.id, ligne.niveau2.code)
-                                                                    if (evaluationsN2.length === 0) return null
-                                                                    
-                                                                    return (
-                                                                        <div style={{ 
-                                                                            marginTop: '5px',
-                                                                            display: 'flex', 
-                                                                            gap: '2px', 
-                                                                            flexWrap: 'wrap', 
-                                                                            alignItems: 'center' 
-                                                                        }}>
-                                                                           
-                                                                            {evaluationsN2.map((note, i) => (
-                                                                                <NotePastille
-                                                                                    key={i}
-                                                                                    note={note}
-                                                                                    disabled={ouvertureModalEnCours}
-                                                                                    tooltip={creerTooltipEnrichi(note)}
-                                                                                    size="small"
-                                                                                    onClick={(note) => {
-                                                                                        if (!ouvertureModalEnCours) {
-                                                                                            setNoteDetail(note);
-                                                                                        }
-                                                                                    }}
-                                                                                />
-                                                                            ))}
-                                                                        </div>
-                                                                    )
-                                                                })()}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="cell-niveau3">
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                            {ligne.niveau3 && (
-                                                                <div>
-                                                                    <strong>{ligne.niveau3.code}</strong>
-                                                                    <br />
-                                                                    <small>{ligne.niveau3.nom}</small>
-                                                                </div>
-                                                            )}
-                                                            
-                                                            {/* Afficher les évaluations N3 si on est sur une ligne N2 - en mode filtré N1 OU en mode vue d'ensemble */}
-                                                            {ligne.niveau2?.code && (
-                                                                (!codeCompetence) || // Mode vue d'ensemble
-                                                                (codeCompetence && isCompetenceN1(codeCompetence)) // Mode filtré N1
-                                                            ) && (() => {
-                                                                const evaluationsN3 = getEvaluationsN3PourN2(eleve.id, ligne.niveau2.code);
-                                                                
-                                                                if (evaluationsN3.length > 0) {
-                                                                    return (
-                                                                        <div style={{ 
-                                                                            display: 'flex', 
-                                                                            gap: '2px', 
-                                                                            alignItems: 'center', 
-                                                                            flexWrap: 'wrap',
-                                                                            paddingTop: '4px',
-                                                                            marginTop: '4px'
-                                                                        }}>
-                                                                            
-                                                                            {(() => {
-                                                                                // Regrouper les évaluations par code de compétence
-                                                                                const evaluationsGroupees = evaluationsN3.reduce((acc, note) => {
-                                                                                    if (!acc[note.competenceCode]) {
-                                                                                        acc[note.competenceCode] = [];
-                                                                                    }
-                                                                                    acc[note.competenceCode].push(note);
-                                                                                    return acc;
-                                                                                }, {});
-
-                                                                                // Afficher chaque groupe
-                                                                                return Object.entries(evaluationsGroupees).map(([competenceCode, notes]) => (
-                                                                                    <div key={competenceCode} style={{ 
-                                                                                        display: 'flex', 
-                                                                                        alignItems: 'center', 
-                                                                                        gap: '3px', 
-                                                                                        marginRight: '8px',
-                                                                                        marginBottom: '2px',
-                                                                                        flexWrap: 'wrap'
-                                                                                    }}>
-                                                                                        <span style={{ fontSize: '10px', color: '#666', marginRight: '3px', flexShrink: 0 }}>
-                                                                                            {competenceCode}
-                                                                                        </span>
-                                                                                        <div style={{ 
-                                                                                            display: 'flex', 
-                                                                                            gap: '2px', 
-                                                                                            flexWrap: 'wrap', 
-                                                                                            alignItems: 'center' 
-                                                                                        }}>
-                                                                                            {notes.map((note, i) => (
-                                                                                                <NotePastille
-                                                                                                    key={i}
-                                                                                                    note={note}
-                                                                                                    disabled={ouvertureModalEnCours}
-                                                                                                    tooltip={creerTooltipEnrichi(note)}
-                                                                                                    size="small"
-                                                                                                    onClick={(note) => {
-                                                                                                        if (!ouvertureModalEnCours) {
-                                                                                                            setNoteDetail(note);
-                                                                                                        }
-                                                                                                    }}
-                                                                                                />
-                                                                                            ))}
+                                                                    </td>
+                                                                    <td className="cell-positionnement">
+                                                                        <div style={{ display: 'flex', gap: '5px', alignItems: 'center', justifyContent: 'center' }}>
+                                                                            {ligne.niveau2?.code && (
+                                                                                <>
+                                                                                    {/* En mode enseignant, toujours afficher d'abord le positionnement automatique */}
+                                                                                    {/* En mode élève, l'afficher seulement s'il n'y a pas de positionnement enseignant */}
+                                                                                    {((!ligne.positionnementEnseignant && isStudentMode) || (!isStudentMode)) && (
+                                                                                        <div
+                                                                                            className="pastille-auto"
+                                                                                            style={{
+                                                                                                backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris')
+                                                                                            }}
+                                                                                            title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                            }}
+                                                                                        >
+                                                                                            {isStudentMode ? 'P' : 'A'}
                                                                                         </div>
-                                                                                    </div>
-                                                                                ));
-                                                                            })()}
+                                                                                    )}
+
+                                                                                    {/* Afficher ensuite le positionnement enseignant s'il existe */}
+                                                                                    {ligne.positionnementEnseignant && (
+                                                                                        <div
+                                                                                            style={{
+                                                                                                width: '20px',
+                                                                                                height: '20px',
+                                                                                                borderRadius: '50%',
+                                                                                                backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
+                                                                                                border: '2px solid #333',
+                                                                                                cursor: isStudentMode ? 'default' : 'pointer',
+                                                                                                fontSize: '10px',
+                                                                                                color: 'white',
+                                                                                                fontWeight: 'bold',
+                                                                                                display: 'flex',
+                                                                                                alignItems: 'center',
+                                                                                                justifyContent: 'center',
+                                                                                                marginLeft: !isStudentMode && ligne.positionnementAuto ? '5px' : '0'
+                                                                                            }}
+                                                                                            title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                if (isStudentMode || ouvertureModalEnCours) return;
+                                                                                                const codeCompetence = ligne.niveau2?.code
+                                                                                                if (codeCompetence) {
+                                                                                                    handleClickPositionnement(eleve, codeCompetence)
+                                                                                                }
+                                                                                            }}
+                                                                                        >
+                                                                                            {isStudentMode ? 'P' : 'E'}
+                                                                                        </div>
+                                                                                    )}
+
+                                                                                    {/* Bouton pour créer un positionnement enseignant (seulement si pas déjà existant et pas en mode élève) */}
+                                                                                    {!ligne.positionnementEnseignant && !isStudentMode && (
+                                                                                        <button
+                                                                                            className="btn-positionner"
+                                                                                            style={{ marginLeft: '5px' }}
+                                                                                            title="Cliquer pour définir un positionnement enseignant"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                handleClickPositionnement(eleve, ligne.niveau2.code)
+                                                                                            }}
+                                                                                        >
+                                                                                            + Positionner
+                                                                                        </button>
+                                                                                    )}
+                                                                                </>
+                                                                            )}
                                                                         </div>
-                                                                    );
-                                                                }
-                                                                return null;
-                                                            })()}
-                                                        </div>
-                                                    </td>
-                                                    <td className="cell-notes-hierarchique">
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                            {/* Évaluations directes de cette ligne */}
-                                                            {ligne.notes.length > 0 ? (
-                                                                <div style={{ display: 'flex', gap: '3px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                                                    {ligne.notes.map((note, i) => (
-                                                                        <NotePastille
-                                                                            key={i}
-                                                                            note={note}
-                                                                            disabled={ouvertureModalEnCours}
-                                                                            tooltip={creerTooltipEnrichi(note)}
-                                                                            onClick={(note) => {
-                                                                                // Ne pas ouvrir la popup si on est en train d'ouvrir une modal
-                                                                                if (ouvertureModalEnCours) return;
-                                                                                // Fermer d'abord toute popup existante avant d'en ouvrir une nouvelle
-                                                                                setNoteDetail(null);
-                                                                                setTimeout(() => {
-                                                                                    // Vérifier encore une fois au moment de l'exécution
-                                                                                    if (!ouvertureModalEnCours) {
-                                                                                        setNoteDetail(note);
-                                                                                    }
-                                                                                }, 10);
-                                                                            }}
-                                                                        />
-                                                                    ))}
-                                                                    {/* Bouton + pour ajouter une nouvelle évaluation - maintenant pour tous les niveaux - masqué en mode élève */}
-                                                                    {!isStudentMode && (
-                                                                        <button
-                                                                            style={{
-                                                                                display: 'inline-block',
-                                                                                width: '20px',
-                                                                                height: '20px',
-                                                                                borderRadius: '50%',
-                                                                                backgroundColor: '#f0f0f0',
-                                                                                border: '1px solid #999',
-                                                                                cursor: 'pointer',
-                                                                                fontSize: '12px',
-                                                                                fontWeight: 'bold',
-                                                                                color: '#666',
-                                                                                alignItems: 'center',
-                                                                                justifyContent: 'center',
-                                                                                padding: '0',
-                                                                                lineHeight: '1',
-                                                                                marginLeft: '2px'
-                                                                            }}
-                                                                            title="Ajouter une nouvelle évaluation"
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                setOuvertureModalEnCours(true); // Bloquer les popups
-                                                                                setNoteDetail(null); // Fermer toute popup d'info
-                                                                                // Déterminer le code de compétence selon le niveau
-                                                                                let codeCompetence;
-                                                                                if (ligne.niveau3) {
-                                                                                    codeCompetence = ligne.niveau3.code;
-                                                                                } else if (ligne.niveau2) {
-                                                                                    codeCompetence = ligne.niveau2.code;
-                                                                                } else if (ligne.niveau1) {
-                                                                                    codeCompetence = ligne.niveau1.code;
-                                                                                }
-                                                                                if (codeCompetence) {
-                                                                                    // Délai pour s'assurer que la popup se ferme avant d'ouvrir la modal
-                                                                                    setTimeout(() => {
-                                                                                        handleClickEleve(eleve, codeCompetence);
-                                                                                        // Remettre à false après un délai pour permettre les futures popups
-                                                                                        setTimeout(() => setOuvertureModalEnCours(false), 100);
-                                                                                    }, 50);
-                                                                                }
-                                                                            }}
-                                                                        >+</button>
-                                                                    )}
-                                                                </div>
-                                                            ) : (
-                                                                // Afficher pastille grise pour tous les niveaux - non cliquable en mode élève
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                )}
+
+                                                {/* Bilan du bloc - toujours affiché */}
+                                                {(() => {
+                                                    const bilanBloc = calculerBilanBloc(parseInt(numeroBloc), eleve.id)
+                                                    if (!bilanBloc) return null
+
+                                                    return (
+                                                        <div className={`bloc-section-bilan bloc-section-bilan${parseInt(numeroBloc)}`}
+                                                        >
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                                <span>🏆 BILAN {getNomBloc(parseInt(numeroBloc))}</span>
+
+                                                            </div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                {/* Pastille note principale */}
                                                                 <div
                                                                     style={{
-                                                                        display: 'inline-flex',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center',
-                                                                        width: '20px',
-                                                                        height: '20px',
+                                                                        display: 'inline-block',
+                                                                        width: '35px',
+                                                                        height: '35px',
+                                                                        padding: '2px',
                                                                         borderRadius: '50%',
-                                                                        backgroundColor: '#cccccc',
-                                                                        border: '2px solid #999',
-                                                                        cursor: isStudentMode ? 'default' : 'pointer',
-                                                                        fontSize: '12px',
+                                                                        backgroundColor: getCouleurCss(bilanBloc.couleur),
+                                                                        border: `3px solid white`,
+                                                                        cursor: 'pointer',
+                                                                        color: 'white',
+                                                                        fontSize: '13px',
                                                                         fontWeight: 'bold',
-                                                                        color: '#666'
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center'
                                                                     }}
-                                                                    title={isStudentMode ? "Non évalué" : "Non évalué - Cliquer pour évaluer"}
-                                                                    onClick={!isStudentMode ? (e) => {
-                                                                        e.stopPropagation();
-                                                                        setOuvertureModalEnCours(true); // Bloquer les popups
-                                                                        setNoteDetail(null); // Fermer toute popup d'info
-                                                                        // Déterminer le code de compétence selon le niveau
-                                                                        let codeCompetence;
-                                                                        if (ligne.niveau3) {
-                                                                            codeCompetence = ligne.niveau3.code;
-                                                                        } else if (ligne.niveau2) {
-                                                                            codeCompetence = ligne.niveau2.code;
-                                                                        } else if (ligne.niveau1) {
-                                                                            codeCompetence = ligne.niveau1.code;
-                                                                        }
-                                                                        if (codeCompetence) {
-                                                                            // Délai pour s'assurer que la popup se ferme avant d'ouvrir la modal
-                                                                            setTimeout(() => {
-                                                                                handleClickEleve(eleve, codeCompetence);
-                                                                                // Remettre à false après un délai pour permettre les futures popups
-                                                                                setTimeout(() => setOuvertureModalEnCours(false), 100);
-                                                                            }, 50);
-                                                                        }
-                                                                    } : undefined}
-                                                                >+</div>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="cell-positionnement">
-                                                        <div style={{ display: 'flex', gap: '5px', alignItems: 'center', justifyContent: 'center' }}>
-                                                            {ligne.niveau2?.code && (
-                                                                <>
-                                                                    {/* En mode enseignant, toujours afficher d'abord le positionnement automatique */}
-                                                                    {/* En mode élève, l'afficher seulement s'il n'y a pas de positionnement enseignant */}
-                                                                    {((!ligne.positionnementEnseignant && isStudentMode) || (!isStudentMode)) && (
-                                                                        <div
-                                                                            className="pastille-auto"
-                                                                            style={{
-                                                                                backgroundColor: getCouleurCss(ligne.positionnementAuto || 'Gris')
-                                                                            }}
-                                                                            title={`Positionnement automatique: ${ligne.positionnementAuto || 'Non évalué'}`}
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                            }}
-                                                                        >
-                                                                            {isStudentMode ? 'P' : 'A'}
-                                                                        </div>
-                                                                    )}
+                                                                    title={`Positionnement bloc: ${bilanBloc.couleur} (${(bilanBloc.moyenne * 20 / 3).toFixed(1)}/20)`}
+                                                                >
+                                                                    {(bilanBloc.moyenne * 20 / 3).toFixed(1)}
+                                                                </div>
 
-                                                                    {/* Afficher ensuite le positionnement enseignant s'il existe */}
-                                                                    {ligne.positionnementEnseignant && (
-                                                                        <div
-                                                                            style={{
-                                                                                width: '20px',
-                                                                                height: '20px',
-                                                                                borderRadius: '50%',
-                                                                                backgroundColor: getCouleurCss(ligne.positionnementEnseignant),
-                                                                                border: '2px solid #333',
-                                                                                cursor: isStudentMode ? 'default' : 'pointer',
-                                                                                fontSize: '10px',
-                                                                                color: 'white',
-                                                                                fontWeight: 'bold',
-                                                                                display: 'flex',
-                                                                                alignItems: 'center',
-                                                                                justifyContent: 'center'
-                                                                            }}
-                                                                            title={`Positionnement enseignant: ${ligne.positionnementEnseignant}`}
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                if (isStudentMode || ouvertureModalEnCours) return;
-                                                                                const codeCompetence = ligne.niveau2?.code
-                                                                                if (codeCompetence) {
-                                                                                    handleClickPositionnement(eleve, codeCompetence)
-                                                                                }
-                                                                            }}
-                                                                        >
-                                                                            {isStudentMode ? 'P' : 'E'}
-                                                                        </div>
-                                                                    )}
-                                                                </>
-                                                            )}
+                                                                {/* Pastille note de progression */}
+                                                                <div
+                                                                    style={{
+                                                                        display: 'inline-block',
+                                                                        width: '35px',
+                                                                        height: '35px',
+                                                                        padding: '2px',
+                                                                        borderRadius: '50%',
+                                                                        backgroundColor: '#6c757d',
+                                                                        border: `3px solid white`,
+                                                                        cursor: 'pointer',
+                                                                        color: 'white',
+                                                                        fontSize: '13px',
+                                                                        fontWeight: 'bold',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center'
+                                                                    }}
+                                                                    title={`Note de progression: ${calculerNoteProgression(eleve.id, numeroBloc)}/20 (basée sur les pastilles par rapport au meilleur)`}
+                                                                >
+                                                                    {calculerNoteProgression(eleve.id, numeroBloc)}
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                    </td>
-                                                </tr>
-                                            )
-                                        })}
-                                    </tbody>
-                                </table>
-                            )}
-                            </>
-                            )}
-                        </div>
-                    )
-                }))}</>)}
-        </div>
-    )
+                                                    )
+                                                })()}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )
+                    })
+                ) : (
+                    /* Utilisation du composant SaisieNoteEtDevoir */
+                    <SaisieNoteEtDevoir
+                        // Props pour les élèves et données
+                        elevesVisibles={elevesVisibles}
+                        isStudentMode={isStudentMode}
+                        studentInfo={studentInfo}
+                        codeCompetence={codeCompetence}
 
+                        // Props pour l'organisation des notes
+                        organiserNotesParHierarchie={organiserNotesParHierarchie}
+                        isCompetenceN1={isCompetenceN1}
+                        genererLignesTableauAvecBilan={genererLignesTableauAvecBilan}
+
+                        // Props pour l'affichage
+                        eleveRefs={eleveRefs}
+                        getPhotoUrl={getPhotoUrl}
+                        getNomClasse={getNomClasse}
+                        tableauVisible={tableauVisible}
+                        toggleTableauVisible={toggleTableauVisible}
+
+                        // Props pour NoteCompetence
+                        getDerniereCouleurDirecte={getDerniereCouleurDirecte}
+                        commentairesEleves={commentairesEleves}
+                        setCommentairesEleves={setCommentairesEleves}
+                        getCommentaireDerniereEvaluation={getCommentaireDerniereEvaluation}
+                        ajouterNoteDirecte={ajouterNoteAvecSuivi}
+                        devoirViewVisible={devoirViewVisible}
+                        devoirViewRef={devoirViewRef}
+                        notes={notes}
+                        dernieresEvaluationsDirectes={dernieresEvaluationsDirectes}
+                        teacherInfo={teacherInfo}
+                        devoirKeyVisible={devoirKeyVisible}
+                        devoirSelectionne={devoirSelectionne}
+                        devoirs={devoirs}
+                        setDernieresEvaluationsDirectes={setDernieresEvaluationsDirectes}
+                        nouveauDevoirNom={nouveauDevoirNom}
+                        setNotes={setNotes}
+
+                        // Props pour le tableau hiérarchique
+                        ouvertureModalEnCours={ouvertureModalEnCours}
+                        creerTooltipEnrichi={creerTooltipEnrichi}
+                        setNoteDetail={setNoteDetail}
+                        setEleveActuel={setEleveActuel}
+                        setCompetenceModalCode={setCompetenceModalCode}
+                        setModalOuvert={setModalOuvert}
+                        getCouleurCss={getCouleurCss}
+                        getCouleurFondCompetence={getCouleurFondCompetence}
+                        getPositionnementEnseignant={getPositionnementEnseignant}
+                        setElevePositionnement={setElevePositionnement}
+                        setCompetencePositionnement={setCompetencePositionnement}
+                        setModalPositionnementOuvert={setModalPositionnementOuvert}
+                    />
+                )}
+            </>)
+        }
+
+        {/* Dialog de confirmation pour les doublons */}
+        <ConfirmationDialog
+            isOpen={confirmationDialog.isOpen}
+            title={confirmationDialog.title}
+            message={confirmationDialog.message}
+            type={confirmationDialog.type}
+            confirmText={confirmationDialog.confirmText}
+            cancelText={confirmationDialog.cancelText}
+            onConfirm={confirmationDialog.onConfirm}
+            onCancel={confirmationDialog.onCancel}
+        />
+
+        {/* Dialog d'alerte pour les messages informatifs */}
+        <AlertDialog
+            isOpen={alertDialog.isOpen}
+            title={alertDialog.title}
+            message={alertDialog.message}
+            type={alertDialog.type}
+            onOk={alertDialog.onOk}
+        />
+        </div >) 
 }
 
 // Fonction de comparaison pour éviter les re-renders inutiles
 const arePropsEqual = (prevProps, nextProps) => {
     // Comparaison simple et stable
     const keysToCompare = ['competenceChoisie', 'classeChoisie', 'eleveFiltre', 'isStudentMode', 'isTeacherMode', 'appInitialized', 'devoirSelectionne']
-    
-    for (let key of keysToCompare) {
+
+            for (let key of keysToCompare) {
         if (prevProps[key] !== nextProps[key]) {
             return false
         }
     }
-    
-    return true
+
+            return true
 }
 
-export default TableauNotes  // Temporairement sans React.memo
+            export default TableauNotes  // Temporairement sans React.memo

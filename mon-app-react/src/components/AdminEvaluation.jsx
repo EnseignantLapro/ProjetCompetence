@@ -189,14 +189,7 @@ function AdminEvaluation({ classeChoisie, getClasseName, isSuperAdmin = false, i
 
           try {
             // Importer les évaluations pour cet élève
-            console.log('Données à envoyer:', {
-              id_moodle,
-              prenom,
-              nom,
-              classe_id: parseInt(classeChoisie),
-              classeChoisie_raw: classeChoisie,
-              classeChoisie_type: typeof classeChoisie
-            })
+           
 
             const response = await apiFetch(`/evaluations/import`, {
               method: 'POST',

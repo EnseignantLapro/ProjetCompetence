@@ -1,6 +1,17 @@
 // Import des fonctions utilitaires
 import { apiFetch } from '../utils/api'
 
+// Fonction pour générer une clé de devoir au format: idClass_idProf_CodeCompetence_JJMM
+const generateDevoirKey = (classeId, profId, competenceCode) => {
+    const now = new Date()
+    const jour = String(now.getDate()).padStart(2, '0')
+    const mois = String(now.getMonth() + 1).padStart(2, '0') // +1 car getMonth() commence à 0
+    const jjmm = `${jour}${mois}`
+    
+    return `${classeId}_${profId}_${competenceCode}_${jjmm}`
+}
+export { generateDevoirKey }
+
 // Fonction helper pour récupérer la couleur avec une compétence spécifique
 const getCouleurPourCompetence = (eleveId, competenceCode,notes) => {
     const note = notes.find(n => n.eleve_id === eleveId && n.competence_code === competenceCode)

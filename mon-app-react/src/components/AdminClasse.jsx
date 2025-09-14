@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { getApiUrl, apiFetch } from '../utils/api'
+import ConfirmationDialog from './ConfirmationDialog'
+import AlertDialog from './AlertDialog'
 
 function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherReferent = false }) {
   const [classesWithCounts, setClassesWithCounts] = useState([])
@@ -10,6 +12,38 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
   const [assigningTeacher, setAssigningTeacher] = useState(null) // ID de la classe pour laquelle on assigne un prof
   const [selectedTeacherId, setSelectedTeacherId] = useState('')
   const [classTeachers, setClassTeachers] = useState({}) // Enseignants assignés par classe
+
+  // États pour les dialogs
+  const [confirmationDialog, setConfirmationDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'warning',
+    onConfirm: null,
+    onCancel: null
+  })
+
+  const [alertDialog, setAlertDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info',
+    onOk: null
+  })
+
+  // Fonction utilitaire pour afficher une alert modale
+  const showAlert = (message, type = 'info', title = '', onOk = null) => {
+    setAlertDialog({
+      isOpen: true,
+      title: title || (type === 'error' ? 'Erreur' : type === 'success' ? 'Succès' : type === 'warning' ? 'Attention' : 'Information'),
+      message,
+      type,
+      onOk: () => {
+        setAlertDialog(prev => ({ ...prev, isOpen: false }))
+        if (onOk) onOk()
+      }
+    })
+  }
 
   // Chargement des classes avec le nombre d'élèves
   useEffect(() => {
@@ -110,7 +144,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
         creatorTeacherId = teacherInfo.id
       } else {
         // Fallback : demander à l'utilisateur ou afficher une erreur
-        alert("Impossible de déterminer l'ID de l'enseignant référent. Veuillez vous reconnecter ou contacter l'administrateur.")
+        showAlert("Impossible de déterminer l'ID de l'enseignant référent. Veuillez vous reconnecter ou contacter l'administrateur.", 'error')
         return
       }
     }
@@ -123,7 +157,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     // Rafraîchir la liste des classes avec les comptes
     rechargerClasses()
     setNewClasse('')
-    alert('Classe ajoutée ! Rechargez la page pour voir les changements dans le menu principal.')
+    showAlert('Classe ajoutée ! Rechargez la page pour voir les changements dans le menu principal.', 'success')
   }
 
   // Modifier classe
@@ -144,7 +178,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     rechargerClasses()
     setEditingClasseId(null)
     setEditingClasseNom('')
-    alert('Classe modifiée ! Rechargez la page pour voir les changements dans le menu principal.')
+    showAlert('Classe modifiée ! Rechargez la page pour voir les changements dans le menu principal.', 'success')
   }
 
   // Assigner un professeur à une classe
@@ -159,7 +193,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
       })
 
       if (res.ok) {
-        alert('Professeur assigné à la classe avec succès !')
+        showAlert('Professeur assigné à la classe avec succès !', 'success')
         // Rafraîchir la liste des classes
         rechargerClasses()
         
@@ -177,18 +211,33 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
           })
       } else {
         const error = await res.text()
-        alert(`Erreur : ${error}`)
+        showAlert(`Erreur : ${error}`, 'error')
       }
     } catch (err) {
       console.error('Erreur lors de l assignation du professeur:', err)
-      alert('Erreur lors de l assignation du professeur')
+      showAlert('Erreur lors de l assignation du professeur', 'error')
     }
   }
 
   // Supprimer classe
   const supprimerClasse = async (id) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette classe ?')) return
-    
+    // Utiliser notre dialog de confirmation personnalisé
+    setConfirmationDialog({
+      isOpen: true,
+      title: 'Supprimer la classe',
+      message: 'Êtes-vous sûr de vouloir supprimer cette classe ?',
+      type: 'danger',
+      onConfirm: async () => {
+        setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+        await deleteClasse(id)
+      },
+      onCancel: () => {
+        setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+      }
+    })
+  }
+  
+  const deleteClasse = async (id) => {
     try {
       const res = await apiFetch(`/classes/${id}`, {
         method: 'DELETE',
@@ -196,7 +245,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
       
       if (res.ok) {
         const data = await res.json()
-        alert(data.message || 'Classe supprimée !')
+        showAlert(data.message || 'Classe supprimée !', 'success')
         // Rafraîchir la liste
         rechargerClasses()
           .catch(err => {
@@ -205,30 +254,37 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
           })
       } else if (res.status === 400) {
         const errorData = await res.json()
-        const forceDelete = confirm(
-          `${errorData.message}\n\nATTENTION : Si vous continuez, tous les élèves de cette classe seront également supprimés !\n\nVoulez-vous vraiment supprimer cette classe ET ses ${errorData.studentCount} élève(s) ?`
-        )
-        
-        if (forceDelete) {
-          const forceRes = await apiFetch(`/classes/${id}?forceDelete=true`, {
-            method: 'DELETE',
-          })
-          
-          if (forceRes.ok) {
-            const forceData = await forceRes.json()
-            alert(`✅ ${forceData.message}`)
-            // Rafraîchir la liste
-            rechargerClasses()
-          } else {
-            alert('Erreur lors de la suppression forcée')
+        // Utiliser notre dialog de confirmation pour la suppression forcée
+        setConfirmationDialog({
+          isOpen: true,
+          title: 'Classe non vide',
+          message: `${errorData.message}\n\nATTENTION : Si vous continuez, tous les élèves de cette classe seront également supprimés !\n\nVoulez-vous vraiment supprimer cette classe ET ses ${errorData.studentCount} élève(s) ?`,
+          type: 'danger',
+          onConfirm: async () => {
+            setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+            const forceRes = await apiFetch(`/classes/${id}?forceDelete=true`, {
+              method: 'DELETE',
+            })
+            
+            if (forceRes.ok) {
+              const forceData = await forceRes.json()
+              showAlert(forceData.message, 'success')
+              // Rafraîchir la liste
+              rechargerClasses()
+            } else {
+              showAlert('Erreur lors de la suppression forcée', 'error')
+            }
+          },
+          onCancel: () => {
+            setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
           }
-        }
+        })
       } else {
-        alert('Erreur lors de la suppression')
+        showAlert('Erreur lors de la suppression', 'error')
       }
     } catch (err) {
       console.error('Erreur:', err)
-      alert('Erreur lors de la suppression')
+      showAlert('Erreur lors de la suppression', 'error')
     }
   }
 
@@ -456,6 +512,27 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
           ))}
         </div>
       </div>
+
+      {/* Dialog de confirmation pour les suppressions */}
+      <ConfirmationDialog
+        isOpen={confirmationDialog.isOpen}
+        title={confirmationDialog.title}
+        message={confirmationDialog.message}
+        type={confirmationDialog.type}
+        confirmText="Supprimer"
+        cancelText="Annuler"
+        onConfirm={confirmationDialog.onConfirm}
+        onCancel={confirmationDialog.onCancel}
+      />
+
+      {/* Dialog d'alerte pour les messages informatifs */}
+      <AlertDialog
+        isOpen={alertDialog.isOpen}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        type={alertDialog.type}
+        onOk={alertDialog.onOk}
+      />
     </div>
   )
 }

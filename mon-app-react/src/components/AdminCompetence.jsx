@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { apiFetch } from '../utils/api'
+import ConfirmationDialog from './ConfirmationDialog'
+import AlertDialog from './AlertDialog'
 
 function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent = false }) {
   const [competencesN3, setCompetencesN3] = useState([])
@@ -14,6 +16,38 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
     code: '',
     nom: ''
   })
+
+  // États pour les dialogs
+  const [confirmationDialog, setConfirmationDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'warning',
+    onConfirm: null,
+    onCancel: null
+  })
+
+  const [alertDialog, setAlertDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info',
+    onOk: null
+  })
+
+  // Fonction utilitaire pour afficher une alert modale
+  const showAlert = (message, type = 'info', title = '', onOk = null) => {
+    setAlertDialog({
+      isOpen: true,
+      title: title || (type === 'error' ? 'Erreur' : type === 'success' ? 'Succès' : type === 'warning' ? 'Attention' : 'Information'),
+      message,
+      type,
+      onOk: () => {
+        setAlertDialog(prev => ({ ...prev, isOpen: false }))
+        if (onOk) onOk()
+      }
+    })
+  }
 
   // Chargement initial des compétences N3 avec filtrage par établissement
   useEffect(() => {
@@ -41,7 +75,7 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
   // Ajout compétence N3
   const ajouterCompetenceN3 = async () => {
     if (!newCompetenceN3.parent_code.trim() || !newCompetenceN3.code.trim() || !newCompetenceN3.nom.trim()) {
-      alert('Tous les champs sont requis')
+      showAlert('Tous les champs sont requis', 'warning')
       return
     }
     
@@ -62,14 +96,14 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
       setCompetencesN3([...competencesN3, data])
       setNewCompetenceN3({ parent_code: '', code: '', nom: '' })
     } else {
-      alert('Erreur lors de l\'ajout de la compétence')
+      showAlert('Erreur lors de l\'ajout de la compétence', 'error')
     }
   }
 
   // Modifier compétence N3
   const updateCompetenceN3 = async () => {
     if (!editingCompetence.parent_code.trim() || !editingCompetence.code.trim() || !editingCompetence.nom.trim()) {
-      alert('Tous les champs sont requis')
+      showAlert('Tous les champs sont requis', 'warning')
       return
     }
     
@@ -91,13 +125,29 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
       setEditingCompetenceId(null)
       setEditingCompetence({ parent_code: '', code: '', nom: '' })
     } else {
-      alert('Erreur lors de la modification de la compétence')
+      showAlert('Erreur lors de la modification de la compétence', 'error')
     }
   }
 
   // Supprimer compétence N3
   const supprimerCompetenceN3 = async (id) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette compétence ?')) return
+    // Utiliser notre dialog de confirmation personnalisé
+    setConfirmationDialog({
+      isOpen: true,
+      title: 'Supprimer la compétence',
+      message: 'Êtes-vous sûr de vouloir supprimer cette compétence ?',
+      type: 'danger',
+      onConfirm: async () => {
+        setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+        await deleteCompetence(id)
+      },
+      onCancel: () => {
+        setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
+      }
+    })
+  }
+  
+  const deleteCompetence = async (id) => {
 
     const res = await apiFetch(`/competences-n3/${id}`, {
       method: 'DELETE',
@@ -106,7 +156,7 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
     if (res.ok) {
       setCompetencesN3(competencesN3.filter(c => c.id !== id))
     } else {
-      alert('Erreur lors de la suppression de la compétence')
+      showAlert('Erreur lors de la suppression de la compétence', 'error')
     }
   }
 
@@ -257,6 +307,27 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
           </div>
         )}
       </div>
+
+      {/* Dialog de confirmation pour les suppressions */}
+      <ConfirmationDialog
+        isOpen={confirmationDialog.isOpen}
+        title={confirmationDialog.title}
+        message={confirmationDialog.message}
+        type={confirmationDialog.type}
+        confirmText="Supprimer"
+        cancelText="Annuler"
+        onConfirm={confirmationDialog.onConfirm}
+        onCancel={confirmationDialog.onCancel}
+      />
+
+      {/* Dialog d'alerte pour les messages informatifs */}
+      <AlertDialog
+        isOpen={alertDialog.isOpen}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        type={alertDialog.type}
+        onOk={alertDialog.onOk}
+      />
     </div>
   )
 }
