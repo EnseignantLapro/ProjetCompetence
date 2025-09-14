@@ -57,6 +57,12 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     // États pour la gestion du devoir en cours de saisie
     const [nouveauDevoirNom, setNouveauDevoirNom] = useState('')
     const [devoirs, setDevoirs] = useState([])
+    
+    // État pour le devoir actif en mémoire (solution état mémoire)
+    const [devoirActifMemoire, setDevoirActifMemoire] = useState({
+        devoirKey: null,
+        label: null
+    })
 
     // Fonction utilitaire pour afficher une alert modale
     const showAlert = (message, type = 'info', title = '', onOk = null) => {
@@ -206,27 +212,17 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         try {
             console.log('🔗 Attachement des notes au devoir (TableauNotes):', { idsNotes, nomDevoir })
             
-            // Déterminer la devoirKey pour le devoir
-            let devoirKey
-            if (nouveauDevoirNom.trim()) {
-                // Nouveau devoir - générer une devoirKey
-                devoirKey = generateDevoirKey(eleves[0]?.classe_id, teacherInfo.id, codeCompetence)
-            } else if (devoirSelectionne) {
-                // Devoir existant sélectionné - utiliser sa devoirKey
-                devoirKey = devoirSelectionne
-            } else {
-                // Essayer de trouver le devoir par son nom dans la liste des devoirs existants
-                const devoirExistant = devoirs.find(d => d.devoir_label === nomDevoir)
-                if (devoirExistant) {
-                    devoirKey = devoirExistant.devoirKey
-                } else {
-                    console.error('Impossible de déterminer la devoirKey pour:', nomDevoir)
-                    showAlert('Impossible de déterminer la clé du devoir.', 'error')
-                    return
-                }
+            // Utiliser la devoirKey stockée en mémoire
+            let devoirKey = devoirActifMemoire.devoirKey
+            
+            if (!devoirKey) {
+                console.error('Aucune devoirKey en mémoire - le devoir doit être sélectionné/créé d\'abord')
+                showAlert('Veuillez sélectionner un devoir existant ou créer un nouveau devoir d\'abord.', 'error')
+                return
             }
             
-            console.log('🔑 DevoirKey générée (TableauNotes):', devoirKey)
+            console.log('🔑 Utilisation devoirKey en mémoire (TableauNotes):', devoirKey)
+            
             
             // Mettre à jour chaque note
             for (const noteId of idsNotes) {
@@ -368,13 +364,9 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             )
         }
 
-        // Si un nouveau devoir est nommé ET qu'il y a des notes sauvegardées avec ce nom
-        if (nouveauDevoirNom.trim()) {
-            return notes.some(note =>
-                note.competence_code === codeCompetence &&
-                note.devoir_label === nouveauDevoirNom.trim()
-            )
-        }
+        // Ne PAS verrouiller automatiquement quand on tape un nom de devoir
+        // Le verrouillage ne doit se faire qu'après sélection explicite d'un devoir existant
+        // ou création confirmée d'un nouveau devoir
 
         return false
     }
@@ -384,39 +376,18 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     const shouldShowDevoirActifMemoire = () => {
         if (!codeCompetence) return false
 
-        // Mode 1: Un devoir existant est sélectionné
-        if (devoirSelectionne) return true
-
-        // Mode 2: Un nouveau devoir est nommé ET il y a des évaluations en cours ou sauvegardées
-        if (nouveauDevoirNom.trim()) {
-            // Vérifier s'il y a des évaluations trackées pour cette compétence
-            const modeEvaluation = localStorage.getItem('mode_evaluation')
-            if (modeEvaluation === 'nouvelle' && dernieresEvaluationsDirectes.size > 0) {
-                for (let [key, evaluation] of dernieresEvaluationsDirectes) {
-                    if (key.includes(codeCompetence)) {
-                        return true // Il y a des évaluations en cours
-                    }
-                }
-            }
-
-            // OU vérifier s'il y a des notes déjà sauvegardées avec ce nom de devoir
-            const hasNotesWithThisDevoir = notes.some(note =>
-                note.competence_code === codeCompetence &&
-                note.devoir_label === nouveauDevoirNom.trim()
-            )
-
-            if (hasNotesWithThisDevoir) {
-                return true // Il y a des notes sauvegardées pour ce devoir
-            }
-
-            // NOUVEAU: Mode 3 - Afficher seulement si on a un nom de devoir ET qu'il y a des évaluations en cours
-            // Pas juste le mode évaluation activé
-            if (modeEvaluation === 'nouvelle' && dernieresEvaluationsDirectes.size > 0) {
-                return true
-            }
-        }
-
-        return false
+        // Utiliser l'état mémoire du devoir au lieu de devoirSelectionne
+        const devoirEnMemoire = devoirActifMemoire.devoirKey && devoirActifMemoire.label
+        
+        // Debug pour comprendre le problème
+        console.log('🔍 shouldShowDevoirActifMemoire Debug:', {
+            codeCompetence,
+            devoirActifMemoire,
+            devoirEnMemoire,
+            reason: devoirEnMemoire ? 'Devoir en mémoire actif' : 'Pas de devoir en mémoire'
+        })
+        
+        return Boolean(devoirEnMemoire)
     }
 
     // Alias pour compatibilité avec le code existant
@@ -697,27 +668,24 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         }
     }, [eleveAMaintenir, tableauVisible, blocsFermes])
 
-    // Activer automatiquement la vue devoir quand un devoir est sélectionné dans la bannière
+    // DÉSACTIVÉ : Activer automatiquement la vue devoir quand un devoir est sélectionné dans la bannière
+    // Activer automatiquement la vue devoir quand un devoir est sélectionné
     useEffect(() => {
+        console.log('🔄 useEffect devoirSelectionne déclenché:', devoirSelectionne)
+        console.log('🔄 isTeacherMode:', isTeacherMode)
+        
         if (devoirSelectionne && isTeacherMode) {
+            console.log('✅ Activation automatique de la vue devoir pour:', devoirSelectionne)
             // Activer la vue devoir
             setDevoirViewVisible(true)
             setDevoirKeyVisible(devoirSelectionne)
             
-            // Si une compétence était en cours d'ajout, l'ajouter temporairement au devoir
-            if (competenceAjouter && devoirViewRef.current) {
-                setTimeout(() => {
-                    devoirViewRef.current.ajouterCompetence(competenceAjouter)
-                    setCompetenceAjouter(null) // Reset après ajout
-                }, 100)
-            }
         } else if (!devoirSelectionne) {
-            // Désactiver la vue devoir si aucun devoir n'est sélectionné
+            console.log('🚫 Désactivation de la vue devoir (aucun devoir sélectionné)')
             setDevoirViewVisible(false)
             setDevoirKeyVisible(null)
-            setCompetenceAjouter(null) // Reset aussi
         }
-    }, [devoirSelectionne, isTeacherMode, competenceAjouter])
+    }, [devoirSelectionne, isTeacherMode])
 
     // Réinitialiser nouveauDevoirNom quand on change de compétence
     useEffect(() => {
@@ -727,6 +695,15 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             onDevoirChange(null)
         }
     }, [codeCompetence, onDevoirChange])
+
+    // Réinitialiser l'état mémoire du devoir quand on change de compétence
+    useEffect(() => {
+        console.log('🔄 Changement de compétence détecté - Réinitialisation de l\'état mémoire du devoir')
+        setDevoirActifMemoire({
+            devoirKey: null,
+            label: null
+        })
+    }, [codeCompetence])
 
 
 
@@ -851,7 +828,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
         window.ajoutEnCours.add(cleNote)
 
         try {
-            // Appeler la fonction d'origine
+            // Appeler la fonction d'origine avec la devoirKey en mémoire
             const resultat = await ajouterNoteDirecte(
                 eleve,
                 competenceCode,
@@ -865,7 +842,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                 devoirs,
                 setDernieresEvaluationsDirectes,
                 nouveauDevoirNom,
-                setNotes
+                setNotes,
+                devoirActifMemoire // Passer l'état mémoire du devoir
             )
 
             // Si l'ajout a réussi, ajouter au tableau de suivi
@@ -991,14 +969,29 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
             let devoirLabel = ''
 
             if (editingNoteData.nouveauDevoirNom.trim()) {
-                // Créer un nouveau devoir avec le bon format: idClass_idProf_CodeCompetence_JJMM
-                devoirKey = generateDevoirKey(classeChoisie.id, teacherInfo.id, noteDetail.competence_code)
+                // Créer un nouveau devoir - utiliser une clé générée une seule fois et la stocker en mémoire
+                devoirKey = generateDevoirKey(noteDetail.competence_code, classeChoisie.id, teacherInfo.id)
                 devoirLabel = editingNoteData.nouveauDevoirNom.trim()
-                console.log('🔑 Génération devoirKey dans TableauNotes:', devoirKey)
+                
+                // Stocker en mémoire pour les prochaines notes de ce devoir
+                setDevoirActifMemoire({
+                    devoirKey: devoirKey,
+                    label: devoirLabel
+                })
+                
+                console.log('🔑 Génération et stockage devoirKey en mémoire (edit note):', devoirKey)
             } else if (editingNoteData.devoirKey) {
                 // Utiliser un devoir existant
                 const devoirExistant = devoirs.find(d => d.devoirKey === editingNoteData.devoirKey)
                 devoirLabel = devoirExistant?.devoir_label || ''
+                
+                // Stocker en mémoire le devoir existant sélectionné
+                setDevoirActifMemoire({
+                    devoirKey: devoirKey,
+                    label: devoirLabel
+                })
+                
+                console.log('🔑 Stockage devoir existant en mémoire (edit note):', devoirKey)
             }
 
             const res = await apiFetch(`/notes/${noteDetail.id}`, {
@@ -2129,6 +2122,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     onSave={handleSaveNote}
                     ajouterNote={(note) => setNotes(prev => [...prev, note])}
                     teacherInfo={teacherInfo}
+                    devoirActifMemoire={devoirActifMemoire} // État mémoire du devoir actif
+                    setDevoirActifMemoire={setDevoirActifMemoire} // Setter pour l'état mémoire
                 />
             )}
 
@@ -2461,11 +2456,23 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     marginTop: '10px',
                     border: devoirViewVisible ? '1px solid #2196f3' : '1px solid #ffc107'
                 }}>
-                    📋 <strong>
+                    {/* Ajout de logs pour debugging */}
+                    {(() => {
+                        console.log('� État actuel pour affichage bannière:')
+                        console.log('  devoirViewVisible:', devoirViewVisible)
+                        console.log('  devoirKeyVisible:', devoirKeyVisible)
+                        console.log('  shouldShowDevoirActifMemoire():', shouldShowDevoirActifMemoire())
+                        console.log('  devoirActifMemoire:', devoirActifMemoire)
+                        return null
+                    })()}
+                    
+                    �📋 <strong>
                         Devoir associé  
                     </strong> :
 
-                       "{nouveauDevoirNom.trim() || (devoirSelectionne ? devoirsSansDoublons.find(d => d.devoirKey === devoirSelectionne)?.devoir_label || 'Devoir sélectionné' : '')
+                       "{devoirViewVisible && devoirKeyVisible ? 
+                           devoirsSansDoublons.find(d => d.devoirKey === devoirKeyVisible)?.devoir_label || 'Vue devoir' :
+                           (devoirActifMemoire.label || 'Devoir en mémoire')
                        }".
 
                 </div>
@@ -2489,6 +2496,10 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                     setNotes={setNotes}
                     dernieresEvaluationsDirectes={dernieresEvaluationsDirectes}
                     setDernieresEvaluationsDirectes={setDernieresEvaluationsDirectes}
+                    devoirActifMemoire={devoirActifMemoire} // État mémoire du devoir actif
+                    setDevoirActifMemoire={setDevoirActifMemoire} // Setter pour l'état mémoire
+                    setDevoirViewVisible={setDevoirViewVisible} // Pour déclencher l'affichage de la vue devoir
+                    setDevoirKeyVisible={setDevoirKeyVisible} // Pour définir la clé du devoir à afficher
                 />
             )}</>
             )}
@@ -2496,28 +2507,37 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
             {/* Vue devoir */}
             {devoirViewVisible && devoirKeyVisible ? (
-
-                <DevoirView
-                    ref={devoirViewRef}
-                    devoirKey={devoirKeyVisible}
-                    classeChoisie={classeChoisie}
-                    onClose={() => {
-                        setDevoirViewVisible(false)
-                        setDevoirKeyVisible(null)
-                        // Remettre "Aucun devoir" sélectionné dans la bannière
-                        setDevoirSelectionne(null)
-                    }}
-                    onDataChange={() => {
-                        // Recharger les notes quand des données changent dans DevoirView
+                <div>
+                    {/* Ajout de logs pour debugging */}
+                    {(() => {
+                        console.log('🎯 Rendu DevoirView avec:')
+                        console.log('  devoirViewVisible:', devoirViewVisible)
+                        console.log('  devoirKeyVisible:', devoirKeyVisible)
+                        return null
+                    })()}
+                    
+                    <DevoirView
+                        ref={devoirViewRef}
+                        devoirKey={devoirKeyVisible}
+                        classeChoisie={classeChoisie}
+                        onClose={() => {
+                            setDevoirViewVisible(false)
+                            setDevoirKeyVisible(null)
+                            // Remettre "Aucun devoir" sélectionné dans la bannière
+                            setDevoirSelectionne(null)
+                        }}
+                        onDataChange={() => {
+                            // Recharger les notes quand des données changent dans DevoirView
                         
-                        apiFetch(`/notes`).then(res => res.json()).then(setNotes)
-                    }}
-                    teacherInfo={teacherInfo}
-                    eleveFiltre={eleveFiltre}
-                    competencesN1N2={competencesN1N2}
-                    competencesN3={competencesN3}
-                    competenceInitiale={codeCompetence}
-                />
+                            apiFetch(`/notes`).then(res => res.json()).then(setNotes)
+                        }}
+                        teacherInfo={teacherInfo}
+                        eleveFiltre={eleveFiltre}
+                        competencesN1N2={competencesN1N2}
+                        competencesN3={competencesN3}
+                        competenceInitiale={codeCompetence}
+                    />
+                </div>
 
             ) : (<>
 
@@ -3118,6 +3138,8 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
                         setDernieresEvaluationsDirectes={setDernieresEvaluationsDirectes}
                         nouveauDevoirNom={nouveauDevoirNom}
                         setNotes={setNotes}
+                        devoirActifMemoire={devoirActifMemoire} // État mémoire du devoir actif
+                        setDevoirActifMemoire={setDevoirActifMemoire} // Setter pour l'état mémoire
 
                         // Props pour le tableau hiérarchique
                         ouvertureModalEnCours={ouvertureModalEnCours}

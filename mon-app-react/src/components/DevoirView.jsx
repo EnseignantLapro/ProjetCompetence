@@ -371,7 +371,27 @@ const DevoirView = React.forwardRef(({ devoirKey, classeChoisie, onClose, onData
   
   // Si aucune donnée ET aucune compétence temporaire, afficher le message
   if (devoirData.length === 0 && competencesTemporaires.size === 0) {
-    return <div>Aucune donnée trouvée pour ce devoir</div>
+    return (
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <div style={{ marginBottom: '20px', fontSize: '18px', color: '#6c757d' }}>
+          Aucune donnée trouvée pour ce devoir
+        </div>
+        <button 
+          onClick={onClose}
+          style={{
+            backgroundColor: '#6c757d',
+            color: 'white',
+            border: 'none',
+            padding: '10px 20px',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontSize: '14px'
+          }}
+        >
+          ← Retour
+        </button>
+      </div>
+    )
   }
 
   const devoirInfo = devoirData[0] || { devoir_label: 'Nouveau devoir', date: new Date().toISOString() }

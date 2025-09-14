@@ -1801,12 +1801,21 @@ app.post('/notes', verifyToken, (req, res) => {
     
     const { eleve_id, competence_code, couleur, date, prof_id, commentaire, devoir_label, devoirKey } = req.body
 
-    // Fonction pour générer une clé de devoir
-    const generateDevoirKey = (date, prof_id, classe_id, devoir_label) => {
-        // Générer une clé basée sur la date, prof, classe et nom du devoir
-        // SANS la compétence pour que toutes les compétences d'un même devoir aient la même clé
-        const labelSafe = devoir_label.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50)
-        return `${date}_${prof_id}_${classe_id}_${labelSafe}`;
+    // Fonction pour générer une clé de devoir au format: codecompetence_classeid_profid_JJMMAA_HHMMSS
+    const generateDevoirKey = (competenceCode, classeId, profId) => {
+        const now = new Date()
+        const jour = String(now.getDate()).padStart(2, '0')
+        const mois = String(now.getMonth() + 1).padStart(2, '0') // +1 car getMonth() commence à 0
+        const annee = String(now.getFullYear()).slice(-2) // Derniers 2 chiffres de l'année
+        const heure = String(now.getHours()).padStart(2, '0')
+        const minute = String(now.getMinutes()).padStart(2, '0')
+        const seconde = String(now.getSeconds()).padStart(2, '0')
+        const jjmmaa = `${jour}${mois}${annee}`
+        const hhmmss = `${heure}${minute}${seconde}`
+        
+        const key = `${competenceCode}_${classeId}_${profId}_${jjmmaa}_${hhmmss}`
+        console.log('🔑 [SERVEUR] generateDevoirKey:', { competenceCode, classeId, profId, jjmmaa, hhmmss, key })
+        return key
     }
 
     // Si c'est un super admin, autoriser toutes les créations
@@ -1818,7 +1827,7 @@ app.post('/notes', verifyToken, (req, res) => {
                 if (err) return res.status(500).json({ error: err.message })
                 if (!eleveData) return res.status(404).json({ error: 'Élève non trouvé' })
                 
-                const newDevoirKey = generateDevoirKey(date, prof_id, eleveData.classe_id, devoir_label);
+                const newDevoirKey = generateDevoirKey(competence_code, eleveData.classe_id, prof_id);
                 
                 db.run(
                     'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1887,7 +1896,7 @@ app.post('/notes', verifyToken, (req, res) => {
                 // Créer la note avec gestion de devoir
                 if (devoir_label && !devoirKey) {
                     // Générer la clé de devoir
-                    const newDevoirKey = generateDevoirKey(date, prof_id, eleve.classe_id, devoir_label);
+                    const newDevoirKey = generateDevoirKey(competence_code, eleve.classe_id, prof_id);
                     
                     db.run(
                         'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1926,7 +1935,7 @@ app.post('/notes', verifyToken, (req, res) => {
             // Créer la note avec gestion de devoir
             if (devoir_label && !devoirKey) {
                 // Générer la clé de devoir
-                const newDevoirKey = generateDevoirKey(date, prof_id, eleve.classe_id, devoir_label);
+                const newDevoirKey = generateDevoirKey(competence_code, eleve.classe_id, prof_id);
                 
                 db.run(
                     'INSERT INTO notes (eleve_id, competence_code, couleur, date, prof_id, commentaire, devoirKey, devoir_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',

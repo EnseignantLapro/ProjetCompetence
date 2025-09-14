@@ -38,6 +38,8 @@ function SaisieNoteEtDevoir({
     setDernieresEvaluationsDirectes,
     nouveauDevoirNom,
     setNotes,
+    devoirActifMemoire, // État mémoire du devoir actif
+    setDevoirActifMemoire, // Setter pour l'état mémoire
     
     // Props pour le tableau hiérarchique
     ouvertureModalEnCours,
@@ -104,6 +106,8 @@ function SaisieNoteEtDevoir({
                                     setDernieresEvaluationsDirectes={setDernieresEvaluationsDirectes}
                                     nouveauDevoirNom={nouveauDevoirNom}
                                     setNotes={setNotes}
+                                    devoirActifMemoire={devoirActifMemoire} // État mémoire du devoir actif
+                                    setDevoirActifMemoire={setDevoirActifMemoire} // Setter pour l'état mémoire
                                 />
                             </div>
 

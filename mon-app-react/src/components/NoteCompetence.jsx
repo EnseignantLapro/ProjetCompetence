@@ -21,7 +21,9 @@ function NoteCompetence({
     devoirs,
     setDernieresEvaluationsDirectes,
     nouveauDevoirNom,
-    setNotes
+    setNotes,
+    devoirActifMemoire, // État mémoire du devoir actif
+    setDevoirActifMemoire // Setter pour l'état mémoire
 }) {
     if (isStudentMode) {
         return null // Ne rien afficher en mode étudiant
@@ -116,7 +118,12 @@ function NoteCompetence({
                 }
                 
                 // Ajouter les informations de devoir selon le contexte
-                if (devoirViewVisible && devoirKeyVisible) {
+                if (devoirActifMemoire && devoirActifMemoire.devoirKey) {
+                    // Priorité 1: Utiliser la clé stockée en mémoire (solution état mémoire)
+                    noteModifiee.devoirKey = devoirActifMemoire.devoirKey
+                    noteModifiee.devoir_label = devoirActifMemoire.label
+                    console.log('🔑 Utilisation devoirKey en mémoire pour modification note:', devoirActifMemoire.devoirKey)
+                } else if (devoirViewVisible && devoirKeyVisible) {
                     // Si on est dans une vue de devoir ouverte, utiliser cette devoirKey
                     noteModifiee.devoirKey = devoirKeyVisible
                     // Récupérer le label du devoir depuis les données existantes si possible
@@ -135,8 +142,16 @@ function NoteCompetence({
                     // Créer un nouveau devoir avec génération de devoirKey côté front
                     noteModifiee.devoir_label = nouveauDevoirNom.trim()
                     // Générer la devoirKey avec le bon format: idClass_idProf_CodeCompetence_JJMM
-                    noteModifiee.devoirKey = generateDevoirKey(eleve.classe_id, teacherInfo.id, codeCompetence)
-                    console.log('🔑 Génération nouvelle devoirKey:', noteModifiee.devoirKey)
+                    const nouvelleCle = generateDevoirKey(codeCompetence, eleve.classe_id, teacherInfo.id)
+                    noteModifiee.devoirKey = nouvelleCle
+                    
+                    // Stocker en mémoire pour les prochaines notes de ce devoir
+                    setDevoirActifMemoire({
+                        devoirKey: nouvelleCle,
+                        label: noteModifiee.devoir_label
+                    })
+                    
+                    console.log('🔑 Génération et stockage nouvelle devoirKey en mémoire:', nouvelleCle)
                 }
                 
                 console.log('🔄 Modification de la note existante avec infos devoir:', noteModifiee)
@@ -183,7 +198,8 @@ function NoteCompetence({
             devoirs,
             setDernieresEvaluationsDirectes,
             nouveauDevoirNom,
-            setNotes
+            setNotes,
+            devoirActifMemoire // Passer l'état mémoire du devoir
         )
     }
 

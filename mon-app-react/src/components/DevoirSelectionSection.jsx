@@ -32,10 +32,28 @@ const DevoirSelectionSection = React.memo(({
     eleves, // Ajout de eleves aux props pour récupérer les noms
     setNotes,
     dernieresEvaluationsDirectes,
-    setDernieresEvaluationsDirectes
+    setDernieresEvaluationsDirectes,
+    devoirActifMemoire, // État mémoire du devoir actif
+    setDevoirActifMemoire, // Setter pour l'état mémoire
+    setDevoirViewVisible, // Pour déclencher l'affichage de la vue devoir
+    setDevoirKeyVisible // Pour définir la clé du devoir à afficher
 }) => {
     const [showDevoirSelection, setShowDevoirSelection] = useState(false)
     const [devoirValide, setDevoirValide] = useState(false) // Tracker si le devoir a été validé
+    
+    // État pour la modal de changement de devoir
+    const [changementDevoirDialog, setChangementDevoirDialog] = useState({
+        isVisible: false,
+        nouveauDevoir: '',
+        nomNouveauDevoir: '',
+        notesEclaircie: {
+            count: 0,
+            details: [],
+            idsNotes: []
+        },
+        competenceExisteDeja: false,
+        elevesAvecNotesExistantes: []
+    })
     
     // État pour la popup de confirmation des doublons
     const [confirmationDialog, setConfirmationDialog] = useState({
@@ -69,7 +87,7 @@ const DevoirSelectionSection = React.memo(({
     }
 
     // Fonction pour afficher la popup des notes déjà saisies avec option d'attachement
-    const afficherPopupNotesEclaircie = (devoirSelectionneParam = null) => {
+    const afficherPopupNotesEclaircie = async (devoirSelectionneParam = null) => {
         const devoirActuel = devoirSelectionneParam || devoirSelectionne
         
         if (window.debugNotes && codeCompetence) {
@@ -145,7 +163,7 @@ const DevoirSelectionSection = React.memo(({
                             isVisible: true,
                             elevesAvecNotes,
                             nomDevoir,
-                            onConfirmCallback: () => {
+                            onConfirmCallback: async () => {
                                 // Continuer le processus d'attachement
                                 console.log('⚠️ Utilisateur a choisi de continuer malgré les doublons')
                                 // Fermer la popup
@@ -153,7 +171,7 @@ const DevoirSelectionSection = React.memo(({
                                 // Continuer avec la confirmation normale
                                 const confirmation = confirm(`⚠️ ATTENTION ! Il y a ${totalNotes} note(s) déjà saisie(s) pour la compétence ${codeCompetence} :\n\n${notesDejasSaisiesInfo.join('\n')}\n\n🔗 Voulez-vous les attacher au devoir "${nomDevoir}" ?\n\nOui = Attacher les notes au devoir\nAnnuler = Laisser les notes sans devoir`)
                                 if (confirmation) {
-                                    attacherNotesAuDevoir(notesAAttacher, nomDevoir, devoirActuel)
+                                    await attacherNotesAuDevoir(notesAAttacher, nomDevoir, devoirActuel)
                                 }
                             }
                         })
@@ -164,7 +182,7 @@ const DevoirSelectionSection = React.memo(({
                 const confirmation = confirm(`⚠️ ATTENTION ! Il y a ${totalNotes} note(s) déjà saisie(s) pour la compétence ${codeCompetence} :\n\n${notesDejasSaisiesInfo.join('\n')}\n\n🔗 Voulez-vous les attacher au devoir "${nomDevoir}" ?\n\nOui = Attacher les notes au devoir\nAnnuler = Laisser les notes sans devoir`)
                 
                 if (confirmation) {
-                    attacherNotesAuDevoir(notesAAttacher, nomDevoir, devoirActuel)
+                    await attacherNotesAuDevoir(notesAAttacher, nomDevoir, devoirActuel)
                 }
             } else {
                 showAlert(`Aucune note déjà saisie pour la compétence ${codeCompetence}.`, 'info')
@@ -185,26 +203,21 @@ const DevoirSelectionSection = React.memo(({
             let devoirKey
             if (nouveauDevoirNom.trim()) {
                 // Nouveau devoir - générer une devoirKey
-                devoirKey = generateDevoirKey(classeId, teacherInfo.id, codeCompetence)
+                devoirKey = generateDevoirKey(codeCompetence, classeId, teacherInfo.id)
             } else if (devoirActuel) {
                 // Devoir existant sélectionné - utiliser sa devoirKey
                 devoirKey = devoirActuel
             } else {
-                // Essayer de trouver le devoir par son nom dans la liste des devoirs existants
-                const devoirExistant = devoirs.find(d => d.devoir_label === nomDevoir)
-                if (devoirExistant) {
-                    devoirKey = devoirExistant.devoirKey
-                } else {
-                    console.error('Impossible de déterminer la devoirKey pour:', nomDevoir)
-                    showAlert('Impossible de déterminer la clé du devoir.', 'error')
-                    return
-                }
+                console.error('Impossible de déterminer la devoirKey - aucun devoir sélectionné ou créé')
+                showAlert('Veuillez sélectionner un devoir existant ou créer un nouveau devoir.', 'error')
+                return
             }
             
             console.log('🔑 DevoirKey générée:', devoirKey)
             
-            // Mettre à jour chaque note
-            for (const noteId of idsNotes) {
+            // 🚀 MODIFICATION CRITIQUE : Exécuter toutes les mises à jour en parallèle et attendre qu'elles soient toutes terminées
+            console.log('📡 Début des mises à jour en base de données...')
+            const updatePromises = idsNotes.map(async (noteId) => {
                 const response = await apiFetch(`/notes/${noteId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -217,18 +230,28 @@ const DevoirSelectionSection = React.memo(({
                 
                 if (!response.ok) {
                     console.error(`Erreur lors de la mise à jour de la note ${noteId}`)
+                    throw new Error(`Erreur mise à jour note ${noteId}`)
                 } else {
                     console.log(`✅ Note ${noteId} mise à jour avec succès`)
                 }
-            }
+                
+                return noteId
+            })
             
-            // Au lieu de recharger toutes les notes, mettre à jour seulement les notes modifiées
+            // ⏳ Attendre que TOUTES les mises à jour en BDD soient terminées
+            await Promise.all(updatePromises)
+            console.log('🎯 Toutes les mises à jour en base de données sont terminées !')
+            
+            // 🔄 MAINTENANT SEULEMENT, mettre à jour l'affichage
+            console.log('🖥️ Mise à jour de l\'affichage...')
+            
+            // Mettre à jour l'état notes
             setNotes(prevNotes => {
                 return prevNotes.map(note => {
                     if (idsNotes.includes(note.id)) {
                         return {
                             ...note,
-                            devoir_key: devoirKey,
+                            devoirKey: devoirKey,  // ✅ Correction : devoirKey au lieu de devoir_key
                             devoir_label: nomDevoir
                         }
                     }
@@ -245,7 +268,7 @@ const DevoirSelectionSection = React.memo(({
                         if (noteExistante.id === noteId) {
                             newMap.set(cle, {
                                 ...noteExistante,
-                                devoir_key: devoirKey,
+                                devoirKey: devoirKey,  // ✅ Correction : devoirKey au lieu de devoir_key
                                 devoir_label: nomDevoir
                             })
                             break
@@ -255,6 +278,7 @@ const DevoirSelectionSection = React.memo(({
                 return newMap
             })
             
+            console.log('✨ Affichage mis à jour avec succès !')
             showAlert(`${idsNotes.length} note(s) attachée(s) au devoir "${nomDevoir}" avec succès !`, 'success')
             
         } catch (error) {
@@ -263,13 +287,206 @@ const DevoirSelectionSection = React.memo(({
         }
     }
 
-    const handleCreerDevoir = () => {
-        if (nouveauDevoirNom.trim()) {
-            // Afficher la popup des notes eclaircie AVANT de valider le devoir
-            afficherPopupNotesEclaircie()
+    // Fonction pour confirmer le changement de devoir
+    const confirmerChangementDevoir = async () => {
+        const { nouveauDevoir, nomNouveauDevoir, notesEclaircie, competenceExisteDeja } = changementDevoirDialog
+        
+        // Fermer la modal de changement
+        setChangementDevoirDialog({
+            isVisible: false,
+            nouveauDevoir: '',
+            nomNouveauDevoir: '',
+            notesEclaircie: { count: 0, details: [], idsNotes: [] },
+            competenceExisteDeja: false,
+            elevesAvecNotesExistantes: []
+        })
+        
+        // Si c'est un nouveau devoir (nouveauDevoir est vide)
+        if (!nouveauDevoir) {
+            // Créer le nouveau devoir - générer une clé unique une seule fois
+            const nouvelleCleDevoirMemoire = generateDevoirKey(codeCompetence, classeId, teacherInfo.id)
+            
+            // Stocker en mémoire la clé et le label du nouveau devoir
+            setDevoirActifMemoire({
+                devoirKey: nouvelleCleDevoirMemoire,
+                label: nomNouveauDevoir
+            })
             
             setDevoirValide(true)
-            console.log('✅ Devoir validé:', nouveauDevoirNom.trim())
+            console.log('✅ Nouveau devoir validé:', nomNouveauDevoir, 'avec clé:', nouvelleCleDevoirMemoire)
+            
+            // Attacher les notes éclaircie s'il y en a
+            if (notesEclaircie.count > 0) {
+                console.log('✅ Attachement des notes éclaircie au nouveau devoir')
+                await attacherNotesAuDevoir(notesEclaircie.idsNotes, nomNouveauDevoir, null)
+            }
+        } else {
+            // Cas d'un devoir existant sélectionné - récupérer sa clé existante
+            const devoirExistant = devoirsSansDoublons.find(d => d.devoirKey === nouveauDevoir)
+            console.log('🔍 Recherche devoir existant avec clé:', nouveauDevoir)
+            console.log('🔍 Devoir trouvé:', devoirExistant)
+            console.log('🔍 setDevoirKeyVisible disponible:', typeof setDevoirKeyVisible)
+            console.log('🔍 setDevoirViewVisible disponible:', typeof setDevoirViewVisible)
+            
+            if (devoirExistant) {
+                // Stocker en mémoire la clé et le label du devoir existant
+                setDevoirActifMemoire({
+                    devoirKey: devoirExistant.devoirKey,
+                    label: devoirExistant.devoir_label
+                })
+                
+                // Déclencher l'affichage de la vue devoir avec logs détaillés
+                console.log('🎯 Appel setDevoirKeyVisible avec:', devoirExistant.devoirKey)
+                setDevoirKeyVisible(devoirExistant.devoirKey)
+                
+                console.log('🎯 Appel setDevoirViewVisible avec: true')
+                setDevoirViewVisible(true)
+                
+                console.log('✅ Devoir existant sélectionné:', devoirExistant.devoir_label, 'avec clé:', devoirExistant.devoirKey)
+            } else {
+                console.error('❌ Aucun devoir trouvé avec la clé:', nouveauDevoir)
+            }
+            
+            setDevoirSelectionne(nouveauDevoir)
+            setNouveauDevoirNom('') // Effacer le nouveau devoir si on sélectionne un existant
+            
+            // Si la compétence n'existe PAS déjà dans le devoir ET qu'il y a des notes éclaircie, les attacher
+            if (!competenceExisteDeja && notesEclaircie.count > 0) {
+                console.log('✅ Pas de conflit détecté - Attachement des notes éclaircie au devoir')
+                await attacherNotesAuDevoir(notesEclaircie.idsNotes, nomNouveauDevoir, nouveauDevoir)
+            } else if (competenceExisteDeja) {
+                console.log('⚠️ Conflit détecté - Les notes éclaircie ne seront PAS attachées au devoir')
+            } else {
+                console.log('ℹ️ Aucune note éclaircie à attacher')
+            }
+        }
+    }
+
+    // Fonction pour annuler le changement de devoir
+    const annulerChangementDevoir = () => {
+        // Réinitialiser l'état mémoire du devoir
+        setDevoirActifMemoire({
+            devoirKey: null,
+            label: null
+        })
+        
+        // Simplement fermer la modal sans rien changer
+        setChangementDevoirDialog({
+            isVisible: false,
+            nouveauDevoir: '',
+            nomNouveauDevoir: '',
+            notesEclaircie: { count: 0, details: [], idsNotes: [] },
+            competenceExisteDeja: false,
+            elevesAvecNotesExistantes: []
+        })
+    }
+
+    const handleCreerDevoir = () => {
+        if (nouveauDevoirNom.trim()) {
+            const nomDevoir = nouveauDevoirNom.trim()
+            
+            // Vérifier si un devoir avec ce nom existe déjà pour cette classe et ce prof
+            // Utiliser devoirsSansDoublons pour une recherche plus précise
+            const devoirExistant = devoirsSansDoublons.find(d => 
+                d.devoir_label === nomDevoir
+            )
+            
+            // Debug: afficher les informations de comparaison
+            console.log('🔍 Vérification doublon devoir:', {
+                nomSaisi: nomDevoir,
+                devoirsExistants: devoirsSansDoublons.map(d => ({
+                    label: d.devoir_label,
+                    classe: d.classe_id,
+                    prof: d.prof_id
+                })),
+                classeActuelle: classeId,
+                profActuel: teacherInfo?.id,
+                devoirTrouve: devoirExistant
+            })
+            
+            if (devoirExistant) {
+                showAlert(`Un devoir avec le nom "${nomDevoir}" existe déjà pour cette classe. Veuillez choisir un nom différent.`, 'error')
+                return
+            }
+            
+            // Collecter les informations sur les notes éclaircie (même logique que pour la sélection)
+            let notesEclaircie = {
+                count: 0,
+                details: [],
+                idsNotes: []
+            }
+            
+            if (window.debugNotes && codeCompetence) {
+                Object.keys(window.debugNotes).forEach(key => {
+                    const [eleveId, competence] = key.split('-')
+                    
+                    if (competence === codeCompetence) {
+                        const notesAvecIds = window.debugNotes[key]()
+                        if (notesAvecIds.length > 0) {
+                            notesAvecIds.forEach(note => {
+                                // Chercher l'élève dans la liste des élèves
+                                const eleve = eleves?.find(e => e.id == eleveId)
+                                const nomEleve = eleve ? `${eleve.prenom} ${eleve.nom}` : `Élève ${eleveId}`
+                                
+                                // Déterminer la couleur/niveau de la note en utilisant les vraies couleurs du système
+                                let couleurEmoji = ""
+                                switch(note.couleur?.toLowerCase()) {
+                                    case 'rouge':
+                                        couleurEmoji = "🔴"
+                                        break
+                                    case 'jaune':
+                                        couleurEmoji = "🟡"
+                                        break
+                                    case 'bleu':
+                                        couleurEmoji = "🔵"
+                                        break
+                                    case 'vert':
+                                        couleurEmoji = "🟢"
+                                        break
+                                    default:
+                                        couleurEmoji = "⚫"
+                                }
+                                
+                                notesEclaircie.details.push(`- ${nomEleve} (${couleurEmoji})`)
+                                notesEclaircie.idsNotes.push(note.id)
+                                notesEclaircie.count += 1
+                            })
+                        }
+                    }
+                })
+            }
+            
+            // Pour un nouveau devoir, il n'y a jamais de conflit de compétence
+            const competenceExisteDeja = false
+            const elevesAvecNotesExistantes = []
+            
+            // Si il n'y a pas de notes en cours de saisie, procéder automatiquement
+            if (notesEclaircie.count === 0) {
+                // Procéder directement à la création du devoir
+                console.log('✅ Création automatique du devoir (pas de notes éclaircie)')
+                
+                // Créer le nouveau devoir - générer une clé unique une seule fois
+                const nouvelleCleDevoirMemoire = generateDevoirKey(codeCompetence, classeId, teacherInfo.id)
+                
+                // Stocker en mémoire la clé et le label du nouveau devoir
+                setDevoirActifMemoire({
+                    devoirKey: nouvelleCleDevoirMemoire,
+                    label: nomDevoir
+                })
+                
+                setDevoirValide(true)
+                console.log('✅ Nouveau devoir créé automatiquement:', nomDevoir, 'avec clé:', nouvelleCleDevoirMemoire)
+            } else {
+                // Afficher la modal de confirmation seulement s'il y a des notes éclaircie
+                setChangementDevoirDialog({
+                    isVisible: true,
+                    nouveauDevoir: '', // Pas de devoir key pour un nouveau devoir
+                    nomNouveauDevoir: nomDevoir,
+                    notesEclaircie: notesEclaircie,
+                    competenceExisteDeja: competenceExisteDeja,
+                    elevesAvecNotesExistantes: elevesAvecNotesExistantes
+                })
+            }
         }
     }
 
@@ -327,11 +544,215 @@ const DevoirSelectionSection = React.memo(({
                                         return
                                     }
                                     
-                                    setDevoirSelectionne(nouveauDevoir)
+                                    // Si c'est une déselection (retour à vide), l'appliquer directement
+                                    if (!nouveauDevoir) {
+                                        setDevoirSelectionne(null)
+                                        return
+                                    }
+                                    
+                                    // Sinon, afficher la modal de confirmation avec le nouveau devoir
+                                    const devoirTrouve = devoirs.find(d => d.devoirKey === nouveauDevoir)
+                                    const nomDevoir = devoirTrouve ? devoirTrouve.devoir_label : nouveauDevoir
+                                    
+                                    // Collecter les informations sur les notes éclaircie
+                                    let notesEclaircie = {
+                                        count: 0,
+                                        details: [],
+                                        idsNotes: []
+                                    }
+                                    
+                                    if (window.debugNotes && codeCompetence) {
+                                        Object.keys(window.debugNotes).forEach(key => {
+                                            const [eleveId, competence] = key.split('-')
+                                            
+                                            if (competence === codeCompetence) {
+                                                const notesAvecIds = window.debugNotes[key]()
+                                                if (notesAvecIds.length > 0) {
+                                                    notesAvecIds.forEach(note => {
+                                                        // Chercher l'élève dans la liste des élèves
+                                                        const eleve = eleves?.find(e => e.id == eleveId)
+                                                        const nomEleve = eleve ? `${eleve.prenom} ${eleve.nom}` : `Élève ${eleveId}`
+                                                        
+                                                        // Déterminer la couleur/niveau de la note en utilisant les vraies couleurs du système
+                                                        let couleurEmoji = ""
+                                                        switch(note.couleur?.toLowerCase()) {
+                                                            case 'rouge':
+                                                                couleurEmoji = "🔴"
+                                                                break
+                                                            case 'jaune':
+                                                                couleurEmoji = "🟡"
+                                                                break
+                                                            case 'bleu':
+                                                                couleurEmoji = "🔵"
+                                                                break
+                                                            case 'vert':
+                                                                couleurEmoji = "🟢"
+                                                                break
+                                                            default:
+                                                                couleurEmoji = "⚫"
+                                                        }
+                                                        
+                                                        notesEclaircie.details.push(`- ${nomEleve} (${couleurEmoji})`)
+                                                        notesEclaircie.idsNotes.push(note.id)
+                                                        notesEclaircie.count += 1
+                                                    })
+                                                }
+                                            }
+                                        })
+                                    }
+                                    
+                                    // Vérifier si la compétence existe déjà dans le devoir sélectionné
+                                    let competenceExisteDeja = false
+                                    let elevesAvecNotesExistantes = []
+                                    
                                     if (nouveauDevoir) {
-                                        setNouveauDevoirNom('') // Effacer le nouveau devoir si on sélectionne un existant
-                                        // Afficher la popup des notes eclaircie quand un devoir est sélectionné
-                                        afficherPopupNotesEclaircie(nouveauDevoir)
+                                        // Vérifier les notes déjà enregistrées en base pour cette compétence dans ce devoir
+                                        const notesExistantesDansDevoir = notes.filter(note => 
+                                            note.devoirKey === nouveauDevoir && 
+                                            note.competence_code === codeCompetence
+                                        )
+                                        
+                                        console.log('🔍 DEBUG DÉTECTION CONFLIT:', {
+                                            nouveauDevoir,
+                                            codeCompetence,
+                                            totalNotes: notes.length,
+                                            notesExistantesDansDevoir: notesExistantesDansDevoir.length,
+                                            detailsNotes: notesExistantesDansDevoir,
+                                            notesPourCeDevoir: notes.filter(n => n.devoirKey === nouveauDevoir),
+                                            notesPourCetteCompetence: notes.filter(n => n.competence_code === codeCompetence),
+                                            toutesLesNotes: notes.slice(0, 5).map(n => ({ 
+                                                devoirKey: n.devoirKey, 
+                                                competence_code: n.competence_code, 
+                                                eleve_id: n.eleve_id 
+                                            }))
+                                        })
+                                        
+                                        // Vérifier aussi si des notes en cours appartiennent déjà à ce devoir
+                                        let notesEnCoursConflictuelles = []
+                                        if (window.debugNotes && codeCompetence) {
+                                            Object.keys(window.debugNotes).forEach(key => {
+                                                const [eleveId, competence] = key.split('-')
+                                                if (competence === codeCompetence) {
+                                                    const notesAvecIds = window.debugNotes[key]()
+                                                    if (notesAvecIds.length > 0) {
+                                                        notesAvecIds.forEach(note => {
+                                                            // Vérifier si cette note appartient déjà au devoir qu'on veut sélectionner
+                                                            const noteExistante = notes.find(n => n.id === note.id)
+                                                            
+                                                            console.log('🔎 Debug note en cours:', {
+                                                                noteId: note.id,
+                                                                eleveId,
+                                                                noteExistanteFound: !!noteExistante,
+                                                                noteExistanteDevoir: noteExistante?.devoirKey,
+                                                                nouveauDevoir,
+                                                                estConflit: noteExistante && noteExistante.devoirKey === nouveauDevoir
+                                                            })
+                                                            
+                                                            if (noteExistante && noteExistante.devoirKey === nouveauDevoir) {
+                                                                const eleve = eleves?.find(e => e.id == eleveId)
+                                                                const nomEleve = eleve ? `${eleve.prenom} ${eleve.nom}` : `Élève ${eleveId}`
+                                                                
+                                                                let couleurEmoji = ""
+                                                                switch(note.couleur?.toLowerCase()) {
+                                                                    case 'rouge':
+                                                                        couleurEmoji = "�"
+                                                                        break
+                                                                    case 'jaune':
+                                                                        couleurEmoji = "🟡"
+                                                                        break
+                                                                    case 'bleu':
+                                                                        couleurEmoji = "🔵"
+                                                                        break
+                                                                    case 'vert':
+                                                                        couleurEmoji = "🟢"
+                                                                        break
+                                                                    default:
+                                                                        couleurEmoji = "⚫"
+                                                                }
+                                                                
+                                                                notesEnCoursConflictuelles.push(`${nomEleve} (${couleurEmoji})`)
+                                                            }
+                                                        })
+                                                    }
+                                                }
+                                            })
+                                        }
+                                        
+                                        console.log('�🔍 Vérification compétence existante:', {
+                                            nouveauDevoir,
+                                            codeCompetence,
+                                            notesExistantesDansDevoir: notesExistantesDansDevoir.length,
+                                            detailsNotes: notesExistantesDansDevoir,
+                                            notesEnCoursConflictuelles: notesEnCoursConflictuelles
+                                        })
+                                        
+                                        // S'il y a des notes existantes (en base OU en cours), c'est un conflit
+                                        if (notesExistantesDansDevoir.length > 0) {
+                                            competenceExisteDeja = true
+                                            elevesAvecNotesExistantes = notesExistantesDansDevoir.map(note => {
+                                                    const eleve = eleves?.find(e => e.id === note.eleve_id)
+                                                    let nomEleve
+                                                    if (eleve) {
+                                                        nomEleve = `${eleve.prenom} ${eleve.nom}`
+                                                    } else if (note.eleve_prenom && note.eleve_nom) {
+                                                        nomEleve = `${note.eleve_prenom} ${note.eleve_nom}`
+                                                    } else {
+                                                        nomEleve = `Élève ${note.eleve_id}`
+                                                    }
+                                                    
+                                                    let couleurEmoji = ""
+                                                    switch(note.couleur?.toLowerCase()) {
+                                                        case 'rouge':
+                                                            couleurEmoji = "🔴"
+                                                            break
+                                                        case 'jaune':
+                                                            couleurEmoji = "🟡"
+                                                            break
+                                                        case 'bleu':
+                                                            couleurEmoji = "🔵"
+                                                            break
+                                                        case 'vert':
+                                                            couleurEmoji = "🟢"
+                                                            break
+                                                        default:
+                                                            couleurEmoji = "⚫"
+                                                    }
+                                                    
+                                                    return `${nomEleve} (${couleurEmoji})`
+                                            })
+                                        }
+                                    }
+                                    
+                                    // IMPORTANT : Quand la compétence existe déjà, on garde les notes éclaircie
+                                    // pour les afficher dans le message d'avertissement (pour dire qu'elles ne seront pas prises en compte)
+                                    // Mais on ne les attachera pas au devoir
+                                    
+                                    // Si il n'y a pas de notes en cours de saisie ET pas de conflit de compétence,
+                                    // procéder automatiquement sans confirmation
+                                    if (notesEclaircie.count === 0 && !competenceExisteDeja) {
+                                        // Procéder directement à l'association
+                                        console.log('✅ Association automatique au devoir (pas de notes éclaircie, pas de conflit)')
+                                        
+                                        // Mettre à jour la mémoire du devoir actif
+                                        setDevoirActifMemoire({
+                                            devoirKey: nouveauDevoir,
+                                            label: nomDevoir
+                                        })
+                                        
+                                        setDevoirValide(true)
+                                        setDevoirViewVisible(true)
+                                        setDevoirKeyVisible(nouveauDevoir)
+                                        console.log('✅ Devoir existant associé automatiquement:', nomDevoir, 'avec clé:', nouveauDevoir)
+                                    } else {
+                                        // Afficher la modal de confirmation seulement s'il y a des notes éclaircie OU un conflit
+                                        setChangementDevoirDialog({
+                                            isVisible: true,
+                                            nouveauDevoir: nouveauDevoir,
+                                            nomNouveauDevoir: nomDevoir,
+                                            notesEclaircie: notesEclaircie,
+                                            competenceExisteDeja: competenceExisteDeja,
+                                            elevesAvecNotesExistantes: elevesAvecNotesExistantes
+                                        })
                                     }
                                 }}
                                 disabled={shouldDisableFields() || (hasNotesForCompetence() && devoirSelectionne)}
@@ -431,6 +852,26 @@ const DevoirSelectionSection = React.memo(({
                 cancelText="Annuler l'opération"
                 onConfirm={confirmationDialog.onConfirmCallback}
                 onCancel={() => setConfirmationDialog(prev => ({ ...prev, isVisible: false }))}
+            />
+
+            {/* Modal de confirmation pour le changement de devoir */}
+            <ConfirmationDialog
+                isVisible={changementDevoirDialog.isVisible}
+                type={changementDevoirDialog.competenceExisteDeja ? "warning" : "info"}
+                title="Confirmer l'association au devoir"
+                message={changementDevoirDialog.competenceExisteDeja ? 
+                    (changementDevoirDialog.notesEclaircie.count > 0 ? 
+                        `⚠️ ATTENTION ! La compétence "${codeCompetence}" existe déjà dans ce devoir.\n\nCes notes en cours de saisie ne seront PAS prises en compte :\n\n${changementDevoirDialog.notesEclaircie.details.join('\n')}` 
+                        :
+                        `"${changementDevoirDialog.nomNouveauDevoir}"`
+                    )
+                    : 
+                    `Voulez-vous associer la compétence "${codeCompetence}" au devoir "${changementDevoirDialog.nomNouveauDevoir}" ?${changementDevoirDialog.notesEclaircie.count > 0 ? `\n\n📋 ${changementDevoirDialog.notesEclaircie.count} note(s) déjà saisie(s) pour cette compétence seront automatiquement attachées :\n\n${changementDevoirDialog.notesEclaircie.details.join('\n')}` : '\n\nAucune note déjà saisie pour cette compétence.'}`
+                }
+                confirmText={changementDevoirDialog.competenceExisteDeja ? 'Confirmer' : changementDevoirDialog.notesEclaircie.count > 0 ? `Associer et attacher ${changementDevoirDialog.notesEclaircie.count} note(s)` : 'Associer au devoir'}
+                cancelText="Annuler"
+                onConfirm={confirmerChangementDevoir}
+                onCancel={annulerChangementDevoir}
             />
 
             {/* Dialog d'alerte pour les messages informatifs */}

@@ -1,14 +1,21 @@
 // Import des fonctions utilitaires
 import { apiFetch } from '../utils/api'
 
-// Fonction pour générer une clé de devoir au format: idClass_idProf_CodeCompetence_JJMM
-const generateDevoirKey = (classeId, profId, competenceCode) => {
+// Fonction pour générer une clé de devoir au format: codecompetence_classeid_profid_JJMMAA_HHMMSS
+const generateDevoirKey = (competenceCode, classeId, profId) => {
     const now = new Date()
     const jour = String(now.getDate()).padStart(2, '0')
     const mois = String(now.getMonth() + 1).padStart(2, '0') // +1 car getMonth() commence à 0
-    const jjmm = `${jour}${mois}`
+    const annee = String(now.getFullYear()).slice(-2) // Derniers 2 chiffres de l'année
+    const heure = String(now.getHours()).padStart(2, '0')
+    const minute = String(now.getMinutes()).padStart(2, '0')
+    const seconde = String(now.getSeconds()).padStart(2, '0')
+    const jjmmaa = `${jour}${mois}${annee}`
+    const hhmmss = `${heure}${minute}${seconde}`
     
-    return `${classeId}_${profId}_${competenceCode}_${jjmm}`
+    const key = `${competenceCode}_${classeId}_${profId}_${jjmmaa}_${hhmmss}`
+    console.log('🔑 [FRONT] generateDevoirKey:', { competenceCode, classeId, profId, jjmmaa, hhmmss, key })
+    return key
 }
 export { generateDevoirKey }
 
@@ -75,7 +82,7 @@ export { isCompetenceN1 };
 export { getNotesVisibles };
 
    // Fonction pour ajouter directement une note avec une couleur (mode filtré)
-    const ajouterNoteDirecte = async (eleve, competenceCode, couleur,notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes) => {
+    const ajouterNoteDirecte = async (eleve, competenceCode, couleur,notes,isStudentMode,dernieresEvaluationsDirectes,commentairesEleves,teacherInfo,devoirSelectionne,devoirs,setDernieresEvaluationsDirectes,nouveauDevoirNom,setNotes,devoirActifMemoire = null) => {
         // Désactiver les interactions en mode élève
         if (isStudentMode) {
             return
@@ -128,15 +135,20 @@ export { getNotesVisibles };
                 }
 
                 // Ajouter les informations de devoir si sélectionné
-                if (devoirSelectionne) {
-                    // Utiliser un devoir existant
+                if (devoirActifMemoire && devoirActifMemoire.devoirKey) {
+                    // Utiliser la clé stockée en mémoire (solution état mémoire)
+                    nouvelleNote.devoirKey = devoirActifMemoire.devoirKey
+                    nouvelleNote.devoir_label = devoirActifMemoire.label
+                    console.log('🔑 Utilisation devoirKey en mémoire pour nouvelle note:', devoirActifMemoire.devoirKey)
+                } else if (devoirSelectionne) {
+                    // Fallback: utiliser un devoir existant (ancien système)
                     const devoir = devoirs.find(d => d.devoirKey === devoirSelectionne)
                     if (devoir) {
                         nouvelleNote.devoirKey = devoir.devoirKey
                         nouvelleNote.devoir_label = devoir.devoir_label
                     }
                 } else if (nouveauDevoirNom.trim()) {
-                    // Créer un nouveau devoir
+                    // Fallback: créer un nouveau devoir (ancien système)
                     nouvelleNote.devoir_label = nouveauDevoirNom.trim()
                     // La devoirKey sera générée côté serveur
                 }
