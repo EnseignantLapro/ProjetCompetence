@@ -35,8 +35,17 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
     const [devoirViewVisible, setDevoirViewVisible] = useState(false)
     const [devoirKeyVisible, setDevoirKeyVisible] = useState(null)
     
-    // État pour la popup de confirmation des doublons
+    // État pour la popup de confirmation des doublons et autres confirmations
     const [confirmationDialog, setConfirmationDialog] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        confirmText: 'Confirmer',
+        cancelText: 'Annuler',
+        onConfirm: null,
+        onCancel: null,
+        // Anciens props pour compatibilité avec les doublons
         isVisible: false,
         elevesAvecNotes: '',
         nomDevoir: '',
@@ -3161,7 +3170,7 @@ function TableauNotes({ competenceChoisie, classeChoisie, classes, eleveFiltre, 
 
         {/* Dialog de confirmation pour les doublons */}
         <ConfirmationDialog
-            isOpen={confirmationDialog.isOpen}
+            isVisible={confirmationDialog.isOpen}
             title={confirmationDialog.title}
             message={confirmationDialog.message}
             type={confirmationDialog.type}

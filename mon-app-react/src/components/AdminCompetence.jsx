@@ -310,7 +310,7 @@ function AdminCompetence({ teacherInfo, isSuperAdmin = false, isTeacherReferent 
 
       {/* Dialog de confirmation pour les suppressions */}
       <ConfirmationDialog
-        isOpen={confirmationDialog.isOpen}
+        isVisible={confirmationDialog.isOpen}
         title={confirmationDialog.title}
         message={confirmationDialog.message}
         type={confirmationDialog.type}

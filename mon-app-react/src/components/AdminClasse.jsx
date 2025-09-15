@@ -116,7 +116,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
     if (isSuperAdmin) {
       url = `/classes/with-counts`;
     }
-    apiFetch(url)
+    return apiFetch(url)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -221,6 +221,10 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
 
   // Supprimer classe
   const supprimerClasse = async (id) => {
+    console.log('🔍 DEBUG supprimerClasse - ID:', id);
+    console.log('🔍 DEBUG supprimerClasse - isSuperAdmin:', isSuperAdmin);
+    console.log('🔍 DEBUG supprimerClasse - teacherInfo:', teacherInfo);
+    
     // Utiliser notre dialog de confirmation personnalisé
     setConfirmationDialog({
       isOpen: true,
@@ -228,13 +232,17 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
       message: 'Êtes-vous sûr de vouloir supprimer cette classe ?',
       type: 'danger',
       onConfirm: async () => {
+        console.log('🔍 DEBUG onConfirm - Début suppression');
         setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
         await deleteClasse(id)
       },
       onCancel: () => {
+        console.log('🔍 DEBUG onCancel - Annulation');
         setConfirmationDialog(prev => ({ ...prev, isOpen: false }))
       }
     })
+    
+    console.log('🔍 DEBUG confirmationDialog state après set:', confirmationDialog);
   }
   
   const deleteClasse = async (id) => {
@@ -515,7 +523,7 @@ function AdminClasse({ teacherInfo = null, isSuperAdmin = false, isTeacherRefere
 
       {/* Dialog de confirmation pour les suppressions */}
       <ConfirmationDialog
-        isOpen={confirmationDialog.isOpen}
+        isVisible={confirmationDialog.isOpen}
         title={confirmationDialog.title}
         message={confirmationDialog.message}
         type={confirmationDialog.type}

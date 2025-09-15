@@ -1,8 +1,12 @@
-cd  mon-app-react
+cd  mon-app-react && 
 npm run build -- --outDir ../back/frontend-dist --emptyOutDir
 dans le back faire :  NODE_ENV=production PORT=3000 node /opt/efe-app/app/server.js 
 
 //pour envoyer tout le dossier back sur la vm : 
+
+
+d  mon-app-react 
+npm run build -- --outDir ../back/frontend-dist --emptyOutDir
 
 rsync -avz --delete \
   --exclude 'node_modules' \
